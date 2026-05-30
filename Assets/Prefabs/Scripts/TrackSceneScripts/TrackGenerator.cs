@@ -155,6 +155,7 @@ public class TrackGenerator : MonoBehaviour
         // a circle around loopCenter with loopRadius, in the plane defined by
         // loopForward and the world-up rotation axis.
         public bool isLoop;
+        public float loopFlattenStart = 1f;   // 1 = no exit-flattening
         public Vector3 loopCenter;
         public float loopRadius;
         public Vector3 loopForward;     // direction of car travel when entering the loop
@@ -616,10 +617,19 @@ public class TrackGenerator : MonoBehaviour
     }
 
     /// <summary>
-    /// Builds the loop as a flexible spring: two Bezier segments that arc up,
-    /// over, and down — like a loop but adaptable. The shape bends and banks
-    /// naturally to match the entry direction and exit offset, instead of
-    /// fighting them to maintain a perfect circle.
+    /// Builds the loop as a tilted corkscrew spiral made of TWO cubic Bezier
+    /// curves that meet at a flat top (apex), exactly as in the red/blue concept:
+    ///
+    ///   Curve 1 (entry -> apex):  bottom handle aligned with the incoming road
+    ///                             (peel-up), top handle FLAT (horizontal).
+    ///   Curve 2 (apex  -> exit):  top handle FLAT (horizontal, mirroring curve 1
+    ///                             so the join is C1-continuous), bottom handle
+    ///                             aligned with the outgoing road.
+    ///
+    /// The apex is lifted to 2*radius and drifted forward + sideways so the loop
+    /// has genuine diameter and spirals past itself instead of pinching into a
+    /// thin "8". Handles share the same flat direction and equal length at the
+    /// apex, so they never cross each other or the track.
     /// </summary>
     TrackEdge BuildLoopSequence(TrackEdge parent,
                                  Vector3 approachStart, Vector3 approachStartDir,
@@ -628,21 +638,31 @@ public class TrackGenerator : MonoBehaviour
     {
         float loopRadius = Random.Range(minLoopRadius, maxLoopRadius);
 
-        Vector3 loopForward = approachStartDir;
-        loopForward.y = 0f;
-        if (loopForward.sqrMagnitude < 0.0001f) loopForward = Vector3.forward;
-        loopForward.Normalize();
+        // Horizontal forward direction the car is travelling on entry.
+        Vector3 fwd = approachStartDir;
+        fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.0001f) fwd = Vector3.forward;
+        fwd.Normalize();
 
-        // Approach edge into the loop entry
+        // Horizontal sideways axis — the spiral drifts along this so it tilts
+        // into a corkscrew rather than a flat planar loop.
+        Vector3 side = Vector3.Cross(Vector3.up, fwd).normalized;
+        if (side.sqrMagnitude < 0.0001f) side = Vector3.right;
+
+        // Pick a consistent drift direction (left or right) for this loop so the
+        // whole spiral leans one way.
+        float sideSign = (Random.value < 0.5f) ? -1f : 1f;
+
+        // ----- Approach edge: blends the flat road up to the loop entry -----
         float approachLength = segmentLength * 0.25f;
-        Vector3 loopEntry = approachStart + loopForward * approachLength;
+        Vector3 loopEntry = approachStart + fwd * approachLength;
 
         var approach = new TrackEdge
         {
             startPos = approachStart,
             startDir = approachStartDir,
             endPos = loopEntry,
-            endDir = loopForward,
+            endDir = fwd,
             handleStart = approachLength * 0.4f,
             handleEnd = approachLength * 0.4f,
             parent = parent
@@ -650,82 +670,126 @@ public class TrackGenerator : MonoBehaviour
         parent.children.Add(approach);
         allEdges.Add(approach);
 
-        // Exit offset — defines lateral spring tug
-        Vector3 lateralAxis = Vector3.Cross(loopForward, Vector3.up).normalized;
-        if (lateralAxis.sqrMagnitude < 0.0001f) lateralAxis = Vector3.right;
-        float offset = Random.Range(-loopExitOffset, loopExitOffset);
-        if (Mathf.Abs(offset) < loopExitOffset * 0.3f)
-            offset = loopExitOffset * 0.5f * Mathf.Sign(offset == 0 ? 1 : offset);
+        // ----- Key loop points -----
+        // Spiral drift amounts: forward push keeps the top ahead of the bottom,
+        // sideways push tilts the whole loop into a corkscrew.
+        float forwardDrift = loopRadius * 0.6f;
+        float sideDrift = loopRadius * 1f * sideSign;
 
-        // Exit point — laterally offset and slightly forward from entry. The forward
-        // component is what allows the loop to actually go OVER the entry rather than
-        // returning to it.
+        // Apex sits one full diameter up, drifted forward + sideways so the loop
+        // reads as round and the two halves don't stack on the same vertical line.
+        Vector3 apex = loopEntry
+                     + Vector3.up * (loopRadius * 2f)
+                     + fwd * forwardDrift
+                     + side * (sideDrift * 0.5f);
+
+        // Exit returns near the bottom but pushed forward + further sideways so it
+        // clears the entry (this is the spiral's "step over").
         Vector3 loopExit = loopEntry
-                         + lateralAxis * offset
-                         + loopForward * (loopRadius * 0.5f);
+                         + fwd * (forwardDrift * 1.6f)
+                         + side * sideDrift;
 
-        // Apex: high above, positioned BETWEEN entry and exit so the car visibly
-        // crosses over the top of the loop. Sits at twice the radius high.
-        Vector3 loopApex = loopEntry + Vector3.up * (loopRadius * 2f);
+        // loopCenter for the mesh's inward-facing normal: mid-height, centred
+        // between entry and exit in the horizontal plane.
+        Vector3 loopCenter = loopEntry
+                           + Vector3.up * loopRadius
+                           + fwd * (forwardDrift * 0.6f)
+                           + side * (sideDrift * 0.4f);
 
-        // CRITICAL: At the apex, the car is upside-down and traveling BACKWARD
-        // relative to its entry direction. This is what makes the curve cross over
-        // the top to the opposite side rather than bending back the way it came.
-        // The apex tangent is the loop's forward direction REVERSED, with a slight
-        // lateral component to flow toward the exit.
-        Vector3 apexTangent = -loopForward;
+        // Flat (horizontal) tangent shared at the apex by both curves. Points
+        // back against the entry direction, tilted toward the drift side so it
+        // flows around the spiral. Kept horizontal (y stays ~0) = "flat on top".
+        Vector3 apexFlatDir = (-fwd + side * (0.75f * sideSign));
+        apexFlatDir.y = 0f;
+        apexFlatDir.Normalize();
 
-        float handleLen = loopRadius * 1.5f;
+        // Handle length: half-loop spans ~180 deg, so each cubic needs generous
+        // handles. ~1.3*r gives a clean round arc without overshoot/crossing.
+        float handleLen = loopRadius * 1.6f;
 
-        // First half: entry to apex.
-        // Starts heading straight up; arrives at apex heading backward (apexTangent).
-        // The Bezier curves from "up" to "backward" — that's the car going up the
-        // front of the loop and rotating to inverted at the top.
+        // ----- Curve 1: entry -> apex (the "blue" curve) -----
+        // Bottom handle aligned with the road (fwd) so the road peels up smoothly.
+        // Top handle flat (apexFlatDir).
         var firstHalf = new TrackEdge
         {
             startPos = loopEntry,
-            startDir = Vector3.up,
-            endPos = loopApex,
-            endDir = apexTangent,
+            startDir = fwd,                 // road-aligned peel-up at the bottom
+            endPos = apex,
+            endDir = apexFlatDir,           // flat on top
             handleStart = handleLen,
             handleEnd = handleLen,
             parent = approach,
             isLoop = true,
-            loopCenter = Vector3.Lerp(loopEntry, loopExit, 0.5f) + Vector3.up * loopRadius,
+            loopCenter = loopCenter,
             loopRadius = loopRadius,
-            loopForward = loopForward
+            loopForward = fwd
         };
         approach.children.Add(firstHalf);
         allEdges.Add(firstHalf);
 
-        // Second half: apex to exit.
-        // Starts heading backward (continuing the inverted flow at the top); arrives
-        // at exit heading straight down. The Bezier curves from "backward" to "down"
-        // — that's the car coming down the back of the loop, rotating right-side up.
+        // ----- Curve 2: apex -> exit (the "red" curve) -----
+        // Top handle flat — SAME direction as curve 1's end handle => the join at
+        // the apex is C1-continuous (no kink, handles colinear, never cross).
+        // Bottom handle aligned with the outgoing road direction.
+        Vector3 exitDir = (originalEnd - loopExit);
+        exitDir.y = 0f;
+        if (exitDir.sqrMagnitude < 0.0001f) exitDir = fwd;
+        exitDir.Normalize();
+
         var secondHalf = new TrackEdge
         {
-            startPos = loopApex,
-            startDir = apexTangent,
+            startPos = apex,
+            startDir = apexFlatDir,         // flat on top, colinear with curve 1
             endPos = loopExit,
-            endDir = Vector3.down,
+            endDir = exitDir,               // road-aligned at the bottom exit
             handleStart = handleLen,
             handleEnd = handleLen,
             parent = firstHalf,
             isLoop = true,
-            loopCenter = Vector3.Lerp(loopEntry, loopExit, 0.5f) + Vector3.up * loopRadius,
+            loopCenter = loopCenter,
             loopRadius = loopRadius,
-            loopForward = loopForward
+            loopForward = fwd
         };
         firstHalf.children.Add(secondHalf);
         allEdges.Add(secondHalf);
 
-        // Post-loop edge: from exit point to the original segment end.
-        // Starts with horizontal tangent (matches a car coming off a loop exit
-        // that's already curved back toward the flat plane).
-        Vector3 postLoopStartDir = (originalEnd - loopExit);
-        postLoopStartDir.y = 0f;
-        if (postLoopStartDir.sqrMagnitude < 0.0001f) postLoopStartDir = loopForward;
-        postLoopStartDir.Normalize();
+        // ----- Exit ramp: built as a NORMAL ROAD edge (isLoop = false) so it -----
+        // shares BuildRoadMesh's orientation convention with postLoop, exactly the
+        // way `approach` mirrors the entry. We carve the lower ~22% of the exit
+        // half off the loop mesh and rebuild it as road, because by that point the
+        // curve has rolled mostly horizontal and a road mesh is stable there.
+        //
+        // splitPos/splitDir are sampled from the SAME cubic the loop half uses, so
+        // the ramp begins exactly where the loop geometry is, just meshed flat.
+        float splitT = .90f;
+        Vector3 splitPos = CubicBezier(apex, apex + apexFlatDir * handleLen,
+                                       loopExit - exitDir * handleLen, loopExit, splitT);
+        Vector3 splitDir = CubicBezierTangent(apex, apex + apexFlatDir * handleLen,
+                                              loopExit - exitDir * handleLen, loopExit, splitT);
+
+        // Shorten the loop half so it ends at the split instead of loopExit.
+        secondHalf.endPos = splitPos;
+        secondHalf.endDir = splitDir;
+        // Re-tune its end handle so the curve up to the split keeps its shape.
+        secondHalf.handleEnd = handleLen * splitT;
+
+        float rampSpan = Vector3.Distance(splitPos, loopExit);
+        var exitRamp = new TrackEdge
+        {
+            startPos = splitPos,
+            startDir = splitDir,
+            endPos = loopExit,
+            endDir = exitDir,
+            handleStart = rampSpan * 0.4f,
+            handleEnd = rampSpan * 0.4f,
+            parent = secondHalf,
+            isLoop = false                  // <-- meshed as flat road, matches postLoop
+        };
+        secondHalf.children.Add(exitRamp);
+        allEdges.Add(exitRamp);
+
+        // ----- Post-loop edge: loopExit -> original segment end (road mesh) -----
+        Vector3 postLoopStartDir = exitDir;
 
         var postLoop = new TrackEdge
         {
@@ -733,7 +797,7 @@ public class TrackGenerator : MonoBehaviour
             startDir = postLoopStartDir,
             endPos = originalEnd,
             endDir = originalEndDir,
-            parent = secondHalf
+            parent = exitRamp
         };
         TuneHandlesForLength(postLoop, segmentLength * 0.5f);
 
@@ -742,7 +806,7 @@ public class TrackGenerator : MonoBehaviour
         postLoop.handleStart = Mathf.Max(postLoop.handleStart, minHandle);
         postLoop.handleEnd = Mathf.Max(postLoop.handleEnd, minHandle);
 
-        secondHalf.children.Add(postLoop);
+        exitRamp.children.Add(postLoop);
         allEdges.Add(postLoop);
 
         return postLoop;
@@ -837,6 +901,23 @@ public class TrackGenerator : MonoBehaviour
         return len;
     }
 
+    static Vector3 CubicBezier(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+    {
+        float u = 1f - t;
+        return u * u * u * p0
+             + 3f * u * u * t * p1
+             + 3f * u * t * t * p2
+             + t * t * t * p3;
+    }
+
+    static Vector3 CubicBezierTangent(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
+    {
+        float u = 1f - t;
+        Vector3 d = 3f * u * u * (p1 - p0)
+                  + 6f * u * t * (p2 - p1)
+                  + 3f * t * t * (p3 - p2);
+        return d.normalized;
+    }
     // -------------------------------------------------------
     //  Phase 4 — meshing
     // -------------------------------------------------------
@@ -938,9 +1019,10 @@ public class TrackGenerator : MonoBehaviour
         obj.transform.SetParent(transform);
 
         Mesh loopMesh = TrackMeshBuilder.BuildLoopMesh(
-            edge.sampledPoints, edge.loopCenter, rotationAxis,
-            roadWidth, roadThickness, uvTilingFactor
-        );
+                    edge.sampledPoints, edge.loopCenter, rotationAxis,
+                    roadWidth, roadThickness, uvTilingFactor,
+                    edge.loopFlattenStart
+                );
 
         obj.AddComponent<MeshFilter>().sharedMesh = loopMesh;
         obj.AddComponent<MeshCollider>().sharedMesh = loopMesh;

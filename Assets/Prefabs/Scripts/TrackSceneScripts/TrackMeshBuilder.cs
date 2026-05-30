@@ -109,13 +109,13 @@ public static class TrackMeshBuilder
     /// inside of the loop like a roller coaster.
     /// </summary>
     public static Mesh BuildLoopMesh(
-        List<Vector3> points,
-        Vector3 loopCenter,
-        Vector3 rotationAxis,
-        float roadWidth,
-        float roadThickness,
-        float uvTilingFactor = 0.04f,
-        float flattenStartFraction = 0.85f)   // NEW: where the exit-flattening begins
+            List<Vector3> points,
+            Vector3 loopCenter,
+            Vector3 rotationAxis,
+            float roadWidth,
+            float roadThickness,
+            float uvTilingFactor = 0.04f,
+            float flattenStartFraction = 1f)   // 1 = no flattening (default)
     {
         int sections = points.Count;
         if (sections < 2) return new Mesh();
@@ -144,7 +144,7 @@ public static class TrackMeshBuilder
             Vector3 inwardNormal = (loopCenter - center).normalized;
 
             Vector3 surfaceNormal;
-            if (tt >= flattenStartFraction)
+            if (flattenStartFraction < 1f && tt >= flattenStartFraction)
             {
                 float blend = (tt - flattenStartFraction) / (1f - flattenStartFraction);
                 blend = Mathf.SmoothStep(0f, 1f, blend);
@@ -227,7 +227,8 @@ public static class TrackMeshBuilder
         float shoulderWidth,
         float roadThickness,
         bool rightSide,
-        float uvTilingFactor = 0.05f)
+        float uvTilingFactor = 0.05f,
+        float flattenStartFraction = 1f)
     {
         int sections = points.Count;
         if (sections < 2) return new Mesh();
@@ -243,16 +244,13 @@ public static class TrackMeshBuilder
         for (int i = 0; i < sections; i++)
         {
             Vector3 center = points[i];
-            // Inside the per-section loop of BuildLoopShoulderMesh, replace:
-            //   Vector3 toCenter = (loopCenter - center).normalized;
-            // with the blended version:
-
             float tt = i / (float)(sections - 1);
+
             Vector3 inwardNormal = (loopCenter - center).normalized;
             Vector3 surfaceNormal;
-            if (tt >= 0.85f)
+            if (flattenStartFraction < 1f && tt >= flattenStartFraction)
             {
-                float blend = (tt - 0.85f) / 0.15f;
+                float blend = (tt - flattenStartFraction) / (1f - flattenStartFraction);
                 blend = Mathf.SmoothStep(0f, 1f, blend);
                 surfaceNormal = Vector3.Slerp(inwardNormal, Vector3.up, blend).normalized;
             }
