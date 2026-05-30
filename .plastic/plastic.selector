@@ -1,0 +1,4 @@
+repository "Generacer/Generacer@20067105016117@cloud"
+  path "/"
+    br "/main"
+    co "/main"

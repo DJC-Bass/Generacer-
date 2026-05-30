@@ -1,0 +1,106 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &5029893423165237662
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4752514936571300900}
+  - component: {fileID: 279050347577569708}
+  - component: {fileID: 7692560314290283657}
+  m_Layer: 0
+  m_Name: TrackGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4752514936571300900
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5029893423165237662}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &279050347577569708
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5029893423165237662}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1f8e4a862f455441acbb33d05c97a71, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  seed: 0
+  targetBranchLength: 22000
+  branchLevels: 4
+  fanAngleDeg: 90
+  lateralSweep: 15000
+  waypointSpacing: 100
+  meshSamplesPerUnit: 0.1
+  baseAltitude: 0
+  minAltitude: 0
+  roadWidth: 70
+  roadThickness: -4
+  uvTilingFactor: 0.04
+  shoulderWidth: 5
+  shoulderMaterial: {fileID: 2100000, guid: dc5c6fe51f25a074680e2ac3be227082, type: 2}
+  altitudeLayerSpacing: 120
+  roadMaterial: {fileID: 2100000, guid: bc7690c75e844554c9bfbd7387a4843f, type: 2}
+  carPrefab: {fileID: 0}
+  endPortalPrefab: {fileID: 2711415986702523348, guid: e93035f0cebac7c4c9735606eadd1f34, type: 3}
+  altitudeVariance: 2000
+  verticalHandleFactor: 0.75
+  branchVariance: 1
+  convergenceSwing: 6000
+  convergenceAltitudeSwing: 1500
+  startLateralVariance: 4000
+  startAltitudeVariance: 6000
+  startForwardVariance: 1500
+  finishLateralVariance: 4000
+  finishAltitudeVariance: 6000
+  finishForwardVariance: 3000
+  forkDistanceVariance: 0
+  earlyTerminationChance: 0
+  finishLateralSpacing: 80
+  spawnSpeedMph: 300
+  followCamera: {fileID: 0}
+  carSpawnForwardOffset: 1500
+  carSpawnHeightOffset: 6
+  spawnVelocityMph: 300
+--- !u!64 &7692560314290283657
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5029893423165237662}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 0}
