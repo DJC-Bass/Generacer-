@@ -102,20 +102,17 @@ public static class TrackMeshBuilder
     }
 
     /// <summary>
-    /// Builds a loop road mesh. Unlike the flat road builder, this orients each
-    /// cross-section so the road's WIDTH axis stays aligned with the loop's
-    /// rotation axis (the lateral horizontal direction), and the road SURFACE
-    /// faces inward toward the loop center. This makes the car drive on the
-    /// inside of the loop like a roller coaster.
+    /// Builds a loop road mesh from a continuous centerline using a rotation-
+    /// minimizing frame. No constant width axis and no loopCenter normal, so the
+    /// road never twists along its length and the end cross-sections come out
+    /// horizontal — matching the flat road at both entry and exit.
     /// </summary>
-    public static Mesh BuildLoopMesh(
-            List<Vector3> points,
-            Vector3 loopCenter,
-            Vector3 rotationAxis,
-            float roadWidth,
-            float roadThickness,
-            float uvTilingFactor = 0.04f,
-            float flattenStartFraction = 1f)   // 1 = no flattening (default)
+    public static Mesh BuildLoopMeshExplicit(
+           List<Vector3> points,
+           List<Vector3> normals,
+           float roadWidth,
+           float roadThickness,
+           float uvTilingFactor = 0.04f)
     {
         int sections = points.Count;
         if (sections < 2) return new Mesh();
@@ -124,85 +121,57 @@ public static class TrackMeshBuilder
         Vector2[] uvs = new Vector2[sections * 4];
         int[] tris = new int[(sections - 1) * 24];
 
-        Vector3 widthAxis = rotationAxis.normalized;
         float uvV = 0f;
-        Vector3 prevPoint = points[0];
+        Vector3 prev = points[0];
 
         for (int i = 0; i < sections; i++)
         {
             Vector3 center = points[i];
-            float tt = i / (float)(sections - 1);
+            Vector3 normal = normals[i];
 
-            if (i > 0) uvV += Vector3.Distance(prevPoint, center) * uvTilingFactor;
-            prevPoint = center;
+            // tangent for the width axis
+            Vector3 tan;
+            if (i == 0) tan = points[1] - points[0];
+            else if (i == sections - 1) tan = points[sections - 1] - points[sections - 2];
+            else tan = points[i + 1] - points[i - 1];
+            tan = tan.sqrMagnitude > 1e-12f ? tan.normalized : Vector3.forward;
 
-            // Surface normal: normally points toward the loop center (inward, so the
-            // car drives on the inside of the loop). But over the last portion of
-            // the spiral (after flattenStartFraction), blend the normal back toward
-            // world up so the exit cross-section is FLAT — matching the post-loop
-            // road's flat orientation and eliminating the wedge gap at the seam.
-            Vector3 inwardNormal = (loopCenter - center).normalized;
+            Vector3 width = Vector3.Cross(tan, normal).normalized;
 
-            Vector3 surfaceNormal;
-            if (flattenStartFraction < 1f && tt >= flattenStartFraction)
-            {
-                float blend = (tt - flattenStartFraction) / (1f - flattenStartFraction);
-                blend = Mathf.SmoothStep(0f, 1f, blend);
-                surfaceNormal = Vector3.Slerp(inwardNormal, Vector3.up, blend).normalized;
-            }
-            else
-            {
-                surfaceNormal = inwardNormal;
-            }
+            if (i > 0) uvV += Vector3.Distance(prev, center) * uvTilingFactor;
+            prev = center;
 
-            // Width axis stays along the rotation axis the whole way, so the road
-            // never twists around its length — keeps seams on top and bottom.
-            Vector3 topLeft = center - widthAxis * (roadWidth * 0.5f);
-            Vector3 topRight = center + widthAxis * (roadWidth * 0.5f);
-            Vector3 botLeft = topLeft - surfaceNormal * roadThickness;
-            Vector3 botRight = topRight - surfaceNormal * roadThickness;
+            Vector3 topLeft = center - width * (roadWidth * 0.5f);
+            Vector3 topRight = center + width * (roadWidth * 0.5f);
+            Vector3 botLeft = topLeft - normal * roadThickness;
+            Vector3 botRight = topRight - normal * roadThickness;
 
             int vi = i * 4;
-            verts[vi] = topLeft;
-            verts[vi + 1] = topRight;
-            verts[vi + 2] = botLeft;
-            verts[vi + 3] = botRight;
-
+            verts[vi] = topLeft; verts[vi + 1] = topRight;
+            verts[vi + 2] = botLeft; verts[vi + 3] = botRight;
             uvs[vi] = new Vector2(0f, uvV);
             uvs[vi + 1] = new Vector2(1f, uvV);
             uvs[vi + 2] = new Vector2(0f, uvV);
             uvs[vi + 3] = new Vector2(1f, uvV);
         }
 
-        // ... the triangle-winding loop and mesh assembly stay exactly the same
-
         int t = 0;
         for (int i = 0; i < sections - 1; i++)
         {
-            int a = i * 4;
-            int b = (i + 1) * 4;
-
+            int a = i * 4, b = (i + 1) * 4;
             int tl0 = a, tr0 = a + 1, bl0 = a + 2, br0 = a + 3;
             int tl1 = b, tr1 = b + 1, bl1 = b + 2, br1 = b + 3;
-
-            // Top (driving) surface — faces inward toward loop center
             tris[t++] = tl0; tris[t++] = tl1; tris[t++] = tr0;
             tris[t++] = tr0; tris[t++] = tl1; tris[t++] = tr1;
-
-            // Bottom surface — faces outward
             tris[t++] = bl0; tris[t++] = br0; tris[t++] = bl1;
             tris[t++] = br0; tris[t++] = br1; tris[t++] = bl1;
-
-            // Left wall
             tris[t++] = tl0; tris[t++] = bl0; tris[t++] = tl1;
             tris[t++] = bl0; tris[t++] = bl1; tris[t++] = tl1;
-
-            // Right wall
             tris[t++] = tr0; tris[t++] = tr1; tris[t++] = br0;
             tris[t++] = br0; tris[t++] = tr1; tris[t++] = br1;
         }
 
-        Mesh mesh = new Mesh { name = "LoopRoad" };
+        Mesh mesh = new Mesh { name = "LoopRoadExplicit" };
         mesh.indexFormat = sections * 4 > 65000
             ? UnityEngine.Rendering.IndexFormat.UInt32
             : UnityEngine.Rendering.IndexFormat.UInt16;
@@ -214,21 +183,14 @@ public static class TrackMeshBuilder
         return mesh;
     }
 
-    /// <summary>
-    /// Builds an emissive shoulder strip along one edge of a loop road. Uses the
-    /// same inward-facing orientation as the loop road so the shoulders sit flush
-    /// on the driving surface.
-    /// </summary>
-    public static Mesh BuildLoopShoulderMesh(
+    public static Mesh BuildLoopShoulderMeshExplicit(
         List<Vector3> points,
-        Vector3 loopCenter,
-        Vector3 rotationAxis,
+        List<Vector3> normals,
         float roadWidth,
         float shoulderWidth,
         float roadThickness,
         bool rightSide,
-        float uvTilingFactor = 0.05f,
-        float flattenStartFraction = 1f)
+        float uvTilingFactor = 0.05f)
     {
         int sections = points.Count;
         if (sections < 2) return new Mesh();
@@ -237,52 +199,35 @@ public static class TrackMeshBuilder
         Vector2[] uvs = new Vector2[sections * 4];
         int[] tris = new int[(sections - 1) * 24];
 
-        Vector3 widthAxis = rotationAxis.normalized;
         float uvV = 0f;
         Vector3 prev = points[0];
+        float innerDist = roadWidth * 0.5f;
+        float outerDist = roadWidth * 0.5f + shoulderWidth;
 
         for (int i = 0; i < sections; i++)
         {
             Vector3 center = points[i];
-            float tt = i / (float)(sections - 1);
+            Vector3 normal = normals[i];
 
-            Vector3 inwardNormal = (loopCenter - center).normalized;
-            Vector3 surfaceNormal;
-            if (flattenStartFraction < 1f && tt >= flattenStartFraction)
-            {
-                float blend = (tt - flattenStartFraction) / (1f - flattenStartFraction);
-                blend = Mathf.SmoothStep(0f, 1f, blend);
-                surfaceNormal = Vector3.Slerp(inwardNormal, Vector3.up, blend).normalized;
-            }
-            else
-            {
-                surfaceNormal = inwardNormal;
-            }
-            // then use surfaceNormal wherever toCenter was used for the thickness extrusion
+            Vector3 tan;
+            if (i == 0) tan = points[1] - points[0];
+            else if (i == sections - 1) tan = points[sections - 1] - points[sections - 2];
+            else tan = points[i + 1] - points[i - 1];
+            tan = tan.sqrMagnitude > 1e-12f ? tan.normalized : Vector3.forward;
+
+            Vector3 width = Vector3.Cross(tan, normal).normalized;
 
             if (i > 0) uvV += Vector3.Distance(prev, center) * uvTilingFactor;
             prev = center;
 
-            // Inner edge sits at the road's outer edge; outer edge extends further
-            float innerDist = roadWidth * 0.5f;
-            float outerDist = roadWidth * 0.5f + shoulderWidth;
-
-            Vector3 innerTop = rightSide
-                ? center + widthAxis * innerDist
-                : center - widthAxis * innerDist;
-            Vector3 outerTop = rightSide
-                ? center + widthAxis * outerDist
-                : center - widthAxis * outerDist;
-
-            Vector3 innerBot = innerTop - surfaceNormal * roadThickness;
-            Vector3 outerBot = outerTop - surfaceNormal * roadThickness;
+            Vector3 innerTop = rightSide ? center + width * innerDist : center - width * innerDist;
+            Vector3 outerTop = rightSide ? center + width * outerDist : center - width * outerDist;
+            Vector3 innerBot = innerTop - normal * roadThickness;
+            Vector3 outerBot = outerTop - normal * roadThickness;
 
             int vi = i * 4;
-            verts[vi] = innerTop;
-            verts[vi + 1] = outerTop;
-            verts[vi + 2] = innerBot;
-            verts[vi + 3] = outerBot;
-
+            verts[vi] = innerTop; verts[vi + 1] = outerTop;
+            verts[vi + 2] = innerBot; verts[vi + 3] = outerBot;
             uvs[vi] = new Vector2(0f, uvV);
             uvs[vi + 1] = new Vector2(1f, uvV);
             uvs[vi + 2] = new Vector2(0f, uvV);
@@ -295,7 +240,6 @@ public static class TrackMeshBuilder
             int a = i * 4, b = (i + 1) * 4;
             int iT0 = a, oT0 = a + 1, iB0 = a + 2, oB0 = a + 3;
             int iT1 = b, oT1 = b + 1, iB1 = b + 2, oB1 = b + 3;
-
             if (rightSide)
             {
                 tris[t++] = iT0; tris[t++] = iT1; tris[t++] = oT0;
@@ -316,7 +260,7 @@ public static class TrackMeshBuilder
             }
         }
 
-        Mesh mesh = new Mesh { name = rightSide ? "LoopShoulderRight" : "LoopShoulderLeft" };
+        Mesh mesh = new Mesh { name = rightSide ? "LoopShoulderRightExplicit" : "LoopShoulderLeftExplicit" };
         mesh.indexFormat = sections * 4 > 65000
             ? UnityEngine.Rendering.IndexFormat.UInt32
             : UnityEngine.Rendering.IndexFormat.UInt16;

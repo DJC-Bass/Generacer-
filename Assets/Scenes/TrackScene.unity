@@ -803,6 +803,10 @@ PrefabInstance:
       value: ChallengerCarSpawner
       objectReference: {fileID: 0}
     - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
+      propertyPath: groupCount
+      value: 12
+      objectReference: {fileID: 0}
+    - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
       propertyPath: spawnDelay
       value: 90
       objectReference: {fileID: 0}
@@ -810,6 +814,10 @@ PrefabInstance:
       propertyPath: trackGenerator
       value: 
       objectReference: {fileID: 1171030678}
+    - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
+      propertyPath: intraGroupSpacing
+      value: 16
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -960,6 +968,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
+      propertyPath: groupCount
+      value: 24
+      objectReference: {fileID: 0}
     - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: trackGenerator
       value: 
