@@ -25,6 +25,12 @@ public class CameraFollow : MonoBehaviour
     [Tooltip("How long the FOV kick lasts before returning to normal (seconds).")]
     public float turboFOVDuration = 1f;
 
+    [Header("Roll Blend")]
+    [Tooltip("Below this tilt (deg) from upright, the camera stays world-upright.")]
+    public float rollBlendStart = 25f;
+    [Tooltip("At/above this tilt (deg), the camera fully rolls with the car.")]
+    public float rollBlendFull = 80f;
+
     private Rigidbody targetRb;
     private Vector3 currentVelocity;
     private float currentRotationVelocity;
@@ -48,7 +54,7 @@ public class CameraFollow : MonoBehaviour
         if (target != null)
         {
             transform.position = target.TransformPoint(offset);
-            transform.LookAt(target);
+            transform.LookAt(target, target.up);   // use car's up here too
         }
     }
 
@@ -78,23 +84,40 @@ public class CameraFollow : MonoBehaviour
 
     void FollowRotation()
     {
-        // Get the car's Y rotation (yaw only — ignore pitch/roll so camera stays upright)
-        float targetAngle = target.eulerAngles.y;
+        // How far is the car tilted from world-upright?
+        float tiltAngle = Vector3.Angle(target.up, Vector3.up);
 
-        // Smoothly rotate the camera's Y to match
-        float smoothAngle = Mathf.SmoothDampAngle(
-            transform.eulerAngles.y,
-            targetAngle,
-            ref currentRotationVelocity,
-            rotationSmoothTime
-        );
+        // Blend factor: 0 = world-upright, 1 = full car roll. Smoothstep between
+        // the two thresholds so the camera eases into rolling rather than snapping.
+        float blend;
+        if (tiltAngle <= rollBlendStart) blend = 0f;
+        else if (tiltAngle >= rollBlendFull) blend = 1f;
+        else
+        {
+            float x = (tiltAngle - rollBlendStart) / (rollBlendFull - rollBlendStart);
+            blend = x * x * (3f - 2f * x);
+        }
 
-        // Build look target: slightly ahead of the car in its forward direction
-        Vector3 lookTarget = target.position + target.forward * lookAheadDistance;
+        // Camera up: blend from world up toward the car's up.
+        Vector3 camUp = Vector3.Slerp(Vector3.up, target.up, blend);
+        if (camUp.sqrMagnitude < 1e-6f) camUp = target.up;   // guard near 180deg
 
-        // Apply Y rotation first, then look at the car with a slight ahead offset
-        transform.rotation = Quaternion.Euler(0f, smoothAngle, 0f);
-        transform.LookAt(lookTarget + Vector3.up * 1.5f);  // +Y keeps car in frame
+        // Look slightly ahead of the car. Raise the focus by the SAME blended up so
+        // the framing stays consistent with the chosen orientation.
+        Vector3 lookTarget = target.position
+                           + target.forward * lookAheadDistance
+                           + camUp * 1.5f;
+
+        Vector3 lookDir = (lookTarget - transform.position);
+        if (lookDir.sqrMagnitude < 1e-6f) lookDir = target.forward;
+        Quaternion desiredRotation = Quaternion.LookRotation(lookDir.normalized, camUp);
+
+        // Smoothly approach on all axes (exp form gives the same "smooth time" feel).
+        float t = (rotationSmoothTime <= 0f)
+            ? 1f
+            : 1f - Mathf.Exp(-Time.deltaTime / rotationSmoothTime);
+
+        transform.rotation = Quaternion.Slerp(transform.rotation, desiredRotation, t);
     }
 
     void UpdateFOV()

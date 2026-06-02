@@ -131,9 +131,16 @@ public class TrackGenerator : MonoBehaviour
     public float minLoopRadius = 200f;
     [Tooltip("Maximum loop radius (units).")]
     public float maxLoopRadius = 350f;
-    [Tooltip("Lateral offset range applied to the post-loop segment (units). " +
-             "Positive values shift the exit to the right of the entry, negative to the left.")]
-    public float loopExitOffset = 300f;
+    [Tooltip("Minimum sideways (left/right) gap between the loop entry and exit. " +
+                 "Each loop picks a random value between min and max — like sliding the " +
+                 "ribbon's far end left or right by a varying amount.")]
+    public float minLoopExitOffset = 250f;
+    [Tooltip("Maximum sideways (left/right) gap between the loop entry and exit.")]
+    public float maxLoopExitOffset = 600f;
+    [Tooltip("Forward (+) or backward (-) offset of the loop exit from the entry, " +
+             "along the direction of travel. 0 = exit directly beside the entry; " +
+             "positive pushes the following segment further ahead; negative pulls it back.")]
+    public float loopExitForwardOffset = 0f;
 
     // -------------------------------------------------------
     //  Edge structure — one Bezier curve per edge, one mesh per edge
@@ -524,7 +531,10 @@ public class TrackGenerator : MonoBehaviour
     void BuildLeafConvergence(TrackEdge leaf, Vector3 leafFinish,
                                Vector3 arrivalDir, float convergeLength)
     {
-        int numSegments = Random.Range(2, 5);
+        // Minimum of 3 winding segments so no branch is a near-straight short shot.
+        // Every branch gets enough intermediate control points to wind to the same
+        // length as its neighbours, so no path is a shortcut.
+        int numSegments = Random.Range(3, 5);   // 3 or 4
 
         var controlPositions = new List<Vector3> { leaf.endPos };
 
@@ -662,10 +672,15 @@ public class TrackGenerator : MonoBehaviour
         if (side.sqrMagnitude < 0.0001f) side = Vector3.right;
         float sideSign = (Random.value < 0.5f) ? -1f : 1f;
 
-        float forwardDrift = loopRadius * Random.Range(1f, 1.1f);
-        float sideDrift = loopRadius * Random.Range(1.2f, 1.4f) * sideSign;
+        // Sideways gap comes from Loop Exit Offset (slides the exit left/right,
+        // like the ribbon's far end). Forward/back comes from its own field so the
+        // two axes are independent and can be tuned separately.
+        // Random sideways gap within the configured band, like Loop Radius.
+        float sideOffset = Random.Range(minLoopExitOffset, maxLoopExitOffset);
+        float sideDrift = sideOffset * sideSign;
+        float forwardDrift = loopExitForwardOffset;
 
-        Vector3 loopExit = loopEntry + fwd * forwardDrift + side * sideDrift;
+        Vector3 loopExit = loopEntry + side * sideDrift + fwd * forwardDrift;
 
         // ----- Generate the continuous loop centerline. -----
         int loopSamples = Mathf.Max(48, Mathf.RoundToInt(loopRadius * 0.5f));
@@ -733,8 +748,8 @@ public class TrackGenerator : MonoBehaviour
     {
         Vector3 up = Vector3.up;
 
-        const float lowerFactor = 0.82f;
-        const float widthScale = 1.30f;
+        const float lowerFactor = 1f;
+        const float widthScale = 1.4f;
         const float sweepFrac = 0.98f;
         const float endBlend = 0.12f;   // fraction at each end that flattens to road
         float rv = radius * lowerFactor;
