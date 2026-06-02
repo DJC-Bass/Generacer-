@@ -503,23 +503,23 @@ MonoBehaviour:
   pathDistance: 0
   pathSpeed: 50
   correctionStrength: 250
-  rotationCorrection: 10
+  rotationCorrection: 50
   maxOffPathDistance: 500
   collisionCorrectionStrength: 10
   collisionRotationCorrection: 1
   recoveryDelay: 1
   playerTag: Player
-  verticalSpawnOffset: 4
+  verticalSpawnOffset: 0
   projectilePrefab: {fileID: 6459073600639540276, guid: ddc4ba61ae29c5a46a9bba987c6d356f, type: 3}
   muzzleForwardOffset: 3
   muzzleVerticalOffset: 0.5
   visionRange: 300
   visionHalfAngle: 20
-  fireRate: 10
+  fireRate: 12
   projectileSpeed: 402
   playerTagForShooting: Player
-  fireWindowDuration: 1
-  fireCooldownDuration: 1
+  fireWindowDuration: 0.5
+  fireCooldownDuration: 0.5
 --- !u!1 &4455739669367971782
 GameObject:
   m_ObjectHideFlags: 0

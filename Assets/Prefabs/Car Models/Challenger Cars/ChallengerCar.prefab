@@ -532,7 +532,7 @@ MonoBehaviour:
   collisionRotationCorrection: 1
   recoveryDelay: 1
   playerTag: Player
-  verticalSpawnOffset: 4
+  verticalSpawnOffset: 0
   projectilePrefab: {fileID: 0}
   muzzleForwardOffset: 3
   muzzleVerticalOffset: 0.5
@@ -541,6 +541,8 @@ MonoBehaviour:
   fireRate: 3
   projectileSpeed: 402
   playerTagForShooting: Player
+  fireWindowDuration: 1
+  fireCooldownDuration: 1
 --- !u!1 &5599075166028337191
 GameObject:
   m_ObjectHideFlags: 0

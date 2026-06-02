@@ -42,7 +42,12 @@ public static class TrackMeshBuilder
                 right = fallbackRight;  // vertical tangent — keep previous right
             }
 
-            Vector3 down = Vector3.down * thickness;
+            // Always extrude the slab DOWNWARD by the thickness magnitude so the
+            // driving surface (tL/tR) is always the top of the box and all faces
+            // wind outward. This makes the collider a watertight solid regardless
+            // of the sign of `thickness`, so the car always rests on the top
+            // surface (fixes phasing through with positive thickness).
+            Vector3 down = Vector3.down * Mathf.Abs(thickness);
 
             if (i > 0) uvV += Vector3.Distance(prevCenter, center) * uvTilingFactor;
             prevCenter = center;
@@ -78,11 +83,14 @@ public static class TrackMeshBuilder
             int tL0 = vi, tR0 = vi + 1, bL0 = vi + 2, bR0 = vi + 3;
             int tL1 = vi + 4, tR1 = vi + 5, bL1 = vi + 6, bR1 = vi + 7;
 
-            tris[ti] = tL0; tris[ti + 1] = tL1; tris[ti + 2] = tR0;
-            tris[ti + 3] = tR0; tris[ti + 4] = tL1; tris[ti + 5] = tR1;
+            // Top surface — faces UP (drivable). Winding swapped to match the
+            // downward slab extrusion so the normal points +Y.
+            tris[ti] = tL0; tris[ti + 1] = tR0; tris[ti + 2] = tL1;
+            tris[ti + 3] = tR0; tris[ti + 4] = tR1; tris[ti + 5] = tL1;
 
-            tris[ti + 6] = bL0; tris[ti + 7] = bR0; tris[ti + 8] = bL1;
-            tris[ti + 9] = bR0; tris[ti + 10] = bR1; tris[ti + 11] = bL1;
+            // Bottom surface — faces DOWN.
+            tris[ti + 6] = bL0; tris[ti + 7] = bL1; tris[ti + 8] = bR0;
+            tris[ti + 9] = bR0; tris[ti + 10] = bL1; tris[ti + 11] = bR1;
 
             tris[ti + 12] = tL0; tris[ti + 13] = bL0; tris[ti + 14] = tL1;
             tris[ti + 15] = tL1; tris[ti + 16] = bL0; tris[ti + 17] = bL1;
@@ -143,8 +151,8 @@ public static class TrackMeshBuilder
 
             Vector3 topLeft = center - width * (roadWidth * 0.5f);
             Vector3 topRight = center + width * (roadWidth * 0.5f);
-            Vector3 botLeft = topLeft - normal * roadThickness;
-            Vector3 botRight = topRight - normal * roadThickness;
+            Vector3 botLeft = topLeft - normal * Mathf.Abs(roadThickness);
+            Vector3 botRight = topRight - normal * Mathf.Abs(roadThickness);
 
             int vi = i * 4;
             verts[vi] = topLeft; verts[vi + 1] = topRight;
@@ -161,10 +169,12 @@ public static class TrackMeshBuilder
             int a = i * 4, b = (i + 1) * 4;
             int tl0 = a, tr0 = a + 1, bl0 = a + 2, br0 = a + 3;
             int tl1 = b, tr1 = b + 1, bl1 = b + 2, br1 = b + 3;
-            tris[t++] = tl0; tris[t++] = tl1; tris[t++] = tr0;
-            tris[t++] = tr0; tris[t++] = tl1; tris[t++] = tr1;
-            tris[t++] = bl0; tris[t++] = br0; tris[t++] = bl1;
-            tris[t++] = br0; tris[t++] = br1; tris[t++] = bl1;
+            // Top (driving) surface — faces along the surface normal (loop interior)
+            tris[t++] = tl0; tris[t++] = tr0; tris[t++] = tl1;
+            tris[t++] = tr0; tris[t++] = tr1; tris[t++] = tl1;
+            // Bottom surface
+            tris[t++] = bl0; tris[t++] = bl1; tris[t++] = br0;
+            tris[t++] = br0; tris[t++] = bl1; tris[t++] = br1;
             tris[t++] = tl0; tris[t++] = bl0; tris[t++] = tl1;
             tris[t++] = bl0; tris[t++] = bl1; tris[t++] = tl1;
             tris[t++] = tr0; tris[t++] = tr1; tris[t++] = br0;
@@ -222,8 +232,8 @@ public static class TrackMeshBuilder
 
             Vector3 innerTop = rightSide ? center + width * innerDist : center - width * innerDist;
             Vector3 outerTop = rightSide ? center + width * outerDist : center - width * outerDist;
-            Vector3 innerBot = innerTop - normal * roadThickness;
-            Vector3 outerBot = outerTop - normal * roadThickness;
+            Vector3 innerBot = innerTop - normal * Mathf.Abs(roadThickness);
+            Vector3 outerBot = outerTop - normal * Mathf.Abs(roadThickness);
 
             int vi = i * 4;
             verts[vi] = innerTop; verts[vi + 1] = outerTop;
@@ -242,21 +252,21 @@ public static class TrackMeshBuilder
             int iT1 = b, oT1 = b + 1, iB1 = b + 2, oB1 = b + 3;
             if (rightSide)
             {
-                tris[t++] = iT0; tris[t++] = iT1; tris[t++] = oT0;
-                tris[t++] = oT0; tris[t++] = iT1; tris[t++] = oT1;
-                tris[t++] = iB0; tris[t++] = oB0; tris[t++] = iB1;
-                tris[t++] = oB0; tris[t++] = oB1; tris[t++] = iB1;
-                tris[t++] = oT0; tris[t++] = oT1; tris[t++] = oB0;
-                tris[t++] = oB0; tris[t++] = oT1; tris[t++] = oB1;
-            }
-            else
-            {
                 tris[t++] = iT0; tris[t++] = oT0; tris[t++] = iT1;
                 tris[t++] = oT0; tris[t++] = oT1; tris[t++] = iT1;
                 tris[t++] = iB0; tris[t++] = iB1; tris[t++] = oB0;
                 tris[t++] = oB0; tris[t++] = iB1; tris[t++] = oB1;
                 tris[t++] = oT0; tris[t++] = oB0; tris[t++] = oT1;
                 tris[t++] = oB0; tris[t++] = oB1; tris[t++] = oT1;
+            }
+            else
+            {
+                tris[t++] = iT0; tris[t++] = iT1; tris[t++] = oT0;
+                tris[t++] = oT0; tris[t++] = iT1; tris[t++] = oT1;
+                tris[t++] = iB0; tris[t++] = oB0; tris[t++] = iB1;
+                tris[t++] = oB0; tris[t++] = oB1; tris[t++] = iB1;
+                tris[t++] = oT0; tris[t++] = oT1; tris[t++] = oB0;
+                tris[t++] = oB0; tris[t++] = oT1; tris[t++] = oB1;
             }
         }
 
@@ -342,8 +352,8 @@ public static class TrackMeshBuilder
                 outerTop = center - right * (roadWidth * 0.5f + shoulderWidth);
             }
 
-            Vector3 innerBot = innerTop + Vector3.down * thickness;
-            Vector3 outerBot = outerTop + Vector3.down * thickness;
+            Vector3 innerBot = innerTop + Vector3.down * Mathf.Abs(thickness);
+            Vector3 outerBot = outerTop + Vector3.down * Mathf.Abs(thickness);
 
             int vi = i * 4;
             verts[vi] = innerTop;
@@ -375,7 +385,21 @@ public static class TrackMeshBuilder
             // the right way: top normals up, bottom down, outer wall outward.
             if (rightSide)
             {
-                // Top — normals up
+                // Top — normals up (winding swapped for downward extrusion)
+                tris[ti] = iT0; tris[ti + 1] = oT0; tris[ti + 2] = iT1;
+                tris[ti + 3] = oT0; tris[ti + 4] = oT1; tris[ti + 5] = iT1;
+
+                // Bottom — normals down
+                tris[ti + 6] = iB0; tris[ti + 7] = iB1; tris[ti + 8] = oB0;
+                tris[ti + 9] = oB0; tris[ti + 10] = iB1; tris[ti + 11] = oB1;
+
+                // Outer wall — normals point right (away from road)
+                tris[ti + 12] = oT0; tris[ti + 13] = oB0; tris[ti + 14] = oT1;
+                tris[ti + 15] = oB0; tris[ti + 16] = oB1; tris[ti + 17] = oT1;
+            }
+            else
+            {
+                // Top — normals up (winding swapped for downward extrusion)
                 tris[ti] = iT0; tris[ti + 1] = iT1; tris[ti + 2] = oT0;
                 tris[ti + 3] = oT0; tris[ti + 4] = iT1; tris[ti + 5] = oT1;
 
@@ -383,23 +407,9 @@ public static class TrackMeshBuilder
                 tris[ti + 6] = iB0; tris[ti + 7] = oB0; tris[ti + 8] = iB1;
                 tris[ti + 9] = oB0; tris[ti + 10] = oB1; tris[ti + 11] = iB1;
 
-                // Outer wall — normals point right (away from road)
+                // Outer wall — normals point left
                 tris[ti + 12] = oT0; tris[ti + 13] = oT1; tris[ti + 14] = oB0;
                 tris[ti + 15] = oB0; tris[ti + 16] = oT1; tris[ti + 17] = oB1;
-            }
-            else
-            {
-                // Top — flipped winding for left side so normals still point up
-                tris[ti] = iT0; tris[ti + 1] = oT0; tris[ti + 2] = iT1;
-                tris[ti + 3] = oT0; tris[ti + 4] = oT1; tris[ti + 5] = iT1;
-
-                // Bottom — flipped for left side
-                tris[ti + 6] = iB0; tris[ti + 7] = iB1; tris[ti + 8] = oB0;
-                tris[ti + 9] = oB0; tris[ti + 10] = iB1; tris[ti + 11] = oB1;
-
-                // Outer wall — normals point left
-                tris[ti + 12] = oT0; tris[ti + 13] = oB0; tris[ti + 14] = oT1;
-                tris[ti + 15] = oB0; tris[ti + 16] = oB1; tris[ti + 17] = oT1;
             }
         }
 

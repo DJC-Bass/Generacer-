@@ -871,7 +871,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: roadThickness
-      value: -4
+      value: 4
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: branchVariance
@@ -995,9 +995,21 @@ PrefabInstance:
       value: 24
       objectReference: {fileID: 0}
     - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
+      propertyPath: spawnDelay
+      value: 30
+      objectReference: {fileID: 0}
+    - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: trackGenerator
       value: 
       objectReference: {fileID: 1171030678}
+    - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
+      propertyPath: maxSpawnFraction
+      value: 0.4
+      objectReference: {fileID: 0}
+    - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
+      propertyPath: minSpawnFraction
+      value: 0.2
+      objectReference: {fileID: 0}
     - target: {fileID: 4024389309093854848, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: m_LocalPosition.x
       value: -19.849857
