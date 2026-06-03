@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using UnityEngine.InputSystem;   // NEW
 
 [RequireComponent(typeof(Rigidbody))]
@@ -38,7 +38,7 @@ public class CarController : MonoBehaviour
     public float forwardGripStiffness = 2.5f;
     [Tooltip("Sideways tire stiffness (cornering grip). Higher = less drift.")]
     public float sidewaysGripStiffness = 3.5f;
-    [Tooltip("Anti-roll bar — counters body roll on hard turns.")]
+    [Tooltip("Anti-roll bar â€” counters body roll on hard turns.")]
     public float antiRollForce = 8000f;
 
     [Header("Drivetrain")]
@@ -102,6 +102,20 @@ public class CarController : MonoBehaviour
     public float turboDuration = 2f;
     [Tooltip("Cooldown before turbo can be used again (seconds). 0 = no cooldown.")]
     public float turboCooldown = 0f;
+
+    [Header("Loop Gravity Assist")]
+    [Tooltip("Tag on loop track meshes. Gravity is cut once the car passes " +
+         "vertical while a wheel is on a loop, so it can complete the inverted half.")]
+    public string loopTag = "Loop";
+    [Tooltip("up.up dot below this (just past vertical) disables gravity.")]
+    public float loopGravityDisableDot = -0.05f;
+    [Tooltip("up.up dot above this re-enables gravity (hysteresis prevents flicker).")]
+    public float loopGravityEnableDot = 0.10f;
+
+    [Tooltip("Mild acceleration pressing the car onto the loop surface (along " +
+             "-transform.up) while gravity is cut on a loop. Keeps the car glued " +
+             "through the inverted apex. ~5-10 â‰ˆ half-to-full gravity; 0 = off.")]
+    public float loopStickForce = 6f;
 
     // -------------------------------------------------------
     //  Internal
@@ -194,20 +208,20 @@ public class CarController : MonoBehaviour
 
     void Update()
     {
-        // Throttle — RT minus LT via the 1D composite, already -1..1
+        // Throttle â€” RT minus LT via the 1D composite, already -1..1
         throttleInput = controls.Driving.Throttle.ReadValue<float>();
 
-        // Steering / air drift — left stick X
+        // Steering / air drift â€” left stick X
         steerInput = controls.Driving.Steer.ReadValue<float>();
 
-        // Manual air pitch — left stick Y
+        // Manual air pitch â€” left stick Y
         manualPitchInput = controls.Driving.Pitch.ReadValue<float>();
 
-        // Brake — X button
+        // Brake â€” X button
         brakeInput = controls.Driving.Brake.IsPressed() ? 1f : 0f;
 
         // Add to the existing Update() method
-        // Turbo — B button. triggered fires once on the press, not held.
+        // Turbo â€” B button. triggered fires once on the press, not held.
         if (controls.Driving.Turbo.triggered)
             TryActivateTurbo();
 
@@ -221,6 +235,7 @@ public class CarController : MonoBehaviour
             turboTimer -= Time.fixedDeltaTime;
         if (turboCooldownTimer > 0f)
             turboCooldownTimer -= Time.fixedDeltaTime;
+        UpdateLoopGravity();   // set gravity state for this step
 
         if (AnyWheelGrounded())
             airborneTimer = 0f;
@@ -243,7 +258,7 @@ public class CarController : MonoBehaviour
                 if (IsCarLevel())
                 {
                     manualPitchUnlocked = true;
-                    Debug.Log("[Pitch] Manual pitch UNLOCKED — car leveled");
+                    Debug.Log("[Pitch] Manual pitch UNLOCKED â€” car leveled");
                 }
             }
             else
@@ -259,7 +274,7 @@ public class CarController : MonoBehaviour
         }
         else
         {
-            // Grounded — reset the manual pitch unlock so the next airtime starts
+            // Grounded â€” reset the manual pitch unlock so the next airtime starts
             // with a fresh auto-leveling phase
             manualPitchUnlocked = false;
             IsManuallyPitching = false;
@@ -289,7 +304,7 @@ public class CarController : MonoBehaviour
         if (brakeInput < 0.05f) return;
 
         // Extra gravity beyond what Unity already applies. Multiplier of 3 means
-        // total gravity is 3× normal — Unity's default plus 2× extra.
+        // total gravity is 3Ã— normal â€” Unity's default plus 2Ã— extra.
         // ForceMode.Acceleration applies equally regardless of mass, matching
         // how real gravity behaves.
         Vector3 extraGravity = Physics.gravity * (airBrakeGravityMultiplier - 1f) * brakeInput;
@@ -298,7 +313,7 @@ public class CarController : MonoBehaviour
 
     /// <summary>
     /// Combined airborne rotation: applies player pitch input around the car's
-    /// right axis AND levels the roll (Z) toward zero — all in a single
+    /// right axis AND levels the roll (Z) toward zero â€” all in a single
     /// MoveRotation call so neither overwrites the other. Yaw is preserved.
     /// </summary>
     void ApplyManualPitchAndRollLeveling()
@@ -328,7 +343,7 @@ public class CarController : MonoBehaviour
         // Reconstruct: keep post-pitch X and Y, replace Z with the leveled roll
         Quaternion finalRot = Quaternion.Euler(euler.x, euler.y, newRoll);
 
-        // Single MoveRotation call — this is the only rotation write this frame
+        // Single MoveRotation call â€” this is the only rotation write this frame
         rb.MoveRotation(finalRot);
 
         // Damp angular velocity around forward (roll) and right (pitch) so the
@@ -363,7 +378,7 @@ public class CarController : MonoBehaviour
     {
         Vector3 currentEuler = transform.eulerAngles;
 
-        // Convert X and Z from 0–360 range to -180–180 so MoveTowardsAngle
+        // Convert X and Z from 0â€“360 range to -180â€“180 so MoveTowardsAngle
         // takes the shortest path back to zero
         float currentPitch = NormalizeAngle(currentEuler.x);
         float currentRoll = NormalizeAngle(currentEuler.z);
@@ -374,7 +389,7 @@ public class CarController : MonoBehaviour
         float newRoll = Mathf.MoveTowardsAngle(currentRoll, 0f,
                                                  airLevelingSpeed * Time.fixedDeltaTime);
 
-        // Yaw stays whatever it was — preserves heading direction
+        // Yaw stays whatever it was â€” preserves heading direction
         Quaternion newRotation = Quaternion.Euler(newPitch, currentEuler.y, newRoll);
         rb.MoveRotation(newRotation);
 
@@ -391,7 +406,7 @@ public class CarController : MonoBehaviour
 
     /// <summary>
     /// Returns true when the car's pitch and roll are both within the threshold
-    /// of zero — meaning the car is essentially level and air drift is safe.
+    /// of zero â€” meaning the car is essentially level and air drift is safe.
     /// </summary>
     bool IsCarLevel()
     {
@@ -401,7 +416,7 @@ public class CarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Maps an angle from the 0–360 range to -180–180 so MoveTowardsAngle
+    /// Maps an angle from the 0â€“360 range to -180â€“180 so MoveTowardsAngle
     /// returns to 0 along the shortest path.
     /// </summary>
     float NormalizeAngle(float angle)
@@ -502,7 +517,7 @@ public class CarController : MonoBehaviour
     // -------------------------------------------------------
 
     /// <summary>
-    /// Aerodynamic downforce — pushes the car straight down along world up.
+    /// Aerodynamic downforce â€” pushes the car straight down along world up.
     /// Scales with speed squared, like real aerodynamics, so high-speed crests
     /// generate enough downforce to keep the car planted.
     /// </summary>
@@ -557,12 +572,12 @@ public class CarController : MonoBehaviour
     /// <summary>
     /// While airborne (past grace period), A/D input translates the car
     /// horizontally perpendicular to its facing direction. Forward speed and
-    /// vertical fall speed are preserved exactly — only the lateral component
+    /// vertical fall speed are preserved exactly â€” only the lateral component
     /// of velocity is modified.
     /// </summary>
     void ApplyAirDrift()
     {
-        // Safety check — if the car is tilted past 45° from upright, skip air drift
+        // Safety check â€” if the car is tilted past 45Â° from upright, skip air drift
         // entirely. Sideways or steeply-pitched cars have unreliable forward/right
         // axes for horizontal projection, so trying to drift in those orientations
         // produces erratic velocity calculations.
@@ -583,7 +598,7 @@ public class CarController : MonoBehaviour
 
         // Decompose CURRENT velocity onto these horizontal unit vectors.
         // The horizontal components of velocity are projected onto the unit
-        // axes — which guarantees the recomposition produces a velocity of
+        // axes â€” which guarantees the recomposition produces a velocity of
         // matching magnitude rather than amplifying it.
         Vector3 vel = rb.linearVelocity;
         Vector3 horizontalVel = new Vector3(vel.x, 0f, vel.z);
@@ -601,6 +616,58 @@ public class CarController : MonoBehaviour
         // with only the drift component changed.
         Vector3 newHorizontal = forwardAxis * forwardSpeed + driftAxis * newDrift;
         rb.linearVelocity = new Vector3(newHorizontal.x, verticalSpeed, newHorizontal.z);
+    }
+
+    // Tracks whether loop gravity-cut is currently active (hysteresis state).
+    private bool loopGravityCut;
+
+    /// <summary>
+    /// True if any wheel is resting on a surface tagged as a loop.
+    /// </summary>
+    bool AnyWheelOnLoop()
+    {
+        return WheelOnLoop(wheelFL) || WheelOnLoop(wheelFR)
+            || WheelOnLoop(wheelRL) || WheelOnLoop(wheelRR);
+    }
+
+    bool WheelOnLoop(WheelCollider wheel)
+    {
+        if (wheel == null) return false;
+        if (!wheel.GetGroundHit(out WheelHit hit)) return false;
+        return hit.collider != null && hit.collider.CompareTag(loopTag);
+    }
+
+    /// <summary>
+    /// Disables gravity only once the car has rotated PAST vertical (starting to
+    /// invert) while on a loop, and restores it once it comes back up past
+    /// vertical or leaves the loop. The climb into the loop keeps full gravity so
+    /// the entry still feels weighty; the inverted top and descent run gravity-free
+    /// so the car can't peel off.
+    /// </summary>
+    void UpdateLoopGravity()
+    {
+        bool onLoop = AnyWheelOnLoop();
+
+        if (!onLoop)
+        {
+            loopGravityCut = false;
+        }
+        else
+        {
+            float uprightDot = Vector3.Dot(transform.up, Vector3.up);
+            if (!loopGravityCut && uprightDot < loopGravityDisableDot)
+                loopGravityCut = true;
+            else if (loopGravityCut && uprightDot > loopGravityEnableDot)
+                loopGravityCut = false;
+        }
+
+        rb.useGravity = !loopGravityCut;
+
+        // While gravity is cut on the loop, press the car gently onto the track
+        // surface (into the loop interior) so it doesn't drift off the inside at
+        // the apex. Acceleration mode = mass-independent, like gravity.
+        if (loopGravityCut && loopStickForce > 0f)
+            rb.AddForce(-transform.up * loopStickForce, ForceMode.Acceleration);
     }
 
     // -------------------------------------------------------

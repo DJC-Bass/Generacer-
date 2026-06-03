@@ -1030,6 +1030,7 @@ public class TrackGenerator : MonoBehaviour
 
         int trackLayer = LayerMask.NameToLayer("Track");
         if (trackLayer >= 0) obj.layer = trackLayer;
+        obj.tag = "Loop";
 
         if (shoulderWidth > 0f)
         {
@@ -1042,6 +1043,7 @@ public class TrackGenerator : MonoBehaviour
     {
         var shoulderObj = new GameObject(rightSide ? "LoopShoulderRight" : "LoopShoulderLeft");
         shoulderObj.transform.SetParent(parent);
+        shoulderObj.tag = "Loop";
 
         Mesh shoulderMesh = TrackMeshBuilder.BuildLoopShoulderMeshExplicit(
                     edge.sampledPoints, edge.loopNormals, roadWidth, shoulderWidth, roadThickness, rightSide, uvTilingFactor);
