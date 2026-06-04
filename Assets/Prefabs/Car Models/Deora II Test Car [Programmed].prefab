@@ -1668,15 +1668,15 @@ MonoBehaviour:
   sidewaysGripStiffness: 5
   antiRollForce: 25000
   frontDriveBias: 0.5
-  maxDownforce: 10000
-  brakingDownforceMultiplier: 8
+  maxDownforce: 20000
+  brakingDownforceMultiplier: 4
   hillGravityCompensation: 1
   climbTorqueBoost: 6
   fullAssistAngle: 25
-  airDriftSpeed: 100
-  airDriftAcceleration: 100
+  airDriftSpeed: 50
+  airDriftAcceleration: 50
   airDriftGracePeriod: 0.4
-  manualPitchSpeed: 10
+  manualPitchSpeed: 60
   pitchUpKey: 273
   pitchDownKey: 274
   airBrakeGravityMultiplier: 6
@@ -1688,4 +1688,4 @@ MonoBehaviour:
   loopTag: Loop
   loopGravityDisableDot: -0.05
   loopGravityEnableDot: 0.1
-  loopStickForce: 6
+  loopStickForce: 0
