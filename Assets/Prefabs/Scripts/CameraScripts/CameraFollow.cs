@@ -31,6 +31,11 @@ public class CameraFollow : MonoBehaviour
     [Tooltip("At/above this tilt (deg), the camera fully rolls with the car.")]
     public float rollBlendFull = 80f;
 
+    [Header("Loop FOV Kick")]
+    [Tooltip("Extra FOV added while the car is in the loop gravity-cut (past " +
+             "vertical on a loop). Lasts as long as that state is active.")]
+    public float loopFOVBoost = 30f;
+
     private Rigidbody targetRb;
     private Vector3 currentVelocity;
     private float currentRotationVelocity;
@@ -124,7 +129,7 @@ public class CameraFollow : MonoBehaviour
     {
         if (targetRb == null) return;
 
-        // Detect the moment turbo activates (rising edge) and start the FOV kick
+        // Turbo kick (existing) — rising-edge one-shot timer
         if (targetCar != null)
         {
             bool turboNow = targetCar.IsTurboActive;
@@ -132,8 +137,6 @@ public class CameraFollow : MonoBehaviour
                 turboFOVTimer = turboFOVDuration;
             prevTurboState = turboNow;
         }
-
-        // Tick the kick timer down
         if (turboFOVTimer > 0f)
             turboFOVTimer -= Time.deltaTime;
 
@@ -141,9 +144,14 @@ public class CameraFollow : MonoBehaviour
         float speed = targetRb.linearVelocity.magnitude * 3.6f;
         float targetFOV = Mathf.Lerp(baseFOV, maxFOV, speed / maxSpeed);
 
-        // Add the turbo boost while the kick timer is active
+        // Turbo boost while the kick timer is active
         if (turboFOVTimer > 0f)
             targetFOV += turboFOVBoost;
+
+        // Loop boost — sustained for as long as the car is in loop gravity-cut.
+        // No timer: it tracks the state directly, on when cut begins, off when it ends.
+        if (targetCar != null && targetCar.IsLoopGravityCut)
+            targetFOV += loopFOVBoost;
 
         cam.fieldOfView = Mathf.SmoothDamp(
             cam.fieldOfView,

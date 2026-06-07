@@ -117,6 +117,10 @@ public class CarController : MonoBehaviour
              "through the inverted apex. ~5-10 ≈ half-to-full gravity; 0 = off.")]
     public float loopStickForce = 6f;
 
+    [Tooltip("Multiplier applied to max speed and motor torque while any wheel is " +
+             "on a loop. 1 = no change, 2 = double speed and torque on loops.")]
+    public double loopSpeedMultiplier = 2.0;
+
     // -------------------------------------------------------
     //  Internal
     // -------------------------------------------------------
@@ -130,6 +134,8 @@ public class CarController : MonoBehaviour
     private float turboTimer = 0f;       // counts down while turbo is active
     private float turboCooldownTimer = 0f;
     public bool IsTurboActive => turboTimer > 0f;
+    /// <summary>True while the car is past vertical on a loop and gravity is cut.</summary>
+    public bool IsLoopGravityCut => loopGravityCut;
     private float manualPitchInput;
     // True once the car has finished its initial airborne self-leveling and the
     // player is allowed to take manual pitch control
@@ -454,8 +460,13 @@ public class CarController : MonoBehaviour
     void ApplyMotor()
     {
         // Apply turbo multiplier to both top speed and torque while active
-        float activeMaxSpeed = IsTurboActive ? maxSpeedMph * turboMultiplier : maxSpeedMph;
-        float activeMaxTorque = IsTurboActive ? maxMotorTorque * turboMultiplier : maxMotorTorque;
+        // Turbo multiplier (existing), then stack the loop multiplier on top so
+        // speed and torque scale up while driving on a loop.
+        float turbo = IsTurboActive ? turboMultiplier : 1f;
+        float loopMult = loopGravityCut ? (float)loopSpeedMultiplier : 1f;
+
+        float activeMaxSpeed = maxSpeedMph * turbo * loopMult;
+        float activeMaxTorque = maxMotorTorque * turbo * loopMult;
 
         float maxSpeedMs = activeMaxSpeed * MPH_TO_MS;
         float speedRatio = Mathf.Clamp01(rb.linearVelocity.magnitude / maxSpeedMs);

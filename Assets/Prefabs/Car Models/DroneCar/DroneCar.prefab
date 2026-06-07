@@ -505,9 +505,8 @@ MonoBehaviour:
   correctionStrength: 250
   rotationCorrection: 50
   maxOffPathDistance: 500
-  collisionCorrectionStrength: 10
-  collisionRotationCorrection: 1
-  recoveryDelay: 1
+  collisionCorrectionStrength: 0
+  collisionRotationCorrection: 0
   playerTag: Player
   verticalSpawnOffset: 0
   projectilePrefab: {fileID: 6459073600639540276, guid: ddc4ba61ae29c5a46a9bba987c6d356f, type: 3}
@@ -520,6 +519,7 @@ MonoBehaviour:
   playerTagForShooting: Player
   fireWindowDuration: 0.5
   fireCooldownDuration: 0.5
+  knockDownforce: 20
 --- !u!1 &4455739669367971782
 GameObject:
   m_ObjectHideFlags: 0

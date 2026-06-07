@@ -25,8 +25,6 @@ public class DroneCar : MonoBehaviour
     [Tooltip("Rotation correction while colliding — lower so the drone can be " +
              "spun/tilted by the impact rather than rigidly holding upright.")]
     public float collisionRotationCorrection = 1f;
-    [Tooltip("How long after the last player contact before full correction returns (seconds).")]
-    public float recoveryDelay = 1f;
     [Tooltip("Tag of the player car.")]
     public string playerTag = "Player";
 
@@ -61,6 +59,11 @@ public class DroneCar : MonoBehaviour
     public float fireWindowDuration = 1f;
     [Tooltip("Cooldown after a firing window before the drone can fire again (seconds).")]
     public float fireCooldownDuration = 1f;
+
+    [Tooltip("Downward acceleration applied after the player knocks this drone, " +
+             "mimicking gravity so it falls off the track toward the kill floor. " +
+             "Sink speed ≈ this / collisionCorrectionStrength.")]
+    public float knockDownforce = 20f;
 
     private TrackPath path;
     private Rigidbody rb;
@@ -115,7 +118,8 @@ public class DroneCar : MonoBehaviour
 
         Vector3 worldPos = transform.position;
         float deviation = Vector3.Distance(worldPos, targetPos);
-        if (deviation > maxOffPathDistance)
+        // Once hit, DON'T snap back to the path — let it drift and fall away.
+        if (!playerHit && deviation > maxOffPathDistance)
         {
             transform.position = targetPos;
             rb.linearVelocity = tangent * pathSpeed;
@@ -124,12 +128,10 @@ public class DroneCar : MonoBehaviour
 
         TryShoot();
 
-        // Decide which correction values to use based on how recently the
-        // player made contact. Within recoveryDelay seconds of contact, use
-        // the soft values so the player's hit has a lasting effect.
-        bool recentlyHit = (Time.time - lastPlayerContactTime) < recoveryDelay;
-        float activeCorrection = recentlyHit ? collisionCorrectionStrength : correctionStrength;
-        float activeRotation = recentlyHit ? collisionRotationCorrection : rotationCorrection;
+        // After a player hit, use the soft correction permanently (no recovery)
+        // so the drone stays knock-able and downforce can carry it off-track.
+        float activeCorrection = playerHit ? collisionCorrectionStrength : correctionStrength;
+        float activeRotation = playerHit ? collisionRotationCorrection : rotationCorrection;
 
         Vector3 toTarget = targetPos - worldPos;
         rb.AddForce(toTarget * activeCorrection, ForceMode.Acceleration);
@@ -141,6 +143,12 @@ public class DroneCar : MonoBehaviour
         Quaternion targetRot = Quaternion.LookRotation(tangent, Vector3.up);
         rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot,
                                           activeRotation * Time.fixedDeltaTime));
+
+        // Steady downforce after a hit — mimics gravity so the drone sinks off the
+        // track and falls to the kill floor. Applied after the path Lerp so it wins
+        // on the vertical axis.
+        if (playerHit)
+            rb.AddForce(Vector3.down * knockDownforce, ForceMode.Acceleration);
     }
 
     /// <summary>
@@ -348,18 +356,20 @@ public class DroneCar : MonoBehaviour
     //  Player Contact Detection
     // -------------------------------------------------------
 
+    // Set true once the player hits this drone. Correction drops to the soft
+    // values permanently (no recovery) and downforce pulls the drone off-track.
+    private bool playerHit = false;
+
     void OnCollisionEnter(Collision collision)
     {
         if (IsPlayer(collision.collider))
-            lastPlayerContactTime = Time.time;
+            playerHit = true;
     }
 
     void OnCollisionStay(Collision collision)
     {
-        // Keep refreshing the timestamp while the player is in contact so the
-        // recovery countdown only starts once they separate
         if (IsPlayer(collision.collider))
-            lastPlayerContactTime = Time.time;
+            playerHit = true;
     }
 
     bool IsPlayer(Collider other)

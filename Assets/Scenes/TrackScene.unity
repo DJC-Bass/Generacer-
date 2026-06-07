@@ -907,6 +907,7 @@ MonoBehaviour:
   turboFOVDuration: 2
   rollBlendStart: 25
   rollBlendFull: 80
+  loopFOVBoost: 30
 --- !u!1001 &2754024211961253112
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1111,7 +1112,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: waypointSpacing
-      value: 25
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: altitudeVariance
@@ -1151,7 +1152,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: startLateralVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: verticalHandleFactor
@@ -1163,7 +1164,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: finishLateralVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: loopExitForwardOffset
@@ -1171,11 +1172,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: startAltitudeVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: finishAltitudeVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceAltitudeSwing
@@ -1256,7 +1257,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: minSpawnFraction
-      value: 0.05
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
+      propertyPath: targetFinishTime
+      value: 240
       objectReference: {fileID: 0}
     - target: {fileID: 4024389309093854848, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: m_LocalPosition.x
