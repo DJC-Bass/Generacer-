@@ -534,7 +534,7 @@ public class TrackGenerator : MonoBehaviour
         // Minimum of 3 winding segments so no branch is a near-straight short shot.
         // Every branch gets enough intermediate control points to wind to the same
         // length as its neighbours, so no path is a shortcut.
-        int numSegments = 4;   // 3 or 4
+        int numSegments = Random.Range(4, 5);   // 3 or 4
 
         var controlPositions = new List<Vector3> { leaf.endPos };
 

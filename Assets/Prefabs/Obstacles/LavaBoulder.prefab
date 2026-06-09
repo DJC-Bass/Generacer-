@@ -187,9 +187,9 @@ MonoBehaviour:
   maxLifetime: 5000
   gravityMultiplier: 124
   playerTag: Player
-  homingDuration: 4
-  homingStrength: 20000
-  maxHomingSpeed: 5000
+  homingDuration: 2
+  homingStrength: 10000
+  maxHomingSpeed: 1000
 --- !u!1 &8185159337952819718
 GameObject:
   m_ObjectHideFlags: 0
