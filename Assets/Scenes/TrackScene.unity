@@ -184,6 +184,10 @@ PrefabInstance:
       value: 60
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: jumpRequiresGround
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: airDriftAcceleration
       value: 75
       objectReference: {fileID: 0}
@@ -895,7 +899,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   target: {fileID: 222848032}
-  offset: {x: 0, y: 3, z: -7}
+  offset: {x: 0, y: 2.5, z: -7}
   positionSmoothTime: -0.2
   rotationSmoothTime: 0
   lookAheadDistance: 5

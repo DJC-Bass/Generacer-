@@ -103,6 +103,14 @@ public class CarController : MonoBehaviour
     [Tooltip("Cooldown before turbo can be used again (seconds). 0 = no cooldown.")]
     public float turboCooldown = 0f;
 
+    [Header("Jump")]
+    [Tooltip("Instantaneous velocity (m/s) added along the car's local Y axis " +
+             "(transform.up) when the A button is pressed.")]
+    public float jumpVelocity = 12f;
+    [Tooltip("If true, the car can only jump when at least one wheel is grounded. " +
+             "Uncheck to allow midair jumps.")]
+    public bool jumpRequiresGround = true;
+
     [Header("Loop Gravity Assist")]
     [Tooltip("Tag on loop track meshes. Gravity is cut once the car passes " +
          "vertical while a wheel is on a loop, so it can complete the inverted half.")]
@@ -137,6 +145,9 @@ public class CarController : MonoBehaviour
     /// <summary>True while the car is past vertical on a loop and gravity is cut.</summary>
     public bool IsLoopGravityCut => loopGravityCut;
     private float manualPitchInput;
+    // Set in Update() when the player presses Jump; consumed (and cleared) in FixedUpdate
+    // so the impulse lands inside a physics step.
+    private bool jumpRequested;
     // True once the car has finished its initial airborne self-leveling and the
     // player is allowed to take manual pitch control
     private bool manualPitchUnlocked;
@@ -231,6 +242,11 @@ public class CarController : MonoBehaviour
         if (controls.Driving.Turbo.triggered)
             TryActivateTurbo();
 
+        // Jump — A button. Flag here, apply the impulse in FixedUpdate so it
+        // lands cleanly in a physics step.
+        if (controls.Driving.Jump.triggered)
+            jumpRequested = true;
+
         UpdateWheelMeshes();
     }
 
@@ -247,6 +263,14 @@ public class CarController : MonoBehaviour
             airborneTimer = 0f;
         else
             airborneTimer += Time.fixedDeltaTime;
+
+        // Consume a pending jump request before everything else this physics
+        // step so the impulse is in effect for the rest of the frame's forces.
+        if (jumpRequested)
+        {
+            jumpRequested = false;
+            TryJump();
+        }
 
         bool inRealAir = airborneTimer >= airDriftGracePeriod;
 
@@ -297,6 +321,28 @@ public class CarController : MonoBehaviour
 
         turboTimer = turboDuration;
         turboCooldownTimer = turboCooldown + turboDuration; // cooldown counts from activation
+    }
+
+    /// <summary>
+    /// Adds an instant vertical impulse along the car's local Y axis (transform.up).
+    /// Uses ForceMode.VelocityChange so the resulting jump velocity is exactly
+    /// jumpVelocity regardless of mass. Replaces any existing velocity along
+    /// transform.up so repeated jumps don't compound while still rising.
+    /// </summary>
+    void TryJump()
+    {
+        if (jumpRequiresGround && !AnyWheelGrounded()) return;
+
+        // Zero out the current velocity along transform.up before adding the
+        // jump impulse, so a jump always produces the same launch speed even
+        // when the car is already moving up (e.g. cresting a hill).
+        Vector3 vel = rb.linearVelocity;
+        float upComponent = Vector3.Dot(vel, transform.up);
+        if (upComponent > 0f)
+            vel -= transform.up * upComponent;
+        rb.linearVelocity = vel;
+
+        rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
     }
 
     /// <summary>

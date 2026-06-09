@@ -135,6 +135,24 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Jump"",
+                    ""type"": ""Button"",
+                    ""id"": ""a1b2c3d4-1111-2222-3333-444455556666"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""RearView"",
+                    ""type"": ""Button"",
+                    ""id"": ""c3d4e5f6-2222-3333-4444-555566667777"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -214,6 +232,28 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
                     ""action"": ""Turbo"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""b2c3d4e5-aaaa-bbbb-cccc-ddddeeeeffff"",
+                    ""path"": ""<Gamepad>/buttonSouth"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Jump"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""d4e5f6a7-bbbb-cccc-dddd-eeeeffff0000"",
+                    ""path"": ""<Gamepad>/rightStickPress"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""RearView"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         }
@@ -227,6 +267,8 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         m_Driving_Pitch = m_Driving.FindAction("Pitch", throwIfNotFound: true);
         m_Driving_Brake = m_Driving.FindAction("Brake", throwIfNotFound: true);
         m_Driving_Turbo = m_Driving.FindAction("Turbo", throwIfNotFound: true);
+        m_Driving_Jump = m_Driving.FindAction("Jump", throwIfNotFound: true);
+        m_Driving_RearView = m_Driving.FindAction("RearView", throwIfNotFound: true);
     }
 
     ~@GeneracerControls()
@@ -312,6 +354,8 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
     private readonly InputAction m_Driving_Pitch;
     private readonly InputAction m_Driving_Brake;
     private readonly InputAction m_Driving_Turbo;
+    private readonly InputAction m_Driving_Jump;
+    private readonly InputAction m_Driving_RearView;
     /// <summary>
     /// Provides access to input actions defined in input action map "Driving".
     /// </summary>
@@ -343,6 +387,14 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Driving/Turbo".
         /// </summary>
         public InputAction @Turbo => m_Wrapper.m_Driving_Turbo;
+        /// <summary>
+        /// Provides access to the underlying input action "Driving/Jump".
+        /// </summary>
+        public InputAction @Jump => m_Wrapper.m_Driving_Jump;
+        /// <summary>
+        /// Provides access to the underlying input action "Driving/RearView".
+        /// </summary>
+        public InputAction @RearView => m_Wrapper.m_Driving_RearView;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -384,6 +436,12 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
             @Turbo.started += instance.OnTurbo;
             @Turbo.performed += instance.OnTurbo;
             @Turbo.canceled += instance.OnTurbo;
+            @Jump.started += instance.OnJump;
+            @Jump.performed += instance.OnJump;
+            @Jump.canceled += instance.OnJump;
+            @RearView.started += instance.OnRearView;
+            @RearView.performed += instance.OnRearView;
+            @RearView.canceled += instance.OnRearView;
         }
 
         /// <summary>
@@ -410,6 +468,12 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
             @Turbo.started -= instance.OnTurbo;
             @Turbo.performed -= instance.OnTurbo;
             @Turbo.canceled -= instance.OnTurbo;
+            @Jump.started -= instance.OnJump;
+            @Jump.performed -= instance.OnJump;
+            @Jump.canceled -= instance.OnJump;
+            @RearView.started -= instance.OnRearView;
+            @RearView.performed -= instance.OnRearView;
+            @RearView.canceled -= instance.OnRearView;
         }
 
         /// <summary>
@@ -485,5 +549,19 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnTurbo(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Jump" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnJump(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "RearView" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnRearView(InputAction.CallbackContext context);
     }
 }

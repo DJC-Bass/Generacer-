@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class CameraFollow : MonoBehaviour
 {
@@ -42,9 +43,33 @@ public class CameraFollow : MonoBehaviour
     private float currentFOVVelocity;
     private Camera cam;
 
-    private CarController targetCar;        // NEW — to read turbo state
-    private float turboFOVTimer = 0f;       // NEW — counts down the kick
-    private bool prevTurboState = false;   // NEW — detects the activation moment
+    private CarController targetCar;        // NEW ï¿½ to read turbo state
+    private float turboFOVTimer = 0f;       // NEW ï¿½ counts down the kick
+    private bool prevTurboState = false;   // NEW ï¿½ detects the activation moment
+
+    // Rear-view toggle. When true, the camera's local Z offset is flipped (placing
+    // it in front of the car) AND the look-ahead direction is reversed, so the
+    // camera looks backward at what's behind the car ï¿½ like a rear-view mirror.
+    private GeneracerControls controls;
+    private bool rearView;
+
+    void OnEnable()
+    {
+        if (controls == null) controls = new GeneracerControls();
+        controls.Driving.Enable();
+    }
+
+    void OnDisable()
+    {
+        controls?.Driving.Disable();
+    }
+
+    void Update()
+    {
+        // Toggle rear view on R3 press. triggered fires once per press, not held.
+        if (controls.Driving.RearView.triggered)
+            rearView = !rearView;
+    }
 
     void Start()
     {
@@ -58,12 +83,19 @@ public class CameraFollow : MonoBehaviour
 
         if (target != null)
         {
-            transform.position = target.TransformPoint(offset);
+            transform.position = target.TransformPoint(EffectiveOffset);
             transform.LookAt(target, target.up);   // use car's up here too
         }
     }
 
-    // LateUpdate runs after all movement is done — always use this for cameras
+    /// <summary>
+    /// The car-local offset to follow, with Z flipped while rear view is active so
+    /// the camera sits in front of the car instead of behind it.
+    /// </summary>
+    Vector3 EffectiveOffset =>
+        rearView ? new Vector3(offset.x, offset.y, -offset.z) : offset;
+
+    // LateUpdate runs after all movement is done ï¿½ always use this for cameras
     void LateUpdate()
     {
         if (target == null) return;
@@ -76,7 +108,7 @@ public class CameraFollow : MonoBehaviour
     void FollowPosition()
     {
         // Calculate desired position in world space based on car's local offset
-        Vector3 desiredPosition = target.TransformPoint(offset);
+        Vector3 desiredPosition = target.TransformPoint(EffectiveOffset);
 
         // Smoothly move toward desired position
         transform.position = Vector3.SmoothDamp(
@@ -107,10 +139,13 @@ public class CameraFollow : MonoBehaviour
         Vector3 camUp = Vector3.Slerp(Vector3.up, target.up, blend);
         if (camUp.sqrMagnitude < 1e-6f) camUp = target.up;   // guard near 180deg
 
-        // Look slightly ahead of the car. Raise the focus by the SAME blended up so
-        // the framing stays consistent with the chosen orientation.
+        // Look slightly ahead of the car ï¿½ or BEHIND it while rear view is active,
+        // so the camera frames what's behind instead of what's ahead. Raise the
+        // focus by the SAME blended up so framing stays consistent with the chosen
+        // orientation.
+        float lookSign = rearView ? -1f : 1f;
         Vector3 lookTarget = target.position
-                           + target.forward * lookAheadDistance
+                           + target.forward * (lookAheadDistance * lookSign)
                            + camUp * 1.5f;
 
         Vector3 lookDir = (lookTarget - transform.position);
@@ -129,7 +164,7 @@ public class CameraFollow : MonoBehaviour
     {
         if (targetRb == null) return;
 
-        // Turbo kick (existing) — rising-edge one-shot timer
+        // Turbo kick (existing) ï¿½ rising-edge one-shot timer
         if (targetCar != null)
         {
             bool turboNow = targetCar.IsTurboActive;
@@ -148,7 +183,7 @@ public class CameraFollow : MonoBehaviour
         if (turboFOVTimer > 0f)
             targetFOV += turboFOVBoost;
 
-        // Loop boost — sustained for as long as the car is in loop gravity-cut.
+        // Loop boost ï¿½ sustained for as long as the car is in loop gravity-cut.
         // No timer: it tracks the state directly, on when cut begins, off when it ends.
         if (targetCar != null && targetCar.IsLoopGravityCut)
             targetFOV += loopFOVBoost;

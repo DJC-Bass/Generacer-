@@ -1685,7 +1685,10 @@ MonoBehaviour:
   turboMultiplier: 2
   turboDuration: 2
   turboCooldown: 0
+  jumpVelocity: 12
+  jumpRequiresGround: 0
   loopTag: Loop
   loopGravityDisableDot: -0.05
   loopGravityEnableDot: 0.1
   loopStickForce: 0
+  loopSpeedMultiplier: 2
