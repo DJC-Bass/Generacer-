@@ -33,10 +33,18 @@ public class KillFloor : MonoBehaviour
 
     void OnTriggerEnter(Collider other)
     {
+        // Drone? Despawn just that drone — independent of the player guard so a
+        // falling drone never blocks the player's own kill-floor trigger.
+        DroneCar drone = other.GetComponentInParent<DroneCar>();
+        if (drone != null)
+        {
+            Destroy(drone.gameObject);
+            return;
+        }
+
         if (triggered) return;
 
-        // Walk up the hierarchy looking for the Player tag — handles cases
-        // where wheel colliders or sub-objects enter the trigger first
+        // Walk up the hierarchy looking for the Player tag
         Transform t = other.transform;
         while (t != null)
         {

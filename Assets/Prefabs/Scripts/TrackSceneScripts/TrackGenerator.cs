@@ -80,6 +80,13 @@ public class TrackGenerator : MonoBehaviour
     public float convergenceSwing = 2500f;
     [Tooltip("How much altitude each convergence path can swing through during the return.")]
     public float convergenceAltitudeSwing = 800f;
+    [Tooltip("Random ± deviation applied to Convergence Altitude Swing once per track " +
+             "generation. 200 means each new track rolls a swing somewhere in " +
+             "[base-200, base+200]. 0 = always exactly the base value.")]
+    public float convergenceAltitudeSwingVariance = 0f;
+    // Resolved per-generation value of convergenceAltitudeSwing (base ± variance).
+    // Rolled once in GenerateTrack and read by BuildLeafConvergence.
+    private float currentConvergenceAltitudeSwing;
 
     [Header("Start Position Variance")]
     [Tooltip("Maximum lateral (X) offset of the start point from world origin (units).")]
@@ -197,6 +204,13 @@ public class TrackGenerator : MonoBehaviour
     {
         allEdges.Clear();
         leafEdges.Clear();
+
+        // Roll the convergence altitude swing once per generation so every leaf's
+        // return path shares the same vertical character, but successive runs
+        // (different seeds) vary.
+        float vDev = Random.Range(-convergenceAltitudeSwingVariance,
+                                   convergenceAltitudeSwingVariance);
+        currentConvergenceAltitudeSwing = Mathf.Max(0f, convergenceAltitudeSwing + vDev);
 
         // Start position: world origin plus random offsets so each play has a
         // uniquely-located starting point. Altitude is positive-only — start never
@@ -423,8 +437,8 @@ public class TrackGenerator : MonoBehaviour
             startDir = parent.endDir,
             endPos = endPos,
             endDir = fwdDir,
-            handleStart = extraLength * 0.4f,
-            handleEnd = extraLength * 0.4f,
+            handleStart = extraLength * 0.8f,
+            handleEnd = extraLength * 0.8f,
             parent = parent
         };
 
@@ -534,7 +548,7 @@ public class TrackGenerator : MonoBehaviour
         // Minimum of 3 winding segments so no branch is a near-straight short shot.
         // Every branch gets enough intermediate control points to wind to the same
         // length as its neighbours, so no path is a shortcut.
-        int numSegments = Random.Range(4, 5);   // 3 or 4
+        int numSegments = Random.Range(6, 7);   // 3 or 4
 
         var controlPositions = new List<Vector3> { leaf.endPos };
 
@@ -544,9 +558,9 @@ public class TrackGenerator : MonoBehaviour
         Vector3 sideAxis = Vector3.Cross(Vector3.up, axisDir).normalized;
         if (sideAxis.sqrMagnitude < 0.0001f) sideAxis = Vector3.right;
 
-        float styleSwing = Random.Range(0.6f, 1.6f);
-        float styleVertical = Random.Range(0.3f, 1.4f);
-        int windingPattern = Random.Range(0, 3);
+        float styleSwing = Random.Range(.5f, 12f);
+        float styleVertical = Random.Range(.3f, 1.4f);
+        int windingPattern = Random.Range(4, 6);
 
         float prevSide = 0f, prevVert = 0f;
 
@@ -559,7 +573,7 @@ public class TrackGenerator : MonoBehaviour
                                              convergenceSwing * styleSwing);
             int vertWinding = (windingPattern + 1) % 3;
             float vertOffset = ChooseOffset(vertWinding, t, prevVert,
-                                              convergenceAltitudeSwing * styleVertical);
+                                              currentConvergenceAltitudeSwing * styleVertical);
 
             Vector3 controlPos = straightPt + sideAxis * sideOffset + Vector3.up * vertOffset;
             controlPos.y = Mathf.Max(controlPos.y, minAltitude);
@@ -749,7 +763,7 @@ public class TrackGenerator : MonoBehaviour
         Vector3 up = Vector3.up;
 
         const float lowerFactor = 1f;
-        const float widthScale = 1.4f;
+        const float widthScale = 1.2f;
         const float sweepFrac = 0.98f;
         const float endBlend = 0.12f;   // fraction at each end that flattens to road
         float rv = radius * lowerFactor;
