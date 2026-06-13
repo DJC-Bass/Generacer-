@@ -1671,10 +1671,10 @@ MonoBehaviour:
   maxDownforce: 20000
   brakingDownforceMultiplier: 4
   hillGravityCompensation: 1
-  climbTorqueBoost: 6
+  climbTorqueBoost: 1
   fullAssistAngle: 25
-  airDriftSpeed: 50
-  airDriftAcceleration: 50
+  airDriftSpeed: 75
+  airDriftAcceleration: 75
   airDriftGracePeriod: 0.4
   manualPitchSpeed: 60
   pitchUpKey: 273
