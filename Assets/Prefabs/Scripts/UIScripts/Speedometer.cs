@@ -42,16 +42,14 @@ public class Speedometer : MonoBehaviour
 
     TextMeshProUGUI BuildLabel()
     {
-        // Reuse any Canvas in the scene to avoid stacking multiple. Otherwise build one.
-        Canvas canvas = FindObjectOfType<Canvas>();
-        if (canvas == null)
-        {
-            GameObject canvasGO = new GameObject("SpeedometerCanvas");
-            canvas = canvasGO.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvasGO.AddComponent<CanvasScaler>();
-            canvasGO.AddComponent<GraphicRaycaster>();
-        }
+        // Always build a dedicated canvas. Reusing a found canvas could grab a
+        // persistent (DontDestroyOnLoad) one like the credits HUD, which would
+        // make the speedometer survive scene loads and stack copies.
+        GameObject canvasGO = new GameObject("SpeedometerCanvas");
+        Canvas canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvasGO.AddComponent<CanvasScaler>();
+        canvasGO.AddComponent<GraphicRaycaster>();
 
         GameObject textGO = new GameObject("SpeedometerText");
         textGO.transform.SetParent(canvas.transform, false);

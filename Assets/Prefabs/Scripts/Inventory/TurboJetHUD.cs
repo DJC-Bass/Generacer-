@@ -1,0 +1,90 @@
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+
+/// <summary>
+/// Always-visible readout of the player's crafted Turbo and Jet counts, anchored
+/// to the bottom-left of the screen (Turbo on the left, Jet to its right with a
+/// gap). Persistent (lives on the same DontDestroyOnLoad object as
+/// PlayerInventory), so it shows in every scene with no setup, and updates live
+/// via <see cref="PlayerInventory.OnChanged"/>.
+/// </summary>
+[DefaultExecutionOrder(1000)]
+public class TurboJetHUD : MonoBehaviour
+{
+    public static TurboJetHUD Instance { get; private set; }
+
+    [Tooltip("Inventory item names to display.")]
+    public string turboItem = "Turbo";
+    public string jetItem = "Jet";
+
+    private TextMeshProUGUI turboLabel;
+    private TextMeshProUGUI jetLabel;
+
+    void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(this);
+            return;
+        }
+        Instance = this;
+        BuildUI();
+    }
+
+    void OnEnable()
+    {
+        if (PlayerInventory.Instance != null)
+            PlayerInventory.Instance.OnChanged += Refresh;
+        Refresh();
+    }
+
+    void OnDisable()
+    {
+        if (PlayerInventory.Instance != null)
+            PlayerInventory.Instance.OnChanged -= Refresh;
+    }
+
+    void Refresh()
+    {
+        var inv = PlayerInventory.Instance;
+        if (turboLabel != null) turboLabel.text = $"Turbo: {(inv != null ? inv.GetCount(turboItem) : 0)}";
+        if (jetLabel != null) jetLabel.text = $"Jet: {(inv != null ? inv.GetCount(jetItem) : 0)}";
+    }
+
+    void BuildUI()
+    {
+        var canvasGO = new GameObject("TurboJetHUDCanvas");
+        DontDestroyOnLoad(canvasGO);
+        var canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 150;
+        var scaler = canvasGO.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        // Turbo on the left, Jet offset to its right with a gap between them.
+        turboLabel = MakeLabel(canvasGO.transform, "TurboText",
+                               new Color(0.45f, 0.65f, 1f), anchoredX: 30f, width: 300f);
+        jetLabel = MakeLabel(canvasGO.transform, "JetText",
+                             new Color(0.65f, 0.82f, 1f), anchoredX: 360f, width: 300f);
+    }
+
+    static TextMeshProUGUI MakeLabel(Transform parent, string name, Color color,
+                                     float anchoredX, float width)
+    {
+        var go = new GameObject(name, typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        var t = go.AddComponent<TextMeshProUGUI>();
+        t.fontSize = 44;
+        t.color = color;
+        t.alignment = TextAlignmentOptions.BottomLeft;
+
+        var rt = t.rectTransform;
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 0f);  // bottom-left
+        rt.sizeDelta = new Vector2(width, 64f);
+        rt.anchoredPosition = new Vector2(anchoredX, 24f);
+        return t;
+    }
+}

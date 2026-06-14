@@ -111,6 +111,14 @@ public class CarController : MonoBehaviour
              "Uncheck to allow midair jumps.")]
     public bool jumpRequiresGround = true;
 
+    [Header("Ability Costs")]
+    [Tooltip("Each turbo boost consumes 1 of this inventory item. A boost won't " +
+             "fire without one. Leave blank to make turbo free.")]
+    public string turboItemName = "Turbo";
+    [Tooltip("Each jump consumes 1 of this inventory item. A jump won't fire " +
+             "without one. Leave blank to make jumping free.")]
+    public string jetItemName = "Jet";
+
     [Header("Loop Gravity Assist")]
     [Tooltip("Tag on loop track meshes. Gravity is cut once the car passes " +
          "vertical while a wheel is on a loop, so it can complete the inverted half.")]
@@ -234,17 +242,20 @@ public class CarController : MonoBehaviour
         // Manual air pitch — left stick Y
         manualPitchInput = controls.Driving.Pitch.ReadValue<float>();
 
-        // Brake — X button
-        brakeInput = controls.Driving.Brake.IsPressed() ? 1f : 0f;
+        // Brake — X button. Suppressed while a menu is open, since X is also the
+        // "charge Turbo" button at the upgrade ramp — crafting shouldn't brake.
+        brakeInput = (!MenuState.AnyOpen && controls.Driving.Brake.IsPressed()) ? 1f : 0f;
 
         // Add to the existing Update() method
         // Turbo — B button. triggered fires once on the press, not held.
-        if (controls.Driving.Turbo.triggered)
+        // Suppressed while a menu is open: B closes the store, and A buys, so we
+        // don't want those presses leaking into Turbo / Jump.
+        if (!MenuState.AnyOpen && controls.Driving.Turbo.triggered)
             TryActivateTurbo();
 
         // Jump — A button. Flag here, apply the impulse in FixedUpdate so it
         // lands cleanly in a physics step.
-        if (controls.Driving.Jump.triggered)
+        if (!MenuState.AnyOpen && controls.Driving.Jump.triggered)
             jumpRequested = true;
 
         UpdateWheelMeshes();
@@ -312,15 +323,33 @@ public class CarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Starts turbo if it's not already active and not on cooldown.
+    /// Starts turbo if it's not already active, not on cooldown, and the player
+    /// has a Turbo to spend. Consumes 1 Turbo from the inventory on activation.
     /// </summary>
     void TryActivateTurbo()
     {
         if (turboTimer > 0f) return;          // already boosting
         if (turboCooldownTimer > 0f) return;  // still cooling down
 
+        // Costs 1 Turbo. Consume returns false (and changes nothing) if the
+        // player has none, so the boost simply doesn't fire.
+        if (!TrySpend(turboItemName)) return;
+
         turboTimer = turboDuration;
         turboCooldownTimer = turboCooldown + turboDuration; // cooldown counts from activation
+    }
+
+    /// <summary>
+    /// Consumes 1 of the named inventory item, returning true if it was spent
+    /// (or if the cost is blank, meaning free). Returns false when the player
+    /// doesn't have one.
+    /// </summary>
+    bool TrySpend(string itemName)
+    {
+        if (string.IsNullOrEmpty(itemName)) return true;   // free
+        var inv = PlayerInventory.Instance;
+        if (inv == null) return false;
+        return inv.Consume(itemName, 1);
     }
 
     /// <summary>
@@ -332,6 +361,10 @@ public class CarController : MonoBehaviour
     void TryJump()
     {
         if (jumpRequiresGround && !AnyWheelGrounded()) return;
+
+        // Costs 1 Jet. Checked after the ground test so a Jet is never spent on a
+        // jump that couldn't happen anyway.
+        if (!TrySpend(jetItemName)) return;
 
         // Zero out the current velocity along transform.up before adding the
         // jump impulse, so a jump always produces the same launch speed even
