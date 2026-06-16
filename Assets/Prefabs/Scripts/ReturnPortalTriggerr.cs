@@ -27,7 +27,7 @@ public class ReturnPortalTrigger : MonoBehaviour
     {
         if (triggered) return;
 
-        // Walk up the hierarchy to find the Player tag — handles cases where
+        // Walk up the hierarchy to find the Player tag ï¿½ handles cases where
         // a wheel collider or sub-object enters the trigger first
         Transform t = other.transform;
         while (t != null)
@@ -44,6 +44,9 @@ public class ReturnPortalTrigger : MonoBehaviour
 
     void ReturnToHub()
     {
+        // Reward the player for completing the track BEFORE the manager ends the round.
+        AwardCompletionCredits();
+
         // Notify the manager BEFORE loading the scene so the round properly ends
         if (GameLoopManager.Instance != null)
             GameLoopManager.Instance.NotifyReturnedToHub();
@@ -55,5 +58,33 @@ public class ReturnPortalTrigger : MonoBehaviour
                              : "HubWorld";
 
         SceneManager.LoadScene(sceneName);
+    }
+
+    /// <summary>
+    /// Grants the player their credits for reaching the End Portal: the flat
+    /// completion reward, plus a first-place bonus if no AI car finished the track
+    /// first this round. Both amounts are tunable on the GameLoopManager.
+    /// </summary>
+    void AwardCompletionCredits()
+    {
+        var inventory = PlayerInventory.Instance;
+        if (inventory == null) return;   // nothing to credit if the inventory isn't up
+
+        var manager = GameLoopManager.Instance;
+
+        // Fall back to sensible defaults if the manager is somehow missing.
+        int completion = manager != null ? manager.trackCompletionCredits : 200;
+        int firstPlaceBonus = manager != null ? manager.firstPlaceBonusCredits : 200;
+
+        // First place = no AI car has finished ahead of the player this round.
+        bool firstPlace = manager == null || !manager.AnyRacerFinishedAhead;
+
+        int reward = completion + (firstPlace ? firstPlaceBonus : 0);
+        inventory.AddCredits(reward);
+
+        Debug.Log(firstPlace
+            ? $"[ReturnPortal] First place! Awarded {reward} credits " +
+              $"({completion} completion + {firstPlaceBonus} first-place bonus)"
+            : $"[ReturnPortal] Track complete. Awarded {reward} credits (completion only)");
     }
 }

@@ -65,6 +65,11 @@ public class DroneCar : MonoBehaviour
              "Sink speed ≈ this / collisionCorrectionStrength.")]
     public float knockDownforce = 20f;
 
+    [Header("Reward")]
+    [Tooltip("Credits awarded to the player if they knock this car off the track and " +
+             "into the kill floor. DroneCar = 100, ChallengerCar = 200.")]
+    public int creditReward = 100;
+
     private TrackPath path;
     private Rigidbody rb;
     private float lastFireTime = -999f;
@@ -112,6 +117,9 @@ public class DroneCar : MonoBehaviour
         if (pathDistance >= path.TotalLength)
         {
             finished = true;
+            // This AI car crossed the finish before the player — they forfeit first place.
+            if (GameLoopManager.Instance != null)
+                GameLoopManager.Instance.NotifyRacerFinished();
             Destroy(gameObject, 1f);
             return;
         }
@@ -359,6 +367,29 @@ public class DroneCar : MonoBehaviour
     // Set true once the player hits this drone. Correction drops to the soft
     // values permanently (no recovery) and downforce pulls the drone off-track.
     private bool playerHit = false;
+
+    // Guards the bounty so multiple colliders crossing the kill floor in one frame
+    // (before this object is actually destroyed) can't pay out more than once.
+    private bool bountyClaimed = false;
+
+    /// <summary>
+    /// Called by the kill floor as this car is destroyed there. If the player
+    /// knocked it off the track (playerHit), awards its credit bounty to the player.
+    /// A car that fell on its own or finished the track never reaches here, so only
+    /// genuine player knock-offs pay out.
+    /// </summary>
+    public void AwardKnockoffBounty()
+    {
+        if (bountyClaimed) return;
+        bountyClaimed = true;
+
+        if (!playerHit) return;   // not knocked off by the player — no reward
+        if (PlayerInventory.Instance == null) return;
+
+        PlayerInventory.Instance.AddCredits(creditReward);
+        Debug.Log($"[DroneCar] Player knocked this car into the kill floor — " +
+                  $"awarded {creditReward} credits");
+    }
 
     void OnCollisionEnter(Collision collision)
     {

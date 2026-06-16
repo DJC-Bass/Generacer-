@@ -26,7 +26,12 @@ public class TrackSceneController : MonoBehaviour
 
     void ForceReturnToHub()
     {
-        // Same effect as kill floor — reload hub scene
+        // Ran out of time without reaching the End Portal â€” same failure penalty as
+        // the kill floor: wipe inventory back to the starting defaults.
+        if (PlayerInventory.Instance != null)
+            PlayerInventory.Instance.ResetToStarting();
+
+        // Same effect as kill floor ï¿½ reload hub scene
         SceneManager.LoadScene(GameLoopManager.Instance.hubSceneName);
     }
 }

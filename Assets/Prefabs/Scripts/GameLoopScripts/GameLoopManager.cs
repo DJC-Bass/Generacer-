@@ -27,6 +27,15 @@ public class GameLoopManager : MonoBehaviour
     [Tooltip("Brief pause before the next round's countdown starts after a round ends.")]
     public float postRoundDelay = 2f;
 
+    [Header("Rewards")]
+    [Tooltip("Credits granted when the player completes the track (reaches the End Portal). " +
+             "Tweak for balancing.")]
+    public int trackCompletionCredits = 200;
+    [Tooltip("Extra credits granted on top of the completion reward if the player reaches " +
+             "the End Portal before any AI car (drone/challenger) finishes â€” i.e. first place. " +
+             "Tweak for balancing.")]
+    public int firstPlaceBonusCredits = 200;
+
     [Header("Scene Names")]
     public string hubSceneName = "HubWorld";
     public string trackSceneName = "TrackScene";
@@ -39,7 +48,12 @@ public class GameLoopManager : MonoBehaviour
     public float TimeRemainingInPhase { get; private set; }
     public float RoundTimeRemaining { get; private set; }
 
-    // Events — scene controllers subscribe to these to react to state changes
+    /// <summary>True once any AI car (drone/challenger) has reached the track finish
+    /// this round. Reset when the player enters the track. Read by the End Portal to
+    /// decide whether the player earned the first-place bonus.</summary>
+    public bool AnyRacerFinishedAhead { get; private set; }
+
+    // Events ï¿½ scene controllers subscribe to these to react to state changes
     public event Action OnPortalShouldSpawn;
     public event Action OnPortalShouldDespawn;
     public event Action OnRoundTimeoutInTrack;
@@ -100,14 +114,14 @@ public class GameLoopManager : MonoBehaviour
     {
         CurrentPhase = Phase.HubCountdown;
         TimeRemainingInPhase = UnityEngine.Random.Range(minPortalCountdown, maxPortalCountdown);
-        Debug.Log($"[GameLoop] Hub countdown started — {TimeRemainingInPhase:F1}s until portal spawns");
+        Debug.Log($"[GameLoop] Hub countdown started ï¿½ {TimeRemainingInPhase:F1}s until portal spawns");
     }
 
     void EnterPortalActivePhase()
     {
         CurrentPhase = Phase.HubPortalActive;
         RoundTimeRemaining = roundDuration;
-        Debug.Log($"[GameLoop] Portal active — {RoundTimeRemaining:F0}s round timer started");
+        Debug.Log($"[GameLoop] Portal active ï¿½ {RoundTimeRemaining:F0}s round timer started");
         OnPortalShouldSpawn?.Invoke();
     }
 
@@ -115,13 +129,13 @@ public class GameLoopManager : MonoBehaviour
     {
         if (CurrentPhase == Phase.HubPortalActive)
         {
-            Debug.Log("[GameLoop] Round expired in hub — despawning portal");
+            Debug.Log("[GameLoop] Round expired in hub ï¿½ despawning portal");
             OnPortalShouldDespawn?.Invoke();
             EndRoundAndRestart();
         }
         else if (CurrentPhase == Phase.InTrack)
         {
-            Debug.Log("[GameLoop] Round expired in track — sending player back to hub");
+            Debug.Log("[GameLoop] Round expired in track ï¿½ sending player back to hub");
             OnRoundTimeoutInTrack?.Invoke();
 
             // CRITICAL: Advance the phase so this branch doesn't fire again next frame.
@@ -138,17 +152,27 @@ public class GameLoopManager : MonoBehaviour
     }
 
     // -------------------------------------------------------
-    //  Public API — called by scene-side controllers
+    //  Public API ï¿½ called by scene-side controllers
     // -------------------------------------------------------
 
-    /// <summary>Player has entered the hub portal — they're now in the track.</summary>
+    /// <summary>Player has entered the hub portal ï¿½ they're now in the track.</summary>
     public void NotifyEnteredTrack()
     {
         if (CurrentPhase == Phase.HubPortalActive)
         {
             CurrentPhase = Phase.InTrack;
-            Debug.Log($"[GameLoop] Player entered track — {RoundTimeRemaining:F0}s remaining");
+            AnyRacerFinishedAhead = false;   // fresh race â€” nobody has finished yet
+            Debug.Log($"[GameLoop] Player entered track ï¿½ {RoundTimeRemaining:F0}s remaining");
         }
+    }
+
+    /// <summary>Called by an AI car (drone/challenger) when it reaches the end of its
+    /// path. Marks that the player can no longer claim first place this round.</summary>
+    public void NotifyRacerFinished()
+    {
+        if (!AnyRacerFinishedAhead)
+            Debug.Log("[GameLoop] An AI car reached the finish first â€” first-place bonus lost");
+        AnyRacerFinishedAhead = true;
     }
 
     /// <summary>Player returned to hub via end-portal or kill-floor.</summary>
@@ -156,7 +180,7 @@ public class GameLoopManager : MonoBehaviour
     {
         if (CurrentPhase == Phase.InTrack)
         {
-            Debug.Log("[GameLoop] Player returned to hub — round complete");
+            Debug.Log("[GameLoop] Player returned to hub ï¿½ round complete");
             EndRoundAndRestart();
         }
     }

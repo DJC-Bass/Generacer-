@@ -55,6 +55,22 @@ public class CarController : MonoBehaviour
          "3 = triple. Helps keep the car planted when braking hard into turns or down hills.")]
     public float brakingDownforceMultiplier = 2.5f;
 
+    [Header("Drift")]
+    [Tooltip("Hold Throttle (RT) and Brake (X) at the same time to drift. The car keeps " +
+         "power but brakes softly, loses sideways grip, and gains heavy downforce so it " +
+         "slides in a controlled arc. Release either input to leave the drift.")]
+    public float driftBrakeTorque = 1000f;
+    [Tooltip("Sideways tire stiffness while drifting. Much lower than the normal " +
+         "Sideways Grip Stiffness so the back end breaks loose.")]
+    public float driftSidewaysGripStiffness = 1f;
+    [Tooltip("Max downforce (Newtons at top speed) while drifting. Replaces the normal " +
+         "braking downforce bonus to keep the sliding car planted.")]
+    public float driftMaxDownforce = 30000f;
+    [Tooltip("Max steer angle at high speed while drifting. Higher than the normal " +
+         "high-speed cap (Max Steer Angle High Speed) so the player can counter-steer " +
+         "through a slide.")]
+    public float driftMaxSteerAngleHighSpeed = 35f;
+
     [Header("Hill Climb Assist")]
     [Tooltip("Counteracts gravity along the car's forward direction when climbing. " +
              "1.0 = no speed loss going uphill, 0.0 = full physics.")]
@@ -150,6 +166,11 @@ public class CarController : MonoBehaviour
     private float turboTimer = 0f;       // counts down while turbo is active
     private float turboCooldownTimer = 0f;
     public bool IsTurboActive => turboTimer > 0f;
+    // True while the player holds throttle + brake together. Softens braking, drops
+    // sideways grip, and spikes downforce so the car slides controllably.
+    private bool isDrifting;
+    /// <summary>True while the car is in the drift state (throttle + brake held).</summary>
+    public bool IsDrifting => isDrifting;
     /// <summary>True while the car is past vertical on a loop and gravity is cut.</summary>
     public bool IsLoopGravityCut => loopGravityCut;
     private float manualPitchInput;
@@ -183,6 +204,19 @@ public class CarController : MonoBehaviour
     {
         return wheelFL.isGrounded || wheelFR.isGrounded
             || wheelRL.isGrounded || wheelRR.isGrounded;
+    }
+
+    /// <summary>
+    /// True when both the left and right triggers are held — the LRA race-abort
+    /// gesture (L + R + A). Read straight off the gamepad because the Throttle
+    /// action is a single RT-minus-LT axis that can't distinguish both-held.
+    /// </summary>
+    bool BothTriggersHeld()
+    {
+        var gp = Gamepad.current;
+        return gp != null
+            && gp.leftTrigger.ReadValue() > 0.5f
+            && gp.rightTrigger.ReadValue() > 0.5f;
     }
 
     public float SpeedMph => rb.linearVelocity.magnitude * MS_TO_MPH;
@@ -254,8 +288,10 @@ public class CarController : MonoBehaviour
             TryActivateTurbo();
 
         // Jump — A button. Flag here, apply the impulse in FixedUpdate so it
-        // lands cleanly in a physics step.
-        if (!MenuState.AnyOpen && controls.Driving.Jump.triggered)
+        // lands cleanly in a physics step. Suppressed while both triggers are held,
+        // since L+R+A is the LRA race-abort gesture — we don't want that A press to
+        // also fire a jump (and spend a Jet).
+        if (!MenuState.AnyOpen && controls.Driving.Jump.triggered && !BothTriggersHeld())
             jumpRequested = true;
 
         UpdateWheelMeshes();
@@ -285,6 +321,7 @@ public class CarController : MonoBehaviour
 
         bool inRealAir = airborneTimer >= airDriftGracePeriod;
 
+        UpdateDriftState();
         ApplySteering();
         ApplyMotor();
         ApplyBrakes();
@@ -516,8 +553,13 @@ public class CarController : MonoBehaviour
         float speedFactor = Mathf.Clamp01(SpeedMph / maxSpeedMph);
         float curvedFactor = Mathf.Pow(speedFactor, 0.6f);
 
+        // While drifting, raise the high-speed steer cap so the front wheels can
+        // turn far enough to catch and counter-steer the slide.
+        float highSpeedSteer = isDrifting ? driftMaxSteerAngleHighSpeed
+                                          : maxSteerAngleHighSpeed;
+
         float currentMaxSteer = Mathf.Lerp(maxSteerAngleLowSpeed,
-                                           maxSteerAngleHighSpeed,
+                                           highSpeedSteer,
                                            curvedFactor);
 
         float targetSteer = currentMaxSteer * steerInput;
@@ -586,12 +628,55 @@ public class CarController : MonoBehaviour
     }
 
     // -------------------------------------------------------
+    //  Drift
+    // -------------------------------------------------------
+
+    /// <summary>
+    /// Enters the drift state when the player holds Throttle (RT) and Brake (X)
+    /// together, and leaves it the moment either is released — releasing throttle
+    /// falls back to normal braking, releasing brake falls back to normal driving.
+    /// On each transition the wheels' sideways grip is swapped between the normal
+    /// and drift stiffness; the softened brake torque and elevated downforce are
+    /// read live from <see cref="isDrifting"/> in ApplyBrakes/ApplyDownforce.
+    /// </summary>
+    void UpdateDriftState()
+    {
+        // Throttle is RT minus LT, so > 0 means RT is genuinely held forward.
+        bool wantDrift = throttleInput > 0.05f && brakeInput > 0.05f;
+        if (wantDrift == isDrifting) return;
+
+        isDrifting = wantDrift;
+        SetRearSidewaysStiffness(isDrifting ? driftSidewaysGripStiffness
+                                            : sidewaysGripStiffness);
+    }
+
+    /// <summary>Sets the sideways friction stiffness on the REAR wheels only (RL/RR),
+    /// leaving the rest of each wheel's friction curve (set up in ApplyFrictionCurves)
+    /// intact. The front wheels keep their normal grip so the car still steers while
+    /// the back end breaks loose.</summary>
+    void SetRearSidewaysStiffness(float stiffness)
+    {
+        SetWheelSidewaysStiffness(wheelRL, stiffness);
+        SetWheelSidewaysStiffness(wheelRR, stiffness);
+    }
+
+    void SetWheelSidewaysStiffness(WheelCollider wheel, float stiffness)
+    {
+        WheelFrictionCurve side = wheel.sidewaysFriction;
+        side.stiffness = stiffness;
+        wheel.sidewaysFriction = side;
+    }
+
+    // -------------------------------------------------------
     //  Brakes
     // -------------------------------------------------------
 
     void ApplyBrakes()
     {
-        float brake = brakeInput * maxBrakeTorque;
+        // While drifting, brake with a much softer max torque so the car keeps
+        // rolling and slides rather than stopping.
+        float activeMaxBrake = isDrifting ? driftBrakeTorque : maxBrakeTorque;
+        float brake = brakeInput * activeMaxBrake;
 
         if (Mathf.Abs(throttleInput) < 0.05f && brakeInput < 0.05f)
             brake = engineBrakeTorque;
@@ -614,12 +699,16 @@ public class CarController : MonoBehaviour
     void ApplyDownforce()
     {
         float speedRatio = Mathf.Clamp01(SpeedMph / maxSpeedMph);
-        float force = maxDownforce * speedRatio * speedRatio;
 
-        // While the brake is held, scale up the downforce. The brake input is
-        // 0-1, so multiplying it lets the bonus ramp in smoothly with brake
-        // pressure rather than snapping on instantly.
-        if (brakeInput > 0.05f)
+        // While drifting, use the elevated drift max downforce instead of the normal
+        // one, and skip the braking bonus below — the high max downforce replaces it.
+        float activeMaxDownforce = isDrifting ? driftMaxDownforce : maxDownforce;
+        float force = activeMaxDownforce * speedRatio * speedRatio;
+
+        // While the brake is held (and not drifting), scale up the downforce. The
+        // brake input is 0-1, so multiplying it lets the bonus ramp in smoothly with
+        // brake pressure rather than snapping on instantly.
+        if (!isDrifting && brakeInput > 0.05f)
         {
             float brakingBonus = (brakingDownforceMultiplier - 1f) * brakeInput;
             force *= 1f + brakingBonus;

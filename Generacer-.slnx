@@ -1,4 +1,7 @@
 ﻿<Solution>
+  <Project Path="Unity.PlasticSCM.Editor.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Unity.CollabProxy.Editor.csproj" />
+  <Project Path="Unity.PlasticSCM.Editor.Entities.csproj" />
 </Solution>

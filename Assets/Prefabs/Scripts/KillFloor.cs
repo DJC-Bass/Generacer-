@@ -33,11 +33,14 @@ public class KillFloor : MonoBehaviour
 
     void OnTriggerEnter(Collider other)
     {
-        // Drone? Despawn just that drone — independent of the player guard so a
+        // Drone? Despawn just that drone ï¿½ independent of the player guard so a
         // falling drone never blocks the player's own kill-floor trigger.
         DroneCar drone = other.GetComponentInParent<DroneCar>();
         if (drone != null)
         {
+            // Pay the player their bounty if THEY knocked this car in here. No-op
+            // for cars that fell on their own. Guarded against double-paying.
+            drone.AwardKnockoffBounty();
             Destroy(drone.gameObject);
             return;
         }
@@ -60,6 +63,10 @@ public class KillFloor : MonoBehaviour
 
     void ReturnToHub()
     {
+        // Failed the run (fell off the track) â€” wipe inventory back to the defaults.
+        if (PlayerInventory.Instance != null)
+            PlayerInventory.Instance.ResetToStarting();
+
         if (GameLoopManager.Instance != null)
             GameLoopManager.Instance.NotifyReturnedToHub();
 

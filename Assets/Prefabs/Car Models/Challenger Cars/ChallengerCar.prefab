@@ -543,6 +543,7 @@ MonoBehaviour:
   fireWindowDuration: 1
   fireCooldownDuration: 1
   knockDownforce: 20
+  creditReward: 200
 --- !u!1 &5599075166028337191
 GameObject:
   m_ObjectHideFlags: 0

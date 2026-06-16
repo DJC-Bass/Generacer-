@@ -30,6 +30,12 @@ public class PlayerInventory : MonoBehaviour
     };
     private bool startingItemsSeeded;
 
+    // Credits the player starts the session with — and is reset to when they fail a
+    // run (kill floor / timeout). Code-configured like startingItems because the
+    // inventory is bootstrapped without a scene component to edit in the Inspector.
+    [SerializeField]
+    private int startingCredits = 200;
+
     // item name -> quantity owned
     private readonly Dictionary<string, int> counts = new Dictionary<string, int>();
     // first-acquired order, so the inventory view lists items in a stable order
@@ -58,6 +64,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<InventoryView>();
         go.AddComponent<CreditsHUD>();
         go.AddComponent<TurboJetHUD>();
+        go.AddComponent<LraAbortController>();   // L+R+A hold-to-abort + its progress bar
         DontDestroyOnLoad(go);
     }
 
@@ -72,6 +79,7 @@ public class PlayerInventory : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         SeedStartingItems();
+        SeedCreditsOnce(startingCredits);   // start the session at the default credits
     }
 
     /// <summary>Grants the configured starting items once per play session.</summary>
@@ -106,6 +114,28 @@ public class PlayerInventory : MonoBehaviour
     public void AddCredits(int amount)
     {
         Credits += amount;
+        OnChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Wipes all owned items and credits and restores the starting defaults
+    /// (startingItems + startingCredits). This is the failure penalty applied when
+    /// the player returns to the hub WITHOUT completing the track — via the kill
+    /// floor or by running out of time. Completing the track (the End Portal) never
+    /// calls this, so a successful run keeps everything the player earned/bought.
+    /// </summary>
+    public void ResetToStarting()
+    {
+        counts.Clear();
+        order.Clear();
+
+        // Re-grant the starting items. Add() repopulates counts + order per stack.
+        if (startingItems != null)
+            foreach (var stack in startingItems)
+                if (!string.IsNullOrEmpty(stack.itemName) && stack.amount > 0)
+                    Add(stack.itemName, stack.amount);
+
+        Credits = startingCredits;
         OnChanged?.Invoke();
     }
 
