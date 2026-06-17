@@ -20,6 +20,16 @@ public class DroneCarSpawner : MonoBehaviour
     [Range(0f, 1f)] public float minSpawnFraction = 0.1f;
     [Range(0f, 1f)] public float maxSpawnFraction = 0.7f;
 
+    [Header("Layer")]
+    [Tooltip("Layer assigned to each spawned drone and ALL of its children. Keeps drones " +
+         "off the Default layer so vision (which filters on the Drone layer) and the " +
+         "car's ground raycasts can treat them cleanly. Must match a layer that exists " +
+         "in Project Settings > Tags and Layers.")]
+    public string droneLayerName = "Drone";
+
+    // Resolved from droneLayerName each spawn; -1 if the layer doesn't exist.
+    private int droneLayer = -1;
+
     private bool spawned;
 
     void Update()
@@ -88,5 +98,13 @@ public class DroneCarSpawner : MonoBehaviour
             if (drone.GetComponent<DroneFadeIn>() == null)
                 drone.AddComponent<DroneFadeIn>();
         }
+    }
+
+    /// <summary>Sets the layer on a GameObject and every descendant under it.</summary>
+    static void SetLayerRecursively(GameObject go, int layer)
+    {
+        go.layer = layer;
+        foreach (Transform child in go.transform)
+            SetLayerRecursively(child.gameObject, layer);
     }
 }
