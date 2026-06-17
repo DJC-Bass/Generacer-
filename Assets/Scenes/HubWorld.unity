@@ -119,6 +119,11 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!146 &91070400 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 2939522217072432142, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
 --- !u!64 &292092542
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -141,6 +146,16 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 70948873267775455, guid: 98e9a73522d8ed9459893ee2641a90ac, type: 3}
+--- !u!4 &400379161 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2433826416149793050, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &560128872 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8433661904055072838, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &634405226
 GameObject:
   m_ObjectHideFlags: 0
@@ -244,6 +259,16 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+--- !u!4 &728383758 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2588078514965362444, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
+--- !u!146 &947590903 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 8113206135400813906, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
 --- !u!64 &994685998
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -288,6 +313,21 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 0}
+--- !u!146 &1000985307 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 6419492832485104668, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1006646627 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7979931739543807427, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1096832511 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3580986238501043364, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1331426235
 GameObject:
   m_ObjectHideFlags: 0
@@ -578,8 +618,116 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: meshFL
+      value: 
+      objectReference: {fileID: 1096832511}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: meshFR
+      value: 
+      objectReference: {fileID: 400379161}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: meshRL
+      value: 
+      objectReference: {fileID: 1006646627}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: meshRR
+      value: 
+      objectReference: {fileID: 728383758}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: wheelFL
+      value: 
+      objectReference: {fileID: 1000985307}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: wheelFR
+      value: 
+      objectReference: {fileID: 2015737736}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: wheelRL
+      value: 
+      objectReference: {fileID: 91070400}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: wheelRR
+      value: 
+      objectReference: {fileID: 947590903}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: rideHeight
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: jetItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: acceleration
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: centerOfMass
+      value: 
+      objectReference: {fileID: 560128872}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: springDamper
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: brakeStrength
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: engineBraking
+      value: 20
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turboDuration
       value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: turboItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: maxWheelTravel
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: springStrength
+      value: 300
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: turnRateLowSpeed
+      value: 750
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: groundMask.m_Bits
+      value: 4294967295
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: turnRateHighSpeed
+      value: 500
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: driftBrakeStrength
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: reverseAcceleration
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: suspensionRayLength
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: orientationLerpSpeed
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: driftTurnRateHighSpeed
+      value: 1000
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: hillGravityCompensation
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: m_Name
@@ -666,6 +814,11 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 6.0000005, y: 2.06, z: 3.000001}
   m_Center: {x: 0.00000016470956, y: 2.03, z: 0.5000001}
+--- !u!146 &2015737736 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 304923036243870484, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+  m_PrefabInstance: {fileID: 1935606482}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &2023350878
 GameObject:
   m_ObjectHideFlags: 0

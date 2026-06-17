@@ -1,10 +1,31 @@
-﻿using UnityEngine;
-using UnityEngine.InputSystem;   // NEW
+using UnityEngine;
+using UnityEngine.InputSystem;
 
+/// <summary>
+/// Arcade RAYCAST car controller. Replaces the old WheelCollider-based simulation,
+/// whose suspension oscillated and shook the car on steep hills and loops at high
+/// speed. Instead of physical wheel springs, this:
+///
+///   • Casts a ray down from each wheel anchor to find the ground.
+///   • Holds ride height with a single damped hover force at the centre of mass
+///     (no per-wheel spring torque, so nothing oscillates).
+///   • Drives orientation EXPLICITLY — aligns the car's up to the averaged ground
+///     normal and turns its heading directly — which is what keeps hills and loops
+///     perfectly smooth at 300 mph.
+///   • Uses a simple grip model (cancel sideways velocity) for cornering, softened
+///     at the rear while drifting.
+///
+/// The existing prefab wiring is reused as-is: the four WheelCollider references are
+/// kept (and DISABLED at runtime) purely so their transforms serve as ray anchors,
+/// and the body's BoxCollider still handles drone hits / kill-floor triggers.
+///
+/// Public API (SpeedMph, IsTurboActive, IsLoopGravityCut, IsDrifting,
+/// IsManuallyPitching) is unchanged so the camera and speedometer keep working.
+/// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public class CarController : MonoBehaviour
 {
-    [Header("Wheel Colliders")]
+    [Header("Wheel Anchors (kept for ray origins; colliders are disabled at runtime)")]
     public WheelCollider wheelFL;
     public WheelCollider wheelFR;
     public WheelCollider wheelRL;
@@ -19,100 +40,123 @@ public class CarController : MonoBehaviour
     [Header("Speed")]
     [Tooltip("Top speed in mph.")]
     public float maxSpeedMph = 300f;
-    [Tooltip("Peak motor torque applied at low speed; falls off as max is approached.")]
-    public float maxMotorTorque = 4500f;
+    [Tooltip("Forward acceleration at full throttle and low speed (m/s^2). Falls off " +
+             "toward zero as the car nears its top speed.")]
+    public float acceleration = 35f;
+    [Tooltip("Reverse acceleration when holding the Left Trigger from a near stop (m/s^2).")]
+    public float reverseAcceleration = 16f;
+
+    [Header("Ground Detection / Raycast")]
+    [Tooltip("Layers the suspension rays test against. Should include the track, " +
+             "shoulders, ramps and loops. Triggers are always ignored.")]
+    public LayerMask groundMask = ~0;
+    [Tooltip("How far below each wheel anchor the ray probes for ground (metres). " +
+             "Must comfortably exceed Ride Height so the car still detects the surface " +
+             "through suspension travel and over crests.")]
+    public float suspensionRayLength = 1.6f;
+    [Tooltip("Target gap from each wheel anchor down to the ground (metres). The hover " +
+             "force keeps the car floating at this height.")]
+    public float rideHeight = 0.5f;
+
+    [Header("Suspension (hover)")]
+    [Tooltip("Stiffness of the ride-height hover (acceleration units). Higher = the " +
+             "car resists being pushed off ride height more strongly.")]
+    public float springStrength = 130f;
+    [Tooltip("Damping of the hover. Higher = less bounce. Keep high to stay smooth.")]
+    public float springDamper = 16f;
+    [Tooltip("How far the VISUAL wheel may travel up/down from its hub as the suspension " +
+             "reacts to the ground (metres). Purely cosmetic — keeps the tyres on bumps " +
+             "without ever detaching horizontally from the car.")]
+    public float maxWheelTravel = 0.4f;
 
     [Header("Steering")]
-    public float maxSteerAngleLowSpeed = 35f;
-    public float maxSteerAngleHighSpeed = 8f;
-    public float steerLerpSpeed = 5f;
+    [Tooltip("Turn rate (degrees/second) at low speed.")]
+    public float turnRateLowSpeed = 130f;
+    [Tooltip("Turn rate (degrees/second) at top speed. Lower so the car isn't twitchy " +
+             "at 300 mph.")]
+    public float turnRateHighSpeed = 48f;
+    [Tooltip("How quickly steering input ramps in/out. Higher = snappier.")]
+    public float steerLerpSpeed = 6f;
+    [Tooltip("How quickly the car's body re-aligns to the ground normal / new heading. " +
+             "Higher = tighter to the surface, lower = floatier. This smoothing is what " +
+             "removes the old WheelCollider shake on hills and loops.")]
+    public float orientationLerpSpeed = 12f;
+
+    [Header("Grip")]
+    [Tooltip("Fraction of sideways velocity removed each physics step (0-1). 1 = the " +
+             "car tracks its forward direction perfectly (no slide); lower = looser.")]
+    [Range(0f, 1f)] public float gripFactor = 0.9f;
 
     [Header("Braking")]
-    public float maxBrakeTorque = 8000f;
-    [Range(0.5f, 0.85f)] public float frontBrakeBias = 0.65f;
-    public float engineBrakeTorque = 200f;
+    [Tooltip("Deceleration applied while braking (m/s^2).")]
+    public float brakeStrength = 45f;
+    [Tooltip("Gentle deceleration while coasting (no throttle, no brake) (m/s^2).")]
+    public float engineBraking = 6f;
 
     [Header("Grip & Stability")]
     public Transform centerOfMass;
-    [Tooltip("Forward tire stiffness (acceleration / braking grip).")]
-    public float forwardGripStiffness = 2.5f;
-    [Tooltip("Sideways tire stiffness (cornering grip). Higher = less drift.")]
-    public float sidewaysGripStiffness = 3.5f;
-    [Tooltip("Anti-roll bar — counters body roll on hard turns.")]
-    public float antiRollForce = 8000f;
-
-    [Header("Drivetrain")]
-    [Tooltip("Torque bias between front and rear wheels. " +
-         "0 = RWD (rear-wheel drive), 0.5 = balanced AWD, 1 = FWD (front-wheel drive). " +
-         "0.4 = current default (slight rear bias).")]
-    [Range(0f, 1f)] public float frontDriveBias = 0.4f;
-
-    [Header("Downforce")]
-    [Tooltip("Maximum downforce in Newtons at top speed. Scales with speed squared.")]
-    public float maxDownforce = 12000f;
-
-    [Tooltip("Extra downforce multiplier while braking. 1 = no extra, 2 = double downforce, " +
-         "3 = triple. Helps keep the car planted when braking hard into turns or down hills.")]
-    public float brakingDownforceMultiplier = 2.5f;
 
     [Header("Drift")]
-    [Tooltip("Hold Throttle (RT) and Brake (X) at the same time to drift. The car keeps " +
-         "power but brakes softly, loses sideways grip, and gains heavy downforce so it " +
-         "slides in a controlled arc. Release either input to leave the drift.")]
-    public float driftBrakeTorque = 1000f;
-    [Tooltip("Sideways tire stiffness while drifting. Much lower than the normal " +
-         "Sideways Grip Stiffness so the back end breaks loose.")]
-    public float driftSidewaysGripStiffness = 1f;
+    [Tooltip("Hold Throttle (RT) and Brake (X) together to drift. The car keeps power " +
+         "but brakes softly, loses grip, and gains heavy downforce so it slides in a " +
+         "controlled arc. Release either input to leave the drift.")]
+    [Range(0f, 1f)] public float driftGripFactor = 0.35f;
+    [Tooltip("Deceleration while drifting (m/s^2) — much softer than the normal brake " +
+             "so the car keeps rolling and slides rather than stopping.")]
+    public float driftBrakeStrength = 8f;
     [Tooltip("Max downforce (Newtons at top speed) while drifting. Replaces the normal " +
          "braking downforce bonus to keep the sliding car planted.")]
     public float driftMaxDownforce = 30000f;
-    [Tooltip("Max steer angle at high speed while drifting. Higher than the normal " +
-         "high-speed cap (Max Steer Angle High Speed) so the player can counter-steer " +
-         "through a slide.")]
-    public float driftMaxSteerAngleHighSpeed = 35f;
+    [Tooltip("Turn rate (deg/s) at high speed while drifting — higher than the normal " +
+         "high-speed rate so the player can counter-steer through a slide.")]
+    public float driftTurnRateHighSpeed = 110f;
+
+    [Header("Downforce / Stick")]
+    [Tooltip("Maximum downforce in Newtons at top speed, applied along -ground normal. " +
+             "Scales with speed squared, so high-speed crests and loops stay planted.")]
+    public float maxDownforce = 12000f;
+    [Tooltip("Extra downforce multiplier while braking. 1 = no extra, 2 = double.")]
+    public float brakingDownforceMultiplier = 2.5f;
+    [Tooltip("Constant pull toward the surface while grounded (acceleration units). " +
+             "Helps hug the track through dips. Stacked with Loop Stick Force on loops.")]
+    public float groundStickForce = 8f;
 
     [Header("Hill Climb Assist")]
     [Tooltip("Counteracts gravity along the car's forward direction when climbing. " +
              "1.0 = no speed loss going uphill, 0.0 = full physics.")]
     [Range(0f, 1f)] public float hillGravityCompensation = 0.9f;
-    [Tooltip("Extra torque multiplier when climbing, scaling with steepness.")]
-    public float climbTorqueBoost = 2f;
-    [Tooltip("Slope angle (degrees) at which the assist reaches full strength.")]
+    [Tooltip("Extra acceleration multiplier when climbing, scaling with steepness.")]
+    public float climbTorqueBoost = 1.5f;
+    [Tooltip("Slope angle (degrees) at which the climb assist reaches full strength.")]
     public float fullAssistAngle = 25f;
 
     [Header("Air Drift")]
     [Tooltip("How fast the car can drift sideways while airborne (m/s).")]
     public float airDriftSpeed = 15f;
-    [Tooltip("How quickly the car reaches max drift speed when input is held. " +
-             "Higher = snappier response.")]
+    [Tooltip("How quickly the car reaches max air-drift speed when input is held.")]
     public float airDriftAcceleration = 40f;
-    [Tooltip("Seconds the car must be airborne before air drift activates. " +
-             "Prevents drift from triggering during high-speed crests and bumps.")]
+    [Tooltip("Seconds the car must be airborne before air drift / air control activate. " +
+             "Prevents them triggering on high-speed crests and bumps.")]
     public float airDriftGracePeriod = 0.4f;
 
     [Header("Manual Air Pitch")]
-    [Tooltip("How fast the player can manually pitch the car in midair (degrees per second). " +
-         "Available after the car self-levels.")]
+    [Tooltip("How fast the player can manually pitch the car in midair (degrees/second), " +
+         "available after it self-levels.")]
     public float manualPitchSpeed = 120f;
-    [Tooltip("Key for pitching nose up.")]
-    public KeyCode pitchUpKey = KeyCode.UpArrow;
-    [Tooltip("Key for pitching nose down.")]
-    public KeyCode pitchDownKey = KeyCode.DownArrow;
-
-    [Tooltip("Extra gravity multiplier while braking midair. 1 = normal gravity, " +
-         "2 = double, 3 = triple. Only activates when the car is level (same " +
-         "condition as air drift). Useful for diving to lower track levels quickly.")]
+    [Tooltip("Extra gravity multiplier while braking midair. 1 = normal, 3 = triple. " +
+         "Only when the car is level (same condition as air drift). Lets you dive to " +
+         "lower track levels.")]
     public float airBrakeGravityMultiplier = 3f;
 
     [Header("Airborne Self-Leveling")]
-    [Tooltip("How quickly the car's X and Z rotation return to 0 while airborne (degrees per second).")]
+    [Tooltip("How quickly the car's pitch and roll return to level while airborne " +
+             "(degrees/second).")]
     public float airLevelingSpeed = 90f;
-    [Tooltip("Tilt threshold (degrees) below which air drift becomes available. " +
-             "Lower = stricter requirement that car is fully level before drifting.")]
+    [Tooltip("Tilt threshold (degrees) below which air drift / manual pitch unlock.")]
     public float airDriftLevelThreshold = 5f;
 
     [Header("Turbo Boost")]
-    [Tooltip("Multiplier applied to top speed and motor torque during turbo.")]
+    [Tooltip("Multiplier applied to top speed and acceleration during turbo.")]
     public float turboMultiplier = 2f;
     [Tooltip("How long turbo lasts when activated (seconds).")]
     public float turboDuration = 2f;
@@ -120,37 +164,30 @@ public class CarController : MonoBehaviour
     public float turboCooldown = 0f;
 
     [Header("Jump")]
-    [Tooltip("Instantaneous velocity (m/s) added along the car's local Y axis " +
-             "(transform.up) when the A button is pressed.")]
+    [Tooltip("Instantaneous velocity (m/s) added along the car's local up when A is pressed.")]
     public float jumpVelocity = 12f;
-    [Tooltip("If true, the car can only jump when at least one wheel is grounded. " +
-             "Uncheck to allow midair jumps.")]
+    [Tooltip("If true, the car can only jump when grounded. Uncheck to allow midair jumps.")]
     public bool jumpRequiresGround = true;
 
     [Header("Ability Costs")]
-    [Tooltip("Each turbo boost consumes 1 of this inventory item. A boost won't " +
-             "fire without one. Leave blank to make turbo free.")]
+    [Tooltip("Each turbo boost consumes 1 of this inventory item. Blank = free.")]
     public string turboItemName = "Turbo";
-    [Tooltip("Each jump consumes 1 of this inventory item. A jump won't fire " +
-             "without one. Leave blank to make jumping free.")]
+    [Tooltip("Each jump consumes 1 of this inventory item. Blank = free.")]
     public string jetItemName = "Jet";
 
-    [Header("Loop Gravity Assist")]
-    [Tooltip("Tag on loop track meshes. Gravity is cut once the car passes " +
-         "vertical while a wheel is on a loop, so it can complete the inverted half.")]
+    [Header("Loop Assist")]
+    [Tooltip("Tag on loop track meshes. Used for the loop speed boost and the camera's " +
+         "loop FOV kick.")]
     public string loopTag = "Loop";
-    [Tooltip("up.up dot below this (just past vertical) disables gravity.")]
+    [Tooltip("up.up dot below this (just past vertical) flags the car as 'in a loop' " +
+         "for the camera FOV kick.")]
     public float loopGravityDisableDot = -0.05f;
-    [Tooltip("up.up dot above this re-enables gravity (hysteresis prevents flicker).")]
+    [Tooltip("up.up dot above this clears the loop flag (hysteresis prevents flicker).")]
     public float loopGravityEnableDot = 0.10f;
-
-    [Tooltip("Mild acceleration pressing the car onto the loop surface (along " +
-             "-transform.up) while gravity is cut on a loop. Keeps the car glued " +
-             "through the inverted apex. ~5-10 ≈ half-to-full gravity; 0 = off.")]
-    public float loopStickForce = 6f;
-
-    [Tooltip("Multiplier applied to max speed and motor torque while any wheel is " +
-             "on a loop. 1 = no change, 2 = double speed and torque on loops.")]
+    [Tooltip("Extra pull toward the surface while on a loop (acceleration units). Keeps " +
+         "the car glued through the inverted apex.")]
+    public float loopStickForce = 12f;
+    [Tooltip("Multiplier applied to max speed and acceleration while on a loop.")]
     public double loopSpeedMultiplier = 2.0;
 
     // -------------------------------------------------------
@@ -161,28 +198,49 @@ public class CarController : MonoBehaviour
     private float throttleInput;
     private float steerInput;
     private float brakeInput;
-    private float currentSteerAngle;
+    private float manualPitchInput;
+    private float smoothedSteer;          // steer input after lerp smoothing
+
     private float airborneTimer = 0f;
-    private float turboTimer = 0f;       // counts down while turbo is active
+    private float turboTimer = 0f;
     private float turboCooldownTimer = 0f;
-    public bool IsTurboActive => turboTimer > 0f;
-    // True while the player holds throttle + brake together. Softens braking, drops
-    // sideways grip, and spikes downforce so the car slides controllably.
+    private bool jumpRequested;
+    private bool manualPitchUnlocked;
     private bool isDrifting;
+    private bool loopFlag;                // "in a loop" state for the camera (hysteresis)
+
+    // Per-wheel ray results, filled each FixedUpdate (index 0..3 = FL,FR,RL,RR).
+    private WheelCollider[] anchors;
+    private Transform[] anchorTransforms;
+    private Transform[] wheelMeshes;
+    // Vertical distance (metres) from each wheel anchor straight down to the ground,
+    // recorded each physics step. A scalar — NOT a world point — so the visual wheel
+    // can be placed under the current hub without trailing behind at high speed.
+    private readonly float[] groundDistance = new float[4];
+    private readonly bool[] wheelGrounded = new bool[4];
+    private float[] wheelSpinAngle = new float[4];
+
+    private bool grounded;
+    private Vector3 groundNormal = Vector3.up;
+    private Collider groundCollider;
+
+    private GeneracerControls controls;
+
+    public bool IsTurboActive => turboTimer > 0f;
     /// <summary>True while the car is in the drift state (throttle + brake held).</summary>
     public bool IsDrifting => isDrifting;
-    /// <summary>True while the car is past vertical on a loop and gravity is cut.</summary>
-    public bool IsLoopGravityCut => loopGravityCut;
-    private float manualPitchInput;
-    // Set in Update() when the player presses Jump; consumed (and cleared) in FixedUpdate
-    // so the impulse lands inside a physics step.
-    private bool jumpRequested;
-    // True once the car has finished its initial airborne self-leveling and the
-    // player is allowed to take manual pitch control
-    private bool manualPitchUnlocked;
-    // Exposed so the camera can check whether to lock its orientation
-    // Add near the other private fields
-    private GeneracerControls controls;
+    /// <summary>True while the car is past vertical on a loop (drives the camera FOV kick).</summary>
+    public bool IsLoopGravityCut => loopFlag;
+    public bool IsManuallyPitching { get; private set; }
+
+    private const float MS_TO_MPH = 2.23694f;
+    private const float MPH_TO_MS = 1f / MS_TO_MPH;
+
+    public float SpeedMph => rb != null ? rb.linearVelocity.magnitude * MS_TO_MPH : 0f;
+
+    // -------------------------------------------------------
+    //  Setup
+    // -------------------------------------------------------
 
     void OnEnable()
     {
@@ -195,70 +253,25 @@ public class CarController : MonoBehaviour
         controls?.Driving.Disable();
     }
 
-    public bool IsManuallyPitching { get; private set; }
-
-    private const float MS_TO_MPH = 2.23694f;
-    private const float MPH_TO_MS = 1f / MS_TO_MPH;
-
-    bool AnyWheelGrounded()
-    {
-        return wheelFL.isGrounded || wheelFR.isGrounded
-            || wheelRL.isGrounded || wheelRR.isGrounded;
-    }
-
-    /// <summary>
-    /// True when both the left and right triggers are held — the LRA race-abort
-    /// gesture (L + R + A). Read straight off the gamepad because the Throttle
-    /// action is a single RT-minus-LT axis that can't distinguish both-held.
-    /// </summary>
-    bool BothTriggersHeld()
-    {
-        var gp = Gamepad.current;
-        return gp != null
-            && gp.leftTrigger.ReadValue() > 0.5f
-            && gp.rightTrigger.ReadValue() > 0.5f;
-    }
-
-    public float SpeedMph => rb.linearVelocity.magnitude * MS_TO_MPH;
-
-    // -------------------------------------------------------
-    //  Setup
-    // -------------------------------------------------------
-
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-
         if (centerOfMass != null)
             rb.centerOfMass = centerOfMass.localPosition;
 
-        ApplyFrictionCurves(wheelFL);
-        ApplyFrictionCurves(wheelFR);
-        ApplyFrictionCurves(wheelRL);
-        ApplyFrictionCurves(wheelRR);
-    }
-
-    /// <summary>
-    /// Friction curves that grip hard at low slip but soften at extreme slip
-    /// so the car never snaps into uncontrollable spinout.
-    /// </summary>
-    void ApplyFrictionCurves(WheelCollider wheel)
-    {
-        WheelFrictionCurve fwd = wheel.forwardFriction;
-        fwd.extremumSlip = 0.4f;
-        fwd.extremumValue = 1.2f;
-        fwd.asymptoteSlip = 0.8f;
-        fwd.asymptoteValue = 1.0f;
-        fwd.stiffness = forwardGripStiffness;
-        wheel.forwardFriction = fwd;
-
-        WheelFrictionCurve side = wheel.sidewaysFriction;
-        side.extremumSlip = 0.25f;
-        side.extremumValue = 1.3f;
-        side.asymptoteSlip = 0.5f;
-        side.asymptoteValue = 1.1f;
-        side.stiffness = sidewaysGripStiffness;
-        wheel.sidewaysFriction = side;
+        anchors = new[] { wheelFL, wheelFR, wheelRL, wheelRR };
+        wheelMeshes = new[] { meshFL, meshFR, meshRL, meshRR };
+        anchorTransforms = new Transform[4];
+        for (int i = 0; i < 4; i++)
+        {
+            // Disable the WheelCollider so it exerts no physics — we only want its
+            // transform as a ray origin. Keep a cached transform reference.
+            if (anchors[i] != null)
+            {
+                anchors[i].enabled = false;
+                anchorTransforms[i] = anchors[i].transform;
+            }
+        }
     }
 
     // -------------------------------------------------------
@@ -267,30 +280,16 @@ public class CarController : MonoBehaviour
 
     void Update()
     {
-        // Throttle — RT minus LT via the 1D composite, already -1..1
-        throttleInput = controls.Driving.Throttle.ReadValue<float>();
-
-        // Steering / air drift — left stick X
+        throttleInput = controls.Driving.Throttle.ReadValue<float>();   // RT - LT, -1..1
         steerInput = controls.Driving.Steer.ReadValue<float>();
-
-        // Manual air pitch — left stick Y
         manualPitchInput = controls.Driving.Pitch.ReadValue<float>();
-
-        // Brake — X button. Suppressed while a menu is open, since X is also the
-        // "charge Turbo" button at the upgrade ramp — crafting shouldn't brake.
         brakeInput = (!MenuState.AnyOpen && controls.Driving.Brake.IsPressed()) ? 1f : 0f;
 
-        // Add to the existing Update() method
-        // Turbo — B button. triggered fires once on the press, not held.
-        // Suppressed while a menu is open: B closes the store, and A buys, so we
-        // don't want those presses leaking into Turbo / Jump.
         if (!MenuState.AnyOpen && controls.Driving.Turbo.triggered)
             TryActivateTurbo();
 
-        // Jump — A button. Flag here, apply the impulse in FixedUpdate so it
-        // lands cleanly in a physics step. Suppressed while both triggers are held,
-        // since L+R+A is the LRA race-abort gesture — we don't want that A press to
-        // also fire a jump (and spend a Jet).
+        // A = jump. Suppressed during the L+R+A LRA abort gesture so it doesn't also
+        // fire a jump (and spend a Jet).
         if (!MenuState.AnyOpen && controls.Driving.Jump.triggered && !BothTriggersHeld())
             jumpRequested = true;
 
@@ -299,45 +298,44 @@ public class CarController : MonoBehaviour
 
     void FixedUpdate()
     {
-        // Turbo timers
-        if (turboTimer > 0f)
-            turboTimer -= Time.fixedDeltaTime;
-        if (turboCooldownTimer > 0f)
-            turboCooldownTimer -= Time.fixedDeltaTime;
-        UpdateLoopGravity();   // set gravity state for this step
+        if (turboTimer > 0f) turboTimer -= Time.fixedDeltaTime;
+        if (turboCooldownTimer > 0f) turboCooldownTimer -= Time.fixedDeltaTime;
 
-        if (AnyWheelGrounded())
-            airborneTimer = 0f;
-        else
-            airborneTimer += Time.fixedDeltaTime;
+        ProbeGround();          // fills grounded / groundNormal / per-wheel contacts
+        UpdateLoopFlag();
 
-        // Consume a pending jump request before everything else this physics
-        // step so the impulse is in effect for the rest of the frame's forces.
+        airborneTimer = grounded ? 0f : airborneTimer + Time.fixedDeltaTime;
+
         if (jumpRequested)
         {
             jumpRequested = false;
             TryJump();
         }
 
+        UpdateDriftState();
+
         bool inRealAir = airborneTimer >= airDriftGracePeriod;
 
-        UpdateDriftState();
-        ApplySteering();
-        ApplyMotor();
-        ApplyBrakes();
-        ApplyDownforce();
-        ApplyAntiRoll();
-
-        if (inRealAir)
+        if (grounded)
         {
+            // On the ground: hover, steer/align to the surface, grip, drive, stick.
+            ApplyHover();
+            ApplyOrientation();
+            ApplyGrip();
+            ApplyDriveAndBrake();
+            ApplyDownforce();
+
+            // Reset air state so the next airtime starts with a fresh self-level.
+            manualPitchUnlocked = false;
+            IsManuallyPitching = false;
+        }
+        else if (inRealAir)
+        {
+            // Airborne past the grace window — gravity rules; the player gets air control.
             if (!manualPitchUnlocked)
             {
                 ApplyAirLeveling();
-                if (IsCarLevel())
-                {
-                    manualPitchUnlocked = true;
-                    Debug.Log("[Pitch] Manual pitch UNLOCKED — car leveled");
-                }
+                if (IsCarLevel()) manualPitchUnlocked = true;
             }
             else
             {
@@ -350,97 +348,317 @@ public class CarController : MonoBehaviour
                 ApplyAirBrakeGravity();
             }
         }
-        else
+        // else: a brief hop within the grace window — just coast ballistically.
+    }
+
+    // -------------------------------------------------------
+    //  Ground probing
+    // -------------------------------------------------------
+
+    /// <summary>
+    /// Casts a ray straight down (in car space) from each wheel anchor, recording
+    /// contacts and building the averaged ground normal used for orientation.
+    /// </summary>
+    void ProbeGround()
+    {
+        Vector3 down = -transform.up;
+        Vector3 normalSum = Vector3.zero;
+        int hits = 0;
+        groundCollider = null;
+
+        for (int i = 0; i < 4; i++)
         {
-            // Grounded — reset the manual pitch unlock so the next airtime starts
-            // with a fresh auto-leveling phase
-            manualPitchUnlocked = false;
-            IsManuallyPitching = false;
+            wheelGrounded[i] = false;
+            Transform a = anchorTransforms[i];
+            if (a == null) continue;
+
+            if (Physics.Raycast(a.position, down, out RaycastHit hit,
+                                 suspensionRayLength, groundMask,
+                                 QueryTriggerInteraction.Ignore))
+            {
+                wheelGrounded[i] = true;
+                groundDistance[i] = hit.distance;   // vertical gap (the ray runs along -up)
+                normalSum += hit.normal;
+                hits++;
+                if (groundCollider == null) groundCollider = hit.collider;
+            }
+            else
+            {
+                // No hit — record full droop for the visual wheel.
+                groundDistance[i] = suspensionRayLength;
+            }
+        }
+
+        grounded = hits > 0;
+        groundNormal = grounded ? (normalSum / hits).normalized : Vector3.up;
+    }
+
+    /// <summary>
+    /// Single damped hover force at the centre of mass that keeps the car floating at
+    /// ride height above the averaged ground. Applied at the COM (no torque) so it can
+    /// never induce the rotational oscillation the WheelColliders suffered from.
+    /// </summary>
+    void ApplyHover()
+    {
+        // Average how far the wheels currently sit above the ground.
+        float gapSum = 0f; int n = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            if (!wheelGrounded[i]) continue;
+            gapSum += groundDistance[i]; n++;
+        }
+        if (n == 0) return;
+
+        float gap2 = gapSum / n;
+        float offset = rideHeight - gap2;                       // + = too low, push up
+        float upVel = Vector3.Dot(rb.linearVelocity, transform.up);
+        float force = offset * springStrength - upVel * springDamper;
+
+        rb.AddForce(transform.up * force, ForceMode.Acceleration);
+    }
+
+    // -------------------------------------------------------
+    //  Orientation + steering (explicit, smooth)
+    // -------------------------------------------------------
+
+    /// <summary>
+    /// Turns the car's heading by the speed-scaled steer rate and aligns its up to the
+    /// ground normal, in a single smoothed MoveRotation. Driving orientation directly
+    /// (rather than via wheel springs) is what keeps hills and loops shake-free.
+    /// </summary>
+    void ApplyOrientation()
+    {
+        smoothedSteer = Mathf.Lerp(smoothedSteer, steerInput, steerLerpSpeed * Time.fixedDeltaTime);
+
+        float speedFactor = Mathf.Clamp01(SpeedMph / maxSpeedMph);
+        float curved = Mathf.Pow(speedFactor, 0.6f);
+        float highRate = isDrifting ? driftTurnRateHighSpeed : turnRateHighSpeed;
+        float turnRate = Mathf.Lerp(turnRateLowSpeed, highRate, curved);
+
+        // Only turn when actually moving, scaled by how fast (parked cars don't spin).
+        float moveScale = Mathf.Clamp01(rb.linearVelocity.magnitude / 4f);
+        float yawDelta = smoothedSteer * turnRate * moveScale * Time.fixedDeltaTime;
+
+        // Rotate the current forward around the ground normal, then re-seat it on the
+        // plane so the heading rides the surface.
+        Vector3 fwd = Quaternion.AngleAxis(yawDelta, groundNormal) * transform.forward;
+        fwd = Vector3.ProjectOnPlane(fwd, groundNormal);
+        if (fwd.sqrMagnitude < 1e-5f) fwd = transform.forward;
+
+        Quaternion target = Quaternion.LookRotation(fwd.normalized, groundNormal);
+        float t = 1f - Mathf.Exp(-orientationLerpSpeed * Time.fixedDeltaTime);
+        rb.MoveRotation(Quaternion.Slerp(rb.rotation, target, t));
+
+        // Damp residual spin so collisions/bumps don't fight the explicit orientation.
+        rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, Vector3.zero,
+                                          orientationLerpSpeed * Time.fixedDeltaTime);
+    }
+
+    /// <summary>
+    /// Cancels the chosen fraction of sideways velocity so the car tracks its forward
+    /// direction. The rear "breaks loose" while drifting via a much lower grip factor.
+    /// </summary>
+    void ApplyGrip()
+    {
+        Vector3 vel = rb.linearVelocity;
+        Vector3 right = transform.right;
+        float lateral = Vector3.Dot(vel, right);
+
+        float grip = isDrifting ? driftGripFactor : gripFactor;
+        rb.linearVelocity = vel - right * (lateral * grip);
+    }
+
+    // -------------------------------------------------------
+    //  Drive / brake
+    // -------------------------------------------------------
+
+    void ApplyDriveAndBrake()
+    {
+        float turbo = IsTurboActive ? turboMultiplier : 1f;
+        float loopMult = loopFlag ? (float)loopSpeedMultiplier : 1f;
+
+        float maxMs = maxSpeedMph * MPH_TO_MS * turbo * loopMult;
+        Vector3 fwd = transform.forward;
+        float fwdSpeed = Vector3.Dot(rb.linearVelocity, fwd);
+        float speedRatio = Mathf.Clamp01(Mathf.Abs(fwdSpeed) / Mathf.Max(maxMs, 0.01f));
+
+        // --- Throttle / reverse ---
+        if (throttleInput > 0.05f)
+        {
+            float climbBoost = ClimbBoost(fwd);
+            float accel = acceleration * turbo * loopMult * climbBoost
+                        * (1f - speedRatio * speedRatio)        // fade out near top speed
+                        * throttleInput;
+            rb.AddForce(fwd * accel, ForceMode.Acceleration);
+            ApplyHillGravityCompensation(fwd);
+        }
+        else if (throttleInput < -0.05f)
+        {
+            // Left Trigger: brake to a stop, then reverse.
+            float reverseRatio = Mathf.Clamp01(Mathf.Abs(Mathf.Min(fwdSpeed, 0f)) / Mathf.Max(maxMs * 0.4f, 0.01f));
+            float accel = reverseAcceleration * (1f - reverseRatio) * -throttleInput;
+            rb.AddForce(-fwd * accel, ForceMode.Acceleration);
+        }
+
+        // --- Braking (X) ---
+        if (brakeInput > 0.05f)
+        {
+            float decel = (isDrifting ? driftBrakeStrength : brakeStrength) * brakeInput;
+            ApplyForwardDecel(fwd, fwdSpeed, decel);
+        }
+        else if (Mathf.Abs(throttleInput) < 0.05f)
+        {
+            // Coasting — gentle engine braking.
+            ApplyForwardDecel(fwd, fwdSpeed, engineBraking);
         }
     }
 
+    /// <summary>Reduces the forward component of velocity toward zero by decel*dt.</summary>
+    void ApplyForwardDecel(Vector3 fwd, float fwdSpeed, float decel)
+    {
+        float newSpeed = Mathf.MoveTowards(fwdSpeed, 0f, decel * Time.fixedDeltaTime);
+        rb.linearVelocity += fwd * (newSpeed - fwdSpeed);
+    }
+
+    /// <summary>Extra acceleration multiplier when climbing, scaling with steepness.</summary>
+    float ClimbBoost(Vector3 fwd)
+    {
+        float climbDot = fwd.y;
+        if (climbDot <= 0f) return 1f;
+        float climbAngle = Mathf.Asin(Mathf.Clamp(climbDot, -1f, 1f)) * Mathf.Rad2Deg;
+        float climbFactor = Mathf.Clamp01(climbAngle / fullAssistAngle);
+        return 1f + climbTorqueBoost * climbFactor;
+    }
+
+    /// <summary>Cancels the backward pull of gravity along the slope so the car doesn't
+    /// bleed speed climbing steep hills.</summary>
+    void ApplyHillGravityCompensation(Vector3 fwd)
+    {
+        if (fwd.y <= 0f) return;
+        Vector3 gravityForce = Physics.gravity * rb.mass;
+        float backwardPull = -Vector3.Dot(gravityForce, fwd);
+        if (backwardPull > 0f)
+            rb.AddForce(fwd * (backwardPull * hillGravityCompensation * Mathf.Abs(throttleInput)));
+    }
+
+    // -------------------------------------------------------
+    //  Downforce / stick
+    // -------------------------------------------------------
+
     /// <summary>
-    /// Starts turbo if it's not already active, not on cooldown, and the player
-    /// has a Turbo to spend. Consumes 1 Turbo from the inventory on activation.
+    /// Pushes the car toward the surface along -ground normal. Scales with speed
+    /// squared (aero), plus a constant stick term (and extra on loops) so the car hugs
+    /// dips and stays glued through inverted loop sections.
     /// </summary>
+    void ApplyDownforce()
+    {
+        float speedRatio = Mathf.Clamp01(SpeedMph / maxSpeedMph);
+        float activeMax = isDrifting ? driftMaxDownforce : maxDownforce;
+        float force = activeMax * speedRatio * speedRatio;
+
+        if (!isDrifting && brakeInput > 0.05f)
+            force *= 1f + (brakingDownforceMultiplier - 1f) * brakeInput;
+
+        // Aero downforce (Newtons) along -normal.
+        rb.AddForce(-groundNormal * force);
+
+        // Constant stick (acceleration units), extra on loops.
+        float stick = groundStickForce + (loopFlag ? loopStickForce : 0f);
+        if (stick > 0f)
+            rb.AddForce(-groundNormal * stick, ForceMode.Acceleration);
+    }
+
+    // -------------------------------------------------------
+    //  Drift state
+    // -------------------------------------------------------
+
+    /// <summary>Drift = hold Throttle (RT) + Brake (X). Lowers grip, softens braking,
+    /// raises downforce and high-speed turn rate. Releasing either input exits.</summary>
+    void UpdateDriftState()
+    {
+        isDrifting = throttleInput > 0.05f && brakeInput > 0.05f;
+    }
+
+    // -------------------------------------------------------
+    //  Loop flag (for the camera FOV kick)
+    // -------------------------------------------------------
+
+    void UpdateLoopFlag()
+    {
+        bool onLoop = grounded && groundCollider != null && groundCollider.CompareTag(loopTag);
+
+        if (!onLoop)
+        {
+            loopFlag = false;
+            return;
+        }
+
+        float uprightDot = Vector3.Dot(transform.up, Vector3.up);
+        if (!loopFlag && uprightDot < loopGravityDisableDot) loopFlag = true;
+        else if (loopFlag && uprightDot > loopGravityEnableDot) loopFlag = false;
+    }
+
+    // -------------------------------------------------------
+    //  Turbo / jump / spending
+    // -------------------------------------------------------
+
     void TryActivateTurbo()
     {
-        if (turboTimer > 0f) return;          // already boosting
-        if (turboCooldownTimer > 0f) return;  // still cooling down
-
-        // Costs 1 Turbo. Consume returns false (and changes nothing) if the
-        // player has none, so the boost simply doesn't fire.
+        if (turboTimer > 0f) return;
+        if (turboCooldownTimer > 0f) return;
         if (!TrySpend(turboItemName)) return;
 
         turboTimer = turboDuration;
-        turboCooldownTimer = turboCooldown + turboDuration; // cooldown counts from activation
+        turboCooldownTimer = turboCooldown + turboDuration;
     }
 
-    /// <summary>
-    /// Consumes 1 of the named inventory item, returning true if it was spent
-    /// (or if the cost is blank, meaning free). Returns false when the player
-    /// doesn't have one.
-    /// </summary>
     bool TrySpend(string itemName)
     {
-        if (string.IsNullOrEmpty(itemName)) return true;   // free
+        if (string.IsNullOrEmpty(itemName)) return true;
         var inv = PlayerInventory.Instance;
         if (inv == null) return false;
         return inv.Consume(itemName, 1);
     }
 
-    /// <summary>
-    /// Adds an instant vertical impulse along the car's local Y axis (transform.up).
-    /// Uses ForceMode.VelocityChange so the resulting jump velocity is exactly
-    /// jumpVelocity regardless of mass. Replaces any existing velocity along
-    /// transform.up so repeated jumps don't compound while still rising.
-    /// </summary>
     void TryJump()
     {
-        if (jumpRequiresGround && !AnyWheelGrounded()) return;
-
-        // Costs 1 Jet. Checked after the ground test so a Jet is never spent on a
-        // jump that couldn't happen anyway.
+        if (jumpRequiresGround && !grounded) return;
         if (!TrySpend(jetItemName)) return;
 
-        // Zero out the current velocity along transform.up before adding the
-        // jump impulse, so a jump always produces the same launch speed even
-        // when the car is already moving up (e.g. cresting a hill).
         Vector3 vel = rb.linearVelocity;
         float upComponent = Vector3.Dot(vel, transform.up);
-        if (upComponent > 0f)
-            vel -= transform.up * upComponent;
+        if (upComponent > 0f) vel -= transform.up * upComponent;
         rb.linearVelocity = vel;
 
         rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
     }
 
     /// <summary>
-    /// Applies extra downward force while braking in midair, letting the player
-    /// dive toward a lower section of track faster than natural gravity allows.
-    /// Only activates when the car is level (X and Z rotation near zero), same
-    /// condition required for air drift to fire.
+    /// True when both triggers are held — the LRA race-abort gesture (L+R+A). Read
+    /// straight off the gamepad because Throttle is a single RT-minus-LT axis that
+    /// can't distinguish both-held.
     /// </summary>
+    bool BothTriggersHeld()
+    {
+        var gp = Gamepad.current;
+        return gp != null
+            && gp.leftTrigger.ReadValue() > 0.5f
+            && gp.rightTrigger.ReadValue() > 0.5f;
+    }
+
+    // -------------------------------------------------------
+    //  Air control (orientation + velocity, unchanged in spirit)
+    // -------------------------------------------------------
+
     void ApplyAirBrakeGravity()
     {
         if (brakeInput < 0.05f) return;
-
-        // Extra gravity beyond what Unity already applies. Multiplier of 3 means
-        // total gravity is 3× normal — Unity's default plus 2× extra.
-        // ForceMode.Acceleration applies equally regardless of mass, matching
-        // how real gravity behaves.
         Vector3 extraGravity = Physics.gravity * (airBrakeGravityMultiplier - 1f) * brakeInput;
         rb.AddForce(extraGravity, ForceMode.Acceleration);
     }
 
-    /// <summary>
-    /// Combined airborne rotation: applies player pitch input around the car's
-    /// right axis AND levels the roll (Z) toward zero — all in a single
-    /// MoveRotation call so neither overwrites the other. Yaw is preserved.
-    /// </summary>
     void ApplyManualPitchAndRollLeveling()
     {
-        // --- Player pitch around the car's local right axis ---
         float pitchDelta = 0f;
         if (Mathf.Abs(manualPitchInput) > 0.05f)
         {
@@ -448,88 +666,33 @@ public class CarController : MonoBehaviour
             pitchDelta = manualPitchInput * manualPitchSpeed * Time.fixedDeltaTime;
         }
 
-        // Build the pitch rotation as a delta around the current right axis
         Quaternion pitchRot = Quaternion.AngleAxis(pitchDelta, transform.right);
-
-        // Apply pitch to the current rotation
         Quaternion afterPitch = pitchRot * rb.rotation;
 
-        // --- Now level the roll on the pitched orientation ---
-        // Extract euler from the post-pitch rotation so we level roll without
-        // discarding the pitch we just applied
         Vector3 euler = afterPitch.eulerAngles;
         float currentRoll = NormalizeAngle(euler.z);
-        float newRoll = Mathf.MoveTowardsAngle(currentRoll, 0f,
-                                                airLevelingSpeed * Time.fixedDeltaTime);
+        float newRoll = Mathf.MoveTowardsAngle(currentRoll, 0f, airLevelingSpeed * Time.fixedDeltaTime);
 
-        // Reconstruct: keep post-pitch X and Y, replace Z with the leveled roll
         Quaternion finalRot = Quaternion.Euler(euler.x, euler.y, newRoll);
-
-        // Single MoveRotation call — this is the only rotation write this frame
         rb.MoveRotation(finalRot);
 
-        // Damp angular velocity around forward (roll) and right (pitch) so the
-        // car doesn't keep tumbling against our explicit rotation. Preserve yaw
-        // angular velocity so the car can still spin its heading.
         Vector3 angVel = rb.angularVelocity;
-        float yComponent = angVel.y;
-        rb.angularVelocity = Vector3.up * yComponent;
+        rb.angularVelocity = Vector3.up * angVel.y;
     }
 
-    /// <summary>
-    /// True when the car's ROLL (Z) is within threshold of level, regardless of
-    /// pitch. Used to gate air drift and fast-fall during manual pitch flight.
-    /// </summary>
-    bool IsRollLevel()
-    {
-        float roll = Mathf.Abs(NormalizeAngle(transform.eulerAngles.z));
-        return roll < airDriftLevelThreshold;
-    }
-
-    // -------------------------------------------------------
-    //  Steering
-    // -------------------------------------------------------
-
-    /// <summary>
-    /// While airborne, gently rotates the car so its X (pitch) and Z (roll)
-    /// approach zero. Y (yaw / heading) is preserved so the car keeps facing
-    /// whatever direction the player was driving. Uses MoveRotation for clean
-    /// physics-aware rotation that respects fixed timestep.
-    /// </summary>
     void ApplyAirLeveling()
     {
         Vector3 currentEuler = transform.eulerAngles;
-
-        // Convert X and Z from 0–360 range to -180–180 so MoveTowardsAngle
-        // takes the shortest path back to zero
         float currentPitch = NormalizeAngle(currentEuler.x);
         float currentRoll = NormalizeAngle(currentEuler.z);
 
-        // Step pitch and roll toward zero at airLevelingSpeed degrees per second
-        float newPitch = Mathf.MoveTowardsAngle(currentPitch, 0f,
-                                                 airLevelingSpeed * Time.fixedDeltaTime);
-        float newRoll = Mathf.MoveTowardsAngle(currentRoll, 0f,
-                                                 airLevelingSpeed * Time.fixedDeltaTime);
+        float newPitch = Mathf.MoveTowardsAngle(currentPitch, 0f, airLevelingSpeed * Time.fixedDeltaTime);
+        float newRoll = Mathf.MoveTowardsAngle(currentRoll, 0f, airLevelingSpeed * Time.fixedDeltaTime);
 
-        // Yaw stays whatever it was — preserves heading direction
-        Quaternion newRotation = Quaternion.Euler(newPitch, currentEuler.y, newRoll);
-        rb.MoveRotation(newRotation);
-
-        // Cancel any angular velocity around X and Z so the car doesn't keep
-        // tumbling against the leveling. Y angular velocity is preserved so
-        // the car can still spin/yaw if it has rotational momentum.
-        Vector3 angVel = rb.angularVelocity;
-        Vector3 worldRight = Vector3.right;
-        Vector3 worldForward = Vector3.forward;
-
-        float yComponent = angVel.y;
-        rb.angularVelocity = Vector3.up * yComponent;
+        rb.MoveRotation(Quaternion.Euler(newPitch, currentEuler.y, newRoll));
+        rb.angularVelocity = Vector3.up * rb.angularVelocity.y;
     }
 
-    /// <summary>
-    /// Returns true when the car's pitch and roll are both within the threshold
-    /// of zero — meaning the car is essentially level and air drift is safe.
-    /// </summary>
     bool IsCarLevel()
     {
         float pitch = Mathf.Abs(NormalizeAngle(transform.eulerAngles.x));
@@ -537,10 +700,12 @@ public class CarController : MonoBehaviour
         return pitch < airDriftLevelThreshold && roll < airDriftLevelThreshold;
     }
 
-    /// <summary>
-    /// Maps an angle from the 0–360 range to -180–180 so MoveTowardsAngle
-    /// returns to 0 along the shortest path.
-    /// </summary>
+    bool IsRollLevel()
+    {
+        float roll = Mathf.Abs(NormalizeAngle(transform.eulerAngles.z));
+        return roll < airDriftLevelThreshold;
+    }
+
     float NormalizeAngle(float angle)
     {
         angle %= 360f;
@@ -548,237 +713,19 @@ public class CarController : MonoBehaviour
         return angle;
     }
 
-    void ApplySteering()
-    {
-        float speedFactor = Mathf.Clamp01(SpeedMph / maxSpeedMph);
-        float curvedFactor = Mathf.Pow(speedFactor, 0.6f);
-
-        // While drifting, raise the high-speed steer cap so the front wheels can
-        // turn far enough to catch and counter-steer the slide.
-        float highSpeedSteer = isDrifting ? driftMaxSteerAngleHighSpeed
-                                          : maxSteerAngleHighSpeed;
-
-        float currentMaxSteer = Mathf.Lerp(maxSteerAngleLowSpeed,
-                                           highSpeedSteer,
-                                           curvedFactor);
-
-        float targetSteer = currentMaxSteer * steerInput;
-        currentSteerAngle = Mathf.Lerp(currentSteerAngle, targetSteer,
-                                       steerLerpSpeed * Time.fixedDeltaTime);
-
-        wheelFL.steerAngle = currentSteerAngle;
-        wheelFR.steerAngle = currentSteerAngle;
-    }
-
-    // -------------------------------------------------------
-    //  Motor with Hill Assist
-    // -------------------------------------------------------
-
-    /// <summary>
-    /// Applies wheel torque scaled by speed, plus extra grunt on climbs and a
-    /// gravity-compensation force that prevents speed loss going uphill.
-    /// </summary>
-    void ApplyMotor()
-    {
-        // Apply turbo multiplier to both top speed and torque while active
-        // Turbo multiplier (existing), then stack the loop multiplier on top so
-        // speed and torque scale up while driving on a loop.
-        float turbo = IsTurboActive ? turboMultiplier : 1f;
-        float loopMult = loopGravityCut ? (float)loopSpeedMultiplier : 1f;
-
-        float activeMaxSpeed = maxSpeedMph * turbo * loopMult;
-        float activeMaxTorque = maxMotorTorque * turbo * loopMult;
-
-        float maxSpeedMs = activeMaxSpeed * MPH_TO_MS;
-        float speedRatio = Mathf.Clamp01(rb.linearVelocity.magnitude / maxSpeedMs);
-
-        Vector3 forwardDir = transform.forward;
-        float climbDot = forwardDir.y;
-        float climbAngle = Mathf.Asin(Mathf.Clamp(climbDot, -1f, 1f)) * Mathf.Rad2Deg;
-
-        float torqueScale = 1f - speedRatio * speedRatio;
-
-        if (climbDot > 0f)
-        {
-            float climbFactor = Mathf.Clamp01(climbAngle / fullAssistAngle);
-            torqueScale *= 1f + climbTorqueBoost * climbFactor;
-        }
-
-        float torque = activeMaxTorque * throttleInput * torqueScale;
-
-        wheelFL.motorTorque = torque * frontDriveBias;
-        wheelFR.motorTorque = torque * frontDriveBias;
-        wheelRL.motorTorque = torque * (1f - frontDriveBias);
-        wheelRR.motorTorque = torque * (1f - frontDriveBias);
-
-        // Gravity compensation (unchanged)
-        if (climbDot > 0f && Mathf.Abs(throttleInput) > 0.05f)
-        {
-            Vector3 gravityForce = Physics.gravity * rb.mass;
-            float backwardPull = -Vector3.Dot(gravityForce, forwardDir);
-
-            if (backwardPull > 0f)
-            {
-                float compensation = backwardPull
-                                   * hillGravityCompensation
-                                   * Mathf.Abs(throttleInput);
-                rb.AddForce(forwardDir * compensation);
-            }
-        }
-    }
-
-    // -------------------------------------------------------
-    //  Drift
-    // -------------------------------------------------------
-
-    /// <summary>
-    /// Enters the drift state when the player holds Throttle (RT) and Brake (X)
-    /// together, and leaves it the moment either is released — releasing throttle
-    /// falls back to normal braking, releasing brake falls back to normal driving.
-    /// On each transition the wheels' sideways grip is swapped between the normal
-    /// and drift stiffness; the softened brake torque and elevated downforce are
-    /// read live from <see cref="isDrifting"/> in ApplyBrakes/ApplyDownforce.
-    /// </summary>
-    void UpdateDriftState()
-    {
-        // Throttle is RT minus LT, so > 0 means RT is genuinely held forward.
-        bool wantDrift = throttleInput > 0.05f && brakeInput > 0.05f;
-        if (wantDrift == isDrifting) return;
-
-        isDrifting = wantDrift;
-        SetRearSidewaysStiffness(isDrifting ? driftSidewaysGripStiffness
-                                            : sidewaysGripStiffness);
-    }
-
-    /// <summary>Sets the sideways friction stiffness on the REAR wheels only (RL/RR),
-    /// leaving the rest of each wheel's friction curve (set up in ApplyFrictionCurves)
-    /// intact. The front wheels keep their normal grip so the car still steers while
-    /// the back end breaks loose.</summary>
-    void SetRearSidewaysStiffness(float stiffness)
-    {
-        SetWheelSidewaysStiffness(wheelRL, stiffness);
-        SetWheelSidewaysStiffness(wheelRR, stiffness);
-    }
-
-    void SetWheelSidewaysStiffness(WheelCollider wheel, float stiffness)
-    {
-        WheelFrictionCurve side = wheel.sidewaysFriction;
-        side.stiffness = stiffness;
-        wheel.sidewaysFriction = side;
-    }
-
-    // -------------------------------------------------------
-    //  Brakes
-    // -------------------------------------------------------
-
-    void ApplyBrakes()
-    {
-        // While drifting, brake with a much softer max torque so the car keeps
-        // rolling and slides rather than stopping.
-        float activeMaxBrake = isDrifting ? driftBrakeTorque : maxBrakeTorque;
-        float brake = brakeInput * activeMaxBrake;
-
-        if (Mathf.Abs(throttleInput) < 0.05f && brakeInput < 0.05f)
-            brake = engineBrakeTorque;
-
-        wheelFL.brakeTorque = brake * frontBrakeBias;
-        wheelFR.brakeTorque = brake * frontBrakeBias;
-        wheelRL.brakeTorque = brake * (1f - frontBrakeBias);
-        wheelRR.brakeTorque = brake * (1f - frontBrakeBias);
-    }
-
-    // -------------------------------------------------------
-    //  Downforce
-    // -------------------------------------------------------
-
-    /// <summary>
-    /// Aerodynamic downforce — pushes the car straight down along world up.
-    /// Scales with speed squared, like real aerodynamics, so high-speed crests
-    /// generate enough downforce to keep the car planted.
-    /// </summary>
-    void ApplyDownforce()
-    {
-        float speedRatio = Mathf.Clamp01(SpeedMph / maxSpeedMph);
-
-        // While drifting, use the elevated drift max downforce instead of the normal
-        // one, and skip the braking bonus below — the high max downforce replaces it.
-        float activeMaxDownforce = isDrifting ? driftMaxDownforce : maxDownforce;
-        float force = activeMaxDownforce * speedRatio * speedRatio;
-
-        // While the brake is held (and not drifting), scale up the downforce. The
-        // brake input is 0-1, so multiplying it lets the bonus ramp in smoothly with
-        // brake pressure rather than snapping on instantly.
-        if (!isDrifting && brakeInput > 0.05f)
-        {
-            float brakingBonus = (brakingDownforceMultiplier - 1f) * brakeInput;
-            force *= 1f + brakingBonus;
-        }
-
-        rb.AddForce(Vector3.down * force);
-    }
-
-    // -------------------------------------------------------
-    //  Anti-Roll
-    // -------------------------------------------------------
-
-    void ApplyAntiRoll()
-    {
-        AntiRollBar(wheelFL, wheelFR);
-        AntiRollBar(wheelRL, wheelRR);
-    }
-
-    void AntiRollBar(WheelCollider left, WheelCollider right)
-    {
-        WheelHit hit;
-        float travelL = 1f, travelR = 1f;
-
-        bool groundedL = left.GetGroundHit(out hit);
-        if (groundedL)
-            travelL = (-left.transform.InverseTransformPoint(hit.point).y - left.radius)
-                    / left.suspensionDistance;
-
-        bool groundedR = right.GetGroundHit(out hit);
-        if (groundedR)
-            travelR = (-right.transform.InverseTransformPoint(hit.point).y - right.radius)
-                    / right.suspensionDistance;
-
-        float force = (travelL - travelR) * antiRollForce;
-
-        if (groundedL) rb.AddForceAtPosition(left.transform.up * -force, left.transform.position);
-        if (groundedR) rb.AddForceAtPosition(right.transform.up * force, right.transform.position);
-    }
-
-    /// <summary>
-    /// While airborne (past grace period), A/D input translates the car
-    /// horizontally perpendicular to its facing direction. Forward speed and
-    /// vertical fall speed are preserved exactly — only the lateral component
-    /// of velocity is modified.
-    /// </summary>
     void ApplyAirDrift()
     {
-        // Safety check — if the car is tilted past 45° from upright, skip air drift
-        // entirely. Sideways or steeply-pitched cars have unreliable forward/right
-        // axes for horizontal projection, so trying to drift in those orientations
-        // produces erratic velocity calculations.
         float tilt = Vector3.Angle(transform.up, Vector3.up);
         if (tilt > 45f) return;
 
-        // Project car's forward and right onto horizontal plane. Both are normalised
-        // AFTER projection so they're proper unit vectors in the horizontal plane.
-        Vector3 forwardAxis = transform.forward;
-        forwardAxis.y = 0f;
+        Vector3 forwardAxis = transform.forward; forwardAxis.y = 0f;
         if (forwardAxis.sqrMagnitude < 0.01f) return;
         forwardAxis.Normalize();
 
-        Vector3 driftAxis = transform.right;
-        driftAxis.y = 0f;
+        Vector3 driftAxis = transform.right; driftAxis.y = 0f;
         if (driftAxis.sqrMagnitude < 0.01f) return;
         driftAxis.Normalize();
 
-        // Decompose CURRENT velocity onto these horizontal unit vectors.
-        // The horizontal components of velocity are projected onto the unit
-        // axes — which guarantees the recomposition produces a velocity of
-        // matching magnitude rather than amplifying it.
         Vector3 vel = rb.linearVelocity;
         Vector3 horizontalVel = new Vector3(vel.x, 0f, vel.z);
 
@@ -787,83 +734,114 @@ public class CarController : MonoBehaviour
         float verticalSpeed = vel.y;
 
         float targetDrift = steerInput * airDriftSpeed;
-        float newDrift = Mathf.MoveTowards(currentDrift, targetDrift,
-                                            airDriftAcceleration * Time.fixedDeltaTime);
+        float newDrift = Mathf.MoveTowards(currentDrift, targetDrift, airDriftAcceleration * Time.fixedDeltaTime);
 
-        // Recompose. Since forwardAxis and driftAxis are orthogonal unit vectors
-        // in the horizontal plane, this rebuilds horizontal velocity exactly,
-        // with only the drift component changed.
         Vector3 newHorizontal = forwardAxis * forwardSpeed + driftAxis * newDrift;
         rb.linearVelocity = new Vector3(newHorizontal.x, verticalSpeed, newHorizontal.z);
     }
 
-    // Tracks whether loop gravity-cut is currently active (hysteresis state).
-    private bool loopGravityCut;
-
-    /// <summary>
-    /// True if any wheel is resting on a surface tagged as a loop.
-    /// </summary>
-    bool AnyWheelOnLoop()
-    {
-        return WheelOnLoop(wheelFL) || WheelOnLoop(wheelFR)
-            || WheelOnLoop(wheelRL) || WheelOnLoop(wheelRR);
-    }
-
-    bool WheelOnLoop(WheelCollider wheel)
-    {
-        if (wheel == null) return false;
-        if (!wheel.GetGroundHit(out WheelHit hit)) return false;
-        return hit.collider != null && hit.collider.CompareTag(loopTag);
-    }
-
-    /// <summary>
-    /// Disables gravity only once the car has rotated PAST vertical (starting to
-    /// invert) while on a loop, and restores it once it comes back up past
-    /// vertical or leaves the loop. The climb into the loop keeps full gravity so
-    /// the entry still feels weighty; the inverted top and descent run gravity-free
-    /// so the car can't peel off.
-    /// </summary>
-    void UpdateLoopGravity()
-    {
-        bool onLoop = AnyWheelOnLoop();
-
-        if (!onLoop)
-        {
-            loopGravityCut = false;
-        }
-        else
-        {
-            float uprightDot = Vector3.Dot(transform.up, Vector3.up);
-            if (!loopGravityCut && uprightDot < loopGravityDisableDot)
-                loopGravityCut = true;
-            else if (loopGravityCut && uprightDot > loopGravityEnableDot)
-                loopGravityCut = false;
-        }
-
-        rb.useGravity = !loopGravityCut;
-
-        // While gravity is cut on the loop, press the car gently onto the track
-        // surface (into the loop interior) so it doesn't drift off the inside at
-        // the apex. Acceleration mode = mass-independent, like gravity.
-        if (loopGravityCut && loopStickForce > 0f)
-            rb.AddForce(-transform.up * loopStickForce, ForceMode.Acceleration);
-    }
-
     // -------------------------------------------------------
-    //  Wheel Mesh Sync
+    //  Wheel mesh visuals
     // -------------------------------------------------------
 
+    /// <summary>
+    /// Keeps each visible wheel pinned to its anchor (the WheelCollider transform,
+    /// which is rigid to the body) and spins it by the car's forward speed; the front
+    /// wheels also visually steer. The wheels intentionally do NOT chase the ground
+    /// contact point — the body hovers at rideHeight, so following the contact would
+    /// drop the wheels away from the chassis. Tune rideHeight ≈ wheel radius so the
+    /// pinned wheels sit on the road.
+    /// </summary>
     void UpdateWheelMeshes()
     {
-        UpdateSingleWheel(wheelFL, meshFL);
-        UpdateSingleWheel(wheelFR, meshFR);
-        UpdateSingleWheel(wheelRL, meshRL);
-        UpdateSingleWheel(wheelRR, meshRR);
+        if (anchorTransforms == null) return;
+
+        float fwdSpeed = rb != null ? Vector3.Dot(rb.linearVelocity, transform.forward) : 0f;
+
+        for (int i = 0; i < 4; i++)
+        {
+            Transform mesh = wheelMeshes[i];
+            Transform anchor = anchorTransforms[i];
+            if (mesh == null || anchor == null) continue;
+
+            // Vertical-only suspension: rest at the hub (when the gap equals rideHeight)
+            // and travel up/down with the ground, clamped — while staying locked under
+            // the car horizontally. Built from the scalar gap, not a world point, so the
+            // wheel reacts to bumps without ever trailing behind at speed.
+            float travel = wheelGrounded[i]
+                ? Mathf.Clamp(groundDistance[i] - rideHeight, -maxWheelTravel, maxWheelTravel)
+                : maxWheelTravel;   // hang at full droop while airborne
+            mesh.position = anchor.position - transform.up * travel;
+
+            // Spin around the wheel's local right axis from distance travelled.
+            wheelSpinAngle[i] += fwdSpeed * Time.deltaTime * 90f;
+            bool front = i < 2;
+            float steerVis = front ? smoothedSteer * 25f : 0f;
+            mesh.rotation = transform.rotation
+                          * Quaternion.Euler(0f, steerVis, 0f)
+                          * Quaternion.Euler(wheelSpinAngle[i], 0f, 0f);
+        }
     }
 
-    void UpdateSingleWheel(WheelCollider col, Transform mesh)
+    // -------------------------------------------------------
+    //  Tuning gizmos
+    // -------------------------------------------------------
+
+    /// <summary>
+    /// Draws the four suspension probes so they can be tuned in the Scene view.
+    /// Per ray: the full probe line (green = hit this frame, orange = miss / edit mode),
+    /// a cyan wire sphere at the target ride height, and a solid sphere at the live
+    /// contact point while playing. A yellow line from the car shows the averaged
+    /// ground normal that orientation aligns to.
+    /// </summary>
+    void OnDrawGizmos()
     {
-        col.GetWorldPose(out Vector3 pos, out Quaternion rot);
-        mesh.SetPositionAndRotation(pos, rot);
+        Vector3 down = -transform.up;
+
+        for (int i = 0; i < 4; i++)
+        {
+            Transform a = GizmoAnchor(i);
+            if (a == null) continue;
+
+            Vector3 origin = a.position;
+            bool hit = Application.isPlaying
+                    && wheelGrounded != null && i < wheelGrounded.Length && wheelGrounded[i];
+
+            // Full probe length.
+            Gizmos.color = hit ? Color.green : new Color(1f, 0.5f, 0f);
+            Gizmos.DrawLine(origin, origin + down * suspensionRayLength);
+
+            // Where the wheel should float (ride height) along the probe.
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(origin + down * rideHeight, 0.08f);
+
+            // Live contact point while playing — rebuilt from the CURRENT hub so it
+            // stays directly under the wheel instead of trailing behind at speed.
+            if (hit && groundDistance != null && i < groundDistance.Length)
+            {
+                Gizmos.color = Color.green;
+                Gizmos.DrawSphere(origin + down * groundDistance[i], 0.1f);
+            }
+        }
+
+        // Averaged ground normal the body aligns to (play mode, when grounded).
+        if (Application.isPlaying && grounded)
+        {
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawLine(transform.position, transform.position + groundNormal * 2f);
+        }
+    }
+
+    /// <summary>Anchor transform for gizmos — uses the cached one while playing, and
+    /// falls back to the serialized WheelCollider's transform in the editor.</summary>
+    Transform GizmoAnchor(int i)
+    {
+        // Bounds-checked: OnDrawGizmos can run after a live script recompile, before
+        // Start has (re)sized this array, so never assume it's the expected length.
+        if (anchorTransforms != null && i < anchorTransforms.Length && anchorTransforms[i] != null)
+            return anchorTransforms[i];
+
+        WheelCollider wc = i == 0 ? wheelFL : i == 1 ? wheelFR : i == 2 ? wheelRL : wheelRR;
+        return wc != null ? wc.transform : null;
     }
 }

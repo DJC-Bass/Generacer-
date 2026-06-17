@@ -50,6 +50,7 @@ MonoBehaviour:
   branchLevels: 4
   fanAngleDeg: 90
   lateralSweep: 15000
+  minBranchAngle: 45
   waypointSpacing: 100
   meshSamplesPerUnit: 0.1
   baseAltitude: 0
@@ -68,20 +69,25 @@ MonoBehaviour:
   branchVariance: 1
   convergenceSwing: 6000
   convergenceAltitudeSwing: 1500
+  convergenceAltitudeSwingVariance: 0
   startLateralVariance: 4000
   startAltitudeVariance: 6000
   startForwardVariance: 1500
   finishLateralVariance: 4000
   finishAltitudeVariance: 6000
   finishForwardVariance: 3000
-  forkDistanceVariance: 0
-  earlyTerminationChance: 0
   finishLateralSpacing: 80
   spawnSpeedMph: 300
   followCamera: {fileID: 0}
   carSpawnForwardOffset: 1500
   carSpawnHeightOffset: 6
   spawnVelocityMph: 300
+  loopChance: 0.2
+  minLoopRadius: 200
+  maxLoopRadius: 350
+  minLoopExitOffset: 250
+  maxLoopExitOffset: 600
+  loopExitForwardOffset: 0
 --- !u!64 &7692560314290283657
 MeshCollider:
   m_ObjectHideFlags: 0
