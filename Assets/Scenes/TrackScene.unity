@@ -168,10 +168,6 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: rideHeight
-      value: 0.75
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: jetItemName
       value: 
       objectReference: {fileID: 0}
@@ -184,10 +180,6 @@ PrefabInstance:
       value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: airDriftSpeed
-      value: 75
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: brakeStrength
       value: 100
       objectReference: {fileID: 0}
@@ -196,16 +188,8 @@ PrefabInstance:
       value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: turboDuration
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turboItemName
       value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: frontDriveBias
-      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: maxWheelTravel
@@ -213,11 +197,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: springStrength
-      value: 300
+      value: 1000
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: steerLerpSpeed
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftGripFactor
-      value: 0.096
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: overspeedDamping
@@ -225,19 +213,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turnRateLowSpeed
-      value: 750
+      value: 600
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: downhillThreshold
       value: 0.01
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: groundMask.m_Bits
-      value: 4294967295
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turnRateHighSpeed
-      value: 500
+      value: 300
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftBrakeStrength
@@ -248,28 +232,16 @@ PrefabInstance:
       value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: suspensionRayLength
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: airDriftAcceleration
-      value: 75
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: orientationLerpSpeed
       value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftTurnRateHighSpeed
-      value: 1000
+      value: 600
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: hillGravityCompensation
       value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: driftMaxSteerAngleHighSpeed
-      value: 35
       objectReference: {fileID: 0}
     - target: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: m_Name
@@ -1318,7 +1290,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: lateralSweep
-      value: 25000
+      value: 17500
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: maxLoopRadius
