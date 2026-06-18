@@ -45,6 +45,13 @@ public class CarController : MonoBehaviour
     public float acceleration = 35f;
     [Tooltip("Reverse acceleration when holding the Left Trigger from a near stop (m/s^2).")]
     public float reverseAcceleration = 16f;
+    [Tooltip("How quickly the car bleeds speed ABOVE its cap back down to it (m/s^2). The " +
+             "cap is the base top speed times any turbo/loop multiplier. The car may exceed " +
+             "it while going downhill, then eases back once it levels out or the boost ends.")]
+    public float overspeedDamping = 20f;
+    [Tooltip("Nose-down amount (forward.y) past which the car counts as 'going downhill' and " +
+             "is allowed to exceed top speed without being clamped. ~0.05 ≈ 3 degrees.")]
+    public float downhillThreshold = 0.05f;
 
     [Header("Ground Detection / Raycast")]
     [Tooltip("Layers the suspension rays test against. Should include the track, " +
@@ -511,6 +518,10 @@ public class CarController : MonoBehaviour
             // Coasting — gentle engine braking.
             ApplyForwardDecel(fwd, fwdSpeed, engineBraking);
         }
+
+        // Ease any speed left over the cap (after turbo ends or off a descent) back
+        // down to it — unless we're currently going downhill, where gravity should win.
+        ApplyTopSpeedClamp(maxMs);
     }
 
     /// <summary>Reduces the forward component of velocity toward zero by decel*dt.</summary>
@@ -518,6 +529,25 @@ public class CarController : MonoBehaviour
     {
         float newSpeed = Mathf.MoveTowards(fwdSpeed, 0f, decel * Time.fixedDeltaTime);
         rb.linearVelocity += fwd * (newSpeed - fwdSpeed);
+    }
+
+    /// <summary>
+    /// Eases forward speed back down to allowedMaxMs (base top speed × turbo × loop) when
+    /// it's over the cap. Skipped while descending, so gravity can still carry the car
+    /// past its top speed downhill; once it levels out (or the turbo/loop boost ends) the
+    /// excess bleeds off at overspeedDamping instead of coasting forever with no drag.
+    /// </summary>
+    void ApplyTopSpeedClamp(float allowedMaxMs)
+    {
+        Vector3 fwd = transform.forward;
+        float fwdSpeed = Vector3.Dot(rb.linearVelocity, fwd);
+
+        if (fwdSpeed <= allowedMaxMs) return;        // under the cap — nothing to do
+        if (fwd.y < -downhillThreshold) return;      // going downhill — let gravity win
+
+        float eased = Mathf.MoveTowards(fwdSpeed, allowedMaxMs,
+                                        overspeedDamping * Time.fixedDeltaTime);
+        rb.linearVelocity += fwd * (eased - fwdSpeed);
     }
 
     /// <summary>Extra acceleration multiplier when climbing, scaling with steepness.</summary>
