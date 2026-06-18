@@ -48,6 +48,11 @@ public class GameLoopManager : MonoBehaviour
     public float TimeRemainingInPhase { get; private set; }
     public float RoundTimeRemaining { get; private set; }
 
+    /// <summary>Which game-loop round we're on, counting up from 1. Incremented each time
+    /// the portal spawns (one per loop cycle, whether or not the player enters the track).
+    /// Drives how many obstacle spawners are active that round.</summary>
+    public int RoundNumber { get; private set; }
+
     /// <summary>True once any AI car (drone/challenger) has reached the track finish
     /// this round. Reset when the player enters the track. Read by the End Portal to
     /// decide whether the player earned the first-place bonus.</summary>
@@ -121,7 +126,8 @@ public class GameLoopManager : MonoBehaviour
     {
         CurrentPhase = Phase.HubPortalActive;
         RoundTimeRemaining = roundDuration;
-        Debug.Log($"[GameLoop] Portal active � {RoundTimeRemaining:F0}s round timer started");
+        RoundNumber++;   // each portal spawn begins a new game-loop round
+        Debug.Log($"[GameLoop] Round {RoundNumber} — portal active, {RoundTimeRemaining:F0}s round timer started");
         OnPortalShouldSpawn?.Invoke();
     }
 
