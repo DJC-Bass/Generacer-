@@ -8,10 +8,16 @@ public class CameraFollow : MonoBehaviour
 
     [Header("Position Settings")]
     public Vector3 offset = new Vector3(0f, 3f, -7f);  // Behind and above the car
-    [Tooltip("Lazy-Susan lag: how slowly the camera's ORBIT angle follows the car's heading " +
-             "(yaw). The offset DISTANCE to the car is always maintained — only the angular " +
-             "position around the car eases. 0 = rigidly locked behind the car; higher = lazier.")]
+    [Tooltip("Lazy-Susan YAW lag: how slowly the camera's heading orbits to follow the car's. " +
+             "The offset DISTANCE is always maintained — only the orbit angle eases. " +
+             "0 = locked behind the car; higher = lazier.")]
     public float positionSmoothTime = 0.15f;
+    [Tooltip("PITCH lag: how slowly the camera's nose-up/down position follows the car " +
+             "(climbs/dives). 0 = instant; higher = lazier.")]
+    public float pitchSmoothTime = 0.15f;
+    [Tooltip("ROLL lag: how slowly the camera's bank position follows the car (banking/loops). " +
+             "0 = instant; higher = lazier.")]
+    public float rollSmoothTime = 0.15f;
 
     [Header("Rotation Settings")]
     public float rotationSmoothTime = 0.1f;   // How fast the camera's aim eases onto the car
@@ -44,11 +50,10 @@ public class CameraFollow : MonoBehaviour
     private float currentFOVVelocity;
     private Camera cam;
 
-    // Lazy-Susan orbit: the camera's yaw eases toward the car's heading so it orbits the car
-    // slowly while always keeping its offset distance. Pitch/roll follow instantly so slopes
-    // and loops still frame correctly.
-    private float smoothedYaw;
-    private float lastYaw;
+    // Per-axis camera rotation lag. The camera's reference rotation eases toward the car's,
+    // with separate smooth times for yaw / pitch / roll. The offset is placed using this
+    // lagged rotation, so the camera orbits the car like a lazy Susan in each axis.
+    private Quaternion smoothedRot = Quaternion.identity;
 
     private CarController targetCar;        // NEW   to read turbo state
     private float turboFOVTimer = 0f;       // NEW   counts down the kick
@@ -86,7 +91,7 @@ public class CameraFollow : MonoBehaviour
         {
             targetRb = target.GetComponent<Rigidbody>();
             targetCar = target.GetComponent<CarController>();   // NEW
-            lastYaw = smoothedYaw = CarYaw();   // start aligned so there's no initial swing
+            smoothedRot = target.rotation;   // start aligned so there's no initial swing
         }
 
         if (target != null)
@@ -108,6 +113,7 @@ public class CameraFollow : MonoBehaviour
     {
         if (target == null) return;
 
+        UpdateSmoothedRotation();
         FollowPosition();
         FollowRotation();
         UpdateFOV();
@@ -115,31 +121,45 @@ public class CameraFollow : MonoBehaviour
 
     void FollowPosition()
     {
-        // Lazy-Susan orbit: ease the camera's heading (yaw) toward the car's while keeping the
-        // car's current pitch/roll, then place the offset behind that lagged heading. The offset
-        // distance is always maintained — only the angular position around the car lags.
-        float carYaw = CarYaw();
-        float t = (positionSmoothTime <= 0f) ? 1f : 1f - Mathf.Exp(-Time.deltaTime / positionSmoothTime);
-        smoothedYaw = Mathf.LerpAngle(smoothedYaw, carYaw, t);
-        lastYaw = carYaw;
-
-        // Rewind the car's yaw to the smoothed value (around world up); pitch/roll untouched,
-        // so slopes and loops keep framing correctly.
-        Quaternion orbitRot = Quaternion.AngleAxis(smoothedYaw - carYaw, Vector3.up) * target.rotation;
-        transform.position = target.position + orbitRot * EffectiveOffset;
+        // Place the offset behind the per-axis-lagged camera rotation. The offset distance is
+        // always maintained — only the angular position around the car (yaw/pitch/roll) lags.
+        transform.position = target.position + smoothedRot * EffectiveOffset;
     }
 
     /// <summary>
-    /// The car's heading around world up (degrees). Returns the last value when the car's
-    /// forward is near-vertical (e.g. mid-loop), where heading is undefined — so the orbit
-    /// holds steady through loops instead of jittering.
+    /// Eases the camera's reference rotation toward the car's, with an independent lag per
+    /// axis: heading/yaw (positionSmoothTime), pitch (pitchSmoothTime) and roll (rollSmoothTime).
+    /// Each correction is applied around its own axis from a signed angle, which stays robust
+    /// through steep hills and loops — no Euler gimbal flips.
     /// </summary>
-    float CarYaw()
+    void UpdateSmoothedRotation()
     {
-        Vector3 horiz = Vector3.ProjectOnPlane(target.forward, Vector3.up);
-        if (horiz.sqrMagnitude < 1e-4f) return lastYaw;
-        return Mathf.Atan2(horiz.x, horiz.z) * Mathf.Rad2Deg;
+        Quaternion targetRot = target.rotation;
+
+        // Yaw — ease heading around WORLD up. Skipped when the car's forward is near-vertical
+        // (e.g. a loop apex), where heading is undefined, so it holds steady there.
+        Vector3 smFwdH = Vector3.ProjectOnPlane(smoothedRot * Vector3.forward, Vector3.up);
+        Vector3 tgFwdH = Vector3.ProjectOnPlane(targetRot * Vector3.forward, Vector3.up);
+        if (smFwdH.sqrMagnitude > 1e-5f && tgFwdH.sqrMagnitude > 1e-5f)
+        {
+            float yawErr = Vector3.SignedAngle(smFwdH, tgFwdH, Vector3.up);
+            smoothedRot = Quaternion.AngleAxis(yawErr * Approach(positionSmoothTime), Vector3.up) * smoothedRot;
+        }
+
+        // Pitch — ease nose up/down around the camera frame's RIGHT axis.
+        Vector3 smRight = smoothedRot * Vector3.right;
+        float pitchErr = Vector3.SignedAngle(smoothedRot * Vector3.forward, targetRot * Vector3.forward, smRight);
+        smoothedRot = Quaternion.AngleAxis(pitchErr * Approach(pitchSmoothTime), smRight) * smoothedRot;
+
+        // Roll — ease bank around the camera frame's FORWARD axis.
+        Vector3 smFwd = smoothedRot * Vector3.forward;
+        float rollErr = Vector3.SignedAngle(smoothedRot * Vector3.up, targetRot * Vector3.up, smFwd);
+        smoothedRot = Quaternion.AngleAxis(rollErr * Approach(rollSmoothTime), smFwd) * smoothedRot;
     }
+
+    // Exponential approach factor (0-1) for a smooth time. 0 = instant (snaps each frame).
+    float Approach(float smoothTime) =>
+        smoothTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / smoothTime);
 
     void FollowRotation()
     {

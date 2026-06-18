@@ -1042,7 +1042,9 @@ MonoBehaviour:
   target: {fileID: 222848032}
   offset: {x: 0, y: 2.5, z: -7}
   positionSmoothTime: 0.5
-  rotationSmoothTime: 0.1
+  pitchSmoothTime: 0.25
+  rollSmoothTime: 0.25
+  rotationSmoothTime: 0.5
   lookAheadDistance: 5
   baseFOV: 70
   maxFOV: 90

@@ -1269,11 +1269,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: positionSmoothTime
-      value: -0.2
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: rotationSmoothTime
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6084672688749080874, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_Name
