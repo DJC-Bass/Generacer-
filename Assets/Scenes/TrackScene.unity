@@ -485,6 +485,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: BoulderSpawner
       objectReference: {fileID: 0}
+    - target: {fileID: 1691984968653786121, guid: 889bf45c475bd0140895f8a5ea26426f, type: 3}
+      propertyPath: m_Layer
+      value: 12
+      objectReference: {fileID: 0}
     - target: {fileID: 3042359968238648207, guid: 889bf45c475bd0140895f8a5ea26426f, type: 3}
       propertyPath: maxScale
       value: 8
@@ -780,6 +784,10 @@ PrefabInstance:
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: minScale
       value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
+      propertyPath: obstacleLayer
+      value: 13
       objectReference: {fileID: 0}
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: trackGenerator

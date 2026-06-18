@@ -45,8 +45,22 @@ public class LightningSpawner : MonoBehaviour
          "Each strike picks a random offset within ±this value.")]
     public float lateralOffsetRange = 5f;
 
+    [Header("Layer")]
+    [Tooltip("Layer assigned to every spawned lightning object — the LightningStrike " +
+             "controller and its WarningColumn and LightningBolt. Defaults to \"Lightning\". " +
+             "Must match a layer in Project Settings > Tags and Layers.")]
+    public string lightningLayerName = "Lightning";
+
+    // Resolved from lightningLayerName at Start; -1 if the layer doesn't exist.
+    private int lightningLayer = -1;
+
     void Start()
     {
+        lightningLayer = LayerMask.NameToLayer(lightningLayerName);
+        if (lightningLayer < 0)
+            Debug.LogWarning($"[LightningSpawner] Layer \"{lightningLayerName}\" not found in " +
+                             "Tags and Layers — lightning objects will keep the Default layer.");
+
         StartCoroutine(InitialiseDelayed());
     }
 
@@ -139,8 +153,10 @@ public class LightningSpawner : MonoBehaviour
 
         var strikeObj = new GameObject("LightningStrike");
         strikeObj.transform.SetParent(transform);
+        if (lightningLayer >= 0) strikeObj.layer = lightningLayer;
 
         var strike = strikeObj.AddComponent<LightningStrike>();
+        strike.lightningLayer = lightningLayer;   // propagate to the WarningColumn + LightningBolt
         strike.strikeHeight = Random.Range(minStrikeHeight, maxStrikeHeight);
         strike.warningRadius = warningRadius;
         strike.boltThickness = boltThickness;

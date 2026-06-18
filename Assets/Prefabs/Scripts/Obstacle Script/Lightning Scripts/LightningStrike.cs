@@ -18,6 +18,10 @@ public class LightningStrike : MonoBehaviour
     public Material warningMaterial;
     public Material boltMaterial;
 
+    // Layer applied to the spawned WarningColumn and LightningBolt. Set by the
+    // LightningSpawner; -1 leaves them on the Default layer.
+    [HideInInspector] public int lightningLayer = -1;
+
     private Vector3 strikePoint;
 
     public void Trigger(Vector3 point, Material warning, Material bolt)
@@ -31,7 +35,7 @@ public class LightningStrike : MonoBehaviour
         // Spawn the warning immediately. It self-destructs after its fade.
         SpawnWarning();
 
-        // Schedule the bolt independently — it fires after warningDuration
+        // Schedule the bolt independently ï¿½ it fires after warningDuration
         // regardless of what happens to the warning object. Even if the
         // warning errors out or gets destroyed early, the bolt still spawns.
         Invoke(nameof(SpawnBolt), warningDuration);
@@ -44,7 +48,8 @@ public class LightningStrike : MonoBehaviour
     void SpawnWarning()
     {
         var obj = new GameObject("WarningColumn");
-        // NOT parented to this — independent lifetime so this controller's
+        if (lightningLayer >= 0) obj.layer = lightningLayer;
+        // NOT parented to this ï¿½ independent lifetime so this controller's
         // destruction doesn't take the warning down with it
         obj.transform.position = strikePoint;
 
@@ -62,6 +67,7 @@ public class LightningStrike : MonoBehaviour
     void SpawnBolt()
     {
         var obj = new GameObject("LightningBolt");
+        if (lightningLayer >= 0) obj.layer = lightningLayer;
         obj.transform.position = strikePoint;
 
         float facingAngle = Random.Range(0f, 360f);
@@ -77,7 +83,7 @@ public class LightningStrike : MonoBehaviour
         var renderer = obj.AddComponent<MeshRenderer>();
         renderer.material = new Material(boltMaterial);
 
-        // Trigger collider — physically passes through everything, but reports
+        // Trigger collider ï¿½ physically passes through everything, but reports
         // collisions via OnTriggerEnter on the LightningHitDetector script.
         var collider = obj.AddComponent<MeshCollider>();
         collider.sharedMesh = mesh;
@@ -91,7 +97,7 @@ public class LightningStrike : MonoBehaviour
         rb.isKinematic = true;
         rb.useGravity = false;
 
-        // Hit detector — only responds to objects tagged "Player"
+        // Hit detector ï¿½ only responds to objects tagged "Player"
         obj.AddComponent<LightningHitDetector>();
 
         var fader = obj.AddComponent<LightningFader>();
@@ -144,7 +150,7 @@ public class LightningHitDetector : MonoBehaviour
         var rb = player.GetComponent<Rigidbody>();
         if (rb != null)
         {
-            // Visible reaction — kicks the car upward and slightly forward
+            // Visible reaction ï¿½ kicks the car upward and slightly forward
             // so a hit feels like an actual lightning strike, not just a sound effect
             rb.AddForce(Vector3.up * 80f, ForceMode.VelocityChange);
         }
