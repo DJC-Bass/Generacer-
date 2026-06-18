@@ -8,10 +8,13 @@ public class CameraFollow : MonoBehaviour
 
     [Header("Position Settings")]
     public Vector3 offset = new Vector3(0f, 3f, -7f);  // Behind and above the car
-    public float positionSmoothTime = 0.15f;            // Lower = snappier follow
+    [Tooltip("Lazy-Susan lag: how slowly the camera's ORBIT angle follows the car's heading " +
+             "(yaw). The offset DISTANCE to the car is always maintained — only the angular " +
+             "position around the car eases. 0 = rigidly locked behind the car; higher = lazier.")]
+    public float positionSmoothTime = 0.15f;
 
     [Header("Rotation Settings")]
-    public float rotationSmoothTime = 0.1f;   // How fast camera rotates with car
+    public float rotationSmoothTime = 0.1f;   // How fast the camera's aim eases onto the car
     public float lookAheadDistance = 5f;      // Looks toward where the car is heading
 
     [Header("Field of View")]
@@ -38,18 +41,22 @@ public class CameraFollow : MonoBehaviour
     public float loopFOVBoost = 30f;
 
     private Rigidbody targetRb;
-    private Vector3 currentVelocity;
-    private float currentRotationVelocity;
     private float currentFOVVelocity;
     private Camera cam;
 
-    private CarController targetCar;        // NEW � to read turbo state
-    private float turboFOVTimer = 0f;       // NEW � counts down the kick
-    private bool prevTurboState = false;   // NEW � detects the activation moment
+    // Lazy-Susan orbit: the camera's yaw eases toward the car's heading so it orbits the car
+    // slowly while always keeping its offset distance. Pitch/roll follow instantly so slopes
+    // and loops still frame correctly.
+    private float smoothedYaw;
+    private float lastYaw;
+
+    private CarController targetCar;        // NEW   to read turbo state
+    private float turboFOVTimer = 0f;       // NEW   counts down the kick
+    private bool prevTurboState = false;   // NEW   detects the activation moment
 
     // Rear-view toggle. When true, the camera's local Z offset is flipped (placing
     // it in front of the car) AND the look-ahead direction is reversed, so the
-    // camera looks backward at what's behind the car � like a rear-view mirror.
+    // camera looks backward at what's behind the car   like a rear-view mirror.
     private GeneracerControls controls;
     private bool rearView;
 
@@ -79,6 +86,7 @@ public class CameraFollow : MonoBehaviour
         {
             targetRb = target.GetComponent<Rigidbody>();
             targetCar = target.GetComponent<CarController>();   // NEW
+            lastYaw = smoothedYaw = CarYaw();   // start aligned so there's no initial swing
         }
 
         if (target != null)
@@ -95,7 +103,7 @@ public class CameraFollow : MonoBehaviour
     Vector3 EffectiveOffset =>
         rearView ? new Vector3(offset.x, offset.y, -offset.z) : offset;
 
-    // LateUpdate runs after all movement is done � always use this for cameras
+    // LateUpdate runs after all movement is done   always use this for cameras
     void LateUpdate()
     {
         if (target == null) return;
@@ -107,16 +115,30 @@ public class CameraFollow : MonoBehaviour
 
     void FollowPosition()
     {
-        // Calculate desired position in world space based on car's local offset
-        Vector3 desiredPosition = target.TransformPoint(EffectiveOffset);
+        // Lazy-Susan orbit: ease the camera's heading (yaw) toward the car's while keeping the
+        // car's current pitch/roll, then place the offset behind that lagged heading. The offset
+        // distance is always maintained — only the angular position around the car lags.
+        float carYaw = CarYaw();
+        float t = (positionSmoothTime <= 0f) ? 1f : 1f - Mathf.Exp(-Time.deltaTime / positionSmoothTime);
+        smoothedYaw = Mathf.LerpAngle(smoothedYaw, carYaw, t);
+        lastYaw = carYaw;
 
-        // Smoothly move toward desired position
-        transform.position = Vector3.SmoothDamp(
-            transform.position,
-            desiredPosition,
-            ref currentVelocity,
-            positionSmoothTime
-        );
+        // Rewind the car's yaw to the smoothed value (around world up); pitch/roll untouched,
+        // so slopes and loops keep framing correctly.
+        Quaternion orbitRot = Quaternion.AngleAxis(smoothedYaw - carYaw, Vector3.up) * target.rotation;
+        transform.position = target.position + orbitRot * EffectiveOffset;
+    }
+
+    /// <summary>
+    /// The car's heading around world up (degrees). Returns the last value when the car's
+    /// forward is near-vertical (e.g. mid-loop), where heading is undefined — so the orbit
+    /// holds steady through loops instead of jittering.
+    /// </summary>
+    float CarYaw()
+    {
+        Vector3 horiz = Vector3.ProjectOnPlane(target.forward, Vector3.up);
+        if (horiz.sqrMagnitude < 1e-4f) return lastYaw;
+        return Mathf.Atan2(horiz.x, horiz.z) * Mathf.Rad2Deg;
     }
 
     void FollowRotation()
@@ -139,7 +161,7 @@ public class CameraFollow : MonoBehaviour
         Vector3 camUp = Vector3.Slerp(Vector3.up, target.up, blend);
         if (camUp.sqrMagnitude < 1e-6f) camUp = target.up;   // guard near 180deg
 
-        // Look slightly ahead of the car � or BEHIND it while rear view is active,
+        // Look slightly ahead of the car   or BEHIND it while rear view is active,
         // so the camera frames what's behind instead of what's ahead. Raise the
         // focus by the SAME blended up so framing stays consistent with the chosen
         // orientation.
@@ -152,7 +174,8 @@ public class CameraFollow : MonoBehaviour
         if (lookDir.sqrMagnitude < 1e-6f) lookDir = target.forward;
         Quaternion desiredRotation = Quaternion.LookRotation(lookDir.normalized, camUp);
 
-        // Smoothly approach on all axes (exp form gives the same "smooth time" feel).
+        // Ease the camera's aim onto the car. The lazy orbit lives in FollowPosition; this
+        // just keeps the car framed as the camera slowly swings around behind it.
         float t = (rotationSmoothTime <= 0f)
             ? 1f
             : 1f - Mathf.Exp(-Time.deltaTime / rotationSmoothTime);
@@ -164,7 +187,7 @@ public class CameraFollow : MonoBehaviour
     {
         if (targetRb == null) return;
 
-        // Turbo kick (existing) � rising-edge one-shot timer
+        // Turbo kick (existing)   rising-edge one-shot timer
         if (targetCar != null)
         {
             bool turboNow = targetCar.IsTurboActive;
@@ -183,7 +206,7 @@ public class CameraFollow : MonoBehaviour
         if (turboFOVTimer > 0f)
             targetFOV += turboFOVBoost;
 
-        // Loop boost � sustained for as long as the car is in loop gravity-cut.
+        // Loop boost   sustained for as long as the car is in loop gravity-cut.
         // No timer: it tracks the state directly, on when cut begins, off when it ends.
         if (targetCar != null && targetCar.IsLoopGravityCut)
             targetFOV += loopFOVBoost;
