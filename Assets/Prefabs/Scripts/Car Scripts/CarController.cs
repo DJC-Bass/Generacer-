@@ -444,6 +444,12 @@ public class CarController : MonoBehaviour
 
         // Only turn when actually moving, scaled by how fast (parked cars don't spin).
         float moveScale = Mathf.Clamp01(rb.linearVelocity.magnitude / 4f);
+
+        // Flip the steering yaw when reversing so the car curves toward the way the front
+        // wheels point (like a real car backing up), instead of mirroring it.
+        float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
+        if (forwardSpeed < 0f) moveScale = -moveScale;
+
         float yawDelta = smoothedSteer * turnRate * moveScale * Time.fixedDeltaTime;
 
         // Rotate the current forward around the ground normal, then re-seat it on the
