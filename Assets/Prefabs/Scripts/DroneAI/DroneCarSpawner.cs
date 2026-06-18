@@ -30,12 +30,18 @@ public class DroneCarSpawner : MonoBehaviour
     // Resolved from droneLayerName each spawn; -1 if the layer doesn't exist.
     private int droneLayer = -1;
 
+    [Header("Round Gating")]
+    [Tooltip("Earliest game-loop round this spawner becomes active. 1 = always (default). " +
+             "Set to 3 on the ChallengerCarSpawner so challengers only appear from round 3 on.")]
+    public int minimumRound = 1;
+
     private bool spawned;
 
     void Update()
     {
         if (spawned) return;
         if (GameLoopManager.Instance == null) return;
+        if (GameLoopManager.Instance.RoundNumber < minimumRound) return;   // not active until this round
 
         float elapsed = GameLoopManager.Instance.roundDuration
                       - GameLoopManager.Instance.RoundTimeRemaining;

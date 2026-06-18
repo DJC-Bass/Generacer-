@@ -1260,6 +1260,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
+      propertyPath: minimumRound
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
       propertyPath: trackGenerator
       value: 
       objectReference: {fileID: 1171030678}
