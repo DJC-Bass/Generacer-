@@ -168,92 +168,12 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: jetItemName
-      value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: acceleration
-      value: 100
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: jumpVelocity
-      value: 15
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: springDamper
-      value: 20
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: brakeStrength
-      value: 100
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: engineBraking
-      value: 20
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: turboItemName
-      value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: maxWheelTravel
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: springStrength
-      value: 1000
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: steerLerpSpeed
-      value: 5
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: driftGripFactor
+      propertyPath: airDrag
       value: 0.05
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: groundStickForce
-      value: 16
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: manualPitchSpeed
-      value: 30
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: overspeedDamping
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: turnRateLowSpeed
-      value: 600
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: downhillThreshold
-      value: 0.01
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: turnRateHighSpeed
-      value: 300
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: driftBrakeStrength
-      value: 5
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: reverseAcceleration
-      value: 50
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: orientationLerpSpeed
-      value: 5
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: driftTurnRateHighSpeed
-      value: 600
-      objectReference: {fileID: 0}
-    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: hillGravityCompensation
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: m_Name

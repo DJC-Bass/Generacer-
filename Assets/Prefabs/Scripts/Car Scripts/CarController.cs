@@ -155,6 +155,13 @@ public class CarController : MonoBehaviour
          "lower track levels.")]
     public float airBrakeGravityMultiplier = 3f;
 
+    [Header("Air Drag")]
+    [Tooltip("Horizontal air resistance while airborne (per-second decay rate). Bleeds the " +
+             "car's horizontal momentum so it can't just coast across the whole level in the " +
+             "air. Vertical motion is left untouched, so gravity / falling is unaffected. " +
+             "0 = no air drag.")]
+    public float airDrag = 0.5f;
+
     [Header("Airborne Self-Leveling")]
     [Tooltip("How quickly the car's pitch and roll return to level while airborne " +
              "(degrees/second).")]
@@ -354,6 +361,9 @@ public class CarController : MonoBehaviour
                 ApplyAirDrift();
                 ApplyAirBrakeGravity();
             }
+
+            // Bleed horizontal momentum so the car can't fly across the level (gravity untouched).
+            ApplyAirDrag();
         }
         // else: a brief hop within the grace window — just coast ballistically.
     }
@@ -691,6 +701,19 @@ public class CarController : MonoBehaviour
         if (brakeInput < 0.05f) return;
         Vector3 extraGravity = Physics.gravity * (airBrakeGravityMultiplier - 1f) * brakeInput;
         rb.AddForce(extraGravity, ForceMode.Acceleration);
+    }
+
+    /// <summary>
+    /// Air resistance while airborne. Exponentially bleeds only the WORLD-horizontal velocity
+    /// (x/z), leaving the vertical axis alone so gravity and falling are unaffected — the car
+    /// loses its fly-across momentum but still drops at the normal rate.
+    /// </summary>
+    void ApplyAirDrag()
+    {
+        if (airDrag <= 0f) return;
+        float factor = Mathf.Exp(-airDrag * Time.fixedDeltaTime);
+        Vector3 vel = rb.linearVelocity;
+        rb.linearVelocity = new Vector3(vel.x * factor, vel.y, vel.z * factor);
     }
 
     void ApplyManualPitchAndRollLeveling()

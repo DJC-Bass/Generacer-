@@ -1717,38 +1717,39 @@ MonoBehaviour:
     m_Bits: 4294967295
   suspensionRayLength: 1
   rideHeight: 0.75
-  springStrength: 300
-  springDamper: 10
+  springStrength: 1000
+  springDamper: 20
   maxWheelTravel: 0
-  turnRateLowSpeed: 750
-  turnRateHighSpeed: 500
+  turnRateLowSpeed: 600
+  turnRateHighSpeed: 300
   steerLerpSpeed: 5
   orientationLerpSpeed: 5
   gripFactor: 0.9
   brakeStrength: 100
   engineBraking: 20
   centerOfMass: {fileID: 8433661904055072838}
-  driftGripFactor: 0.096
-  driftBrakeStrength: 10
+  driftGripFactor: 0.05
+  driftBrakeStrength: 5
   driftMaxDownforce: 30000
-  driftTurnRateHighSpeed: 1000
+  driftTurnRateHighSpeed: 600
   maxDownforce: 20000
   brakingDownforceMultiplier: 4
-  groundStickForce: 8
-  hillGravityCompensation: 0
+  groundStickForce: 16
+  hillGravityCompensation: 1
   climbTorqueBoost: 1
   fullAssistAngle: 25
   airDriftSpeed: 75
   airDriftAcceleration: 75
   airDriftGracePeriod: 0.4
-  manualPitchSpeed: 60
+  manualPitchSpeed: 30
   airBrakeGravityMultiplier: 6
+  airDrag: 0.05
   airLevelingSpeed: 20
   airDriftLevelThreshold: 5
   turboMultiplier: 2
   turboDuration: 2
   turboCooldown: 0
-  jumpVelocity: 12
+  jumpVelocity: 15
   jumpRequiresGround: 0
   turboItemName: 
   jetItemName: 
