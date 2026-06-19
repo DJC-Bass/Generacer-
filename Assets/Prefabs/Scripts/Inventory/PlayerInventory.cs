@@ -49,6 +49,14 @@ public class PlayerInventory : MonoBehaviour
     /// <summary>Fires whenever counts or credits change, so open UIs can refresh.</summary>
     public event Action OnChanged;
 
+    /// <summary>Name of the SD item the player currently has equipped ("" if none). Persists
+    /// across scenes with this singleton; the (future) SD ability reads it.</summary>
+    public string EquippedSD { get; private set; } = "";
+
+    /// <summary>Sets the equipped SD. The SD HUD calls this as the player switches with the
+    /// D-pad; read EquippedSD elsewhere to activate the SD's ability.</summary>
+    public void SetEquippedSD(string itemName) => EquippedSD = itemName ?? "";
+
     /// <summary>
     /// Creates the persistent "PlayerSystems" object once at startup with the
     /// inventory data layer, the inventory-view UI, the credits HUD, and the
@@ -65,6 +73,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<CreditsHUD>();
         go.AddComponent<TurboJetHUD>();
         go.AddComponent<LraAbortController>();   // L+R+A hold-to-abort + its progress bar
+        go.AddComponent<SDCardHUD>();            // equipped-SD readout + D-pad switching
         DontDestroyOnLoad(go);
     }
 
@@ -136,6 +145,7 @@ public class PlayerInventory : MonoBehaviour
                     Add(stack.itemName, stack.amount);
 
         Credits = startingCredits;
+        EquippedSD = "";                 // SDs are wiped on a failure, so nothing stays equipped
         OnChanged?.Invoke();
     }
 
