@@ -154,5 +154,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxLifetime: 4
-  popUpForce: 0
+  popUpForce: 20
   playerTag: Player

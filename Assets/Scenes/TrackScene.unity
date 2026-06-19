@@ -168,12 +168,20 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: airDrag
-      value: 0.05
+      propertyPath: jetItemName
+      value: Jet
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-      propertyPath: hillGravityCompensation
+      propertyPath: turboItemName
+      value: Turbo
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: driftBrakeStrength
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: airDriftAcceleration
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: m_Name

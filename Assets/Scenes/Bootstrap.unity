@@ -148,8 +148,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2a6e975028013614689acffbf149736b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  minPortalCountdown: 2
-  maxPortalCountdown: 4
+  minPortalCountdown: 20
+  maxPortalCountdown: 40
   roundDuration: 300
   postRoundDelay: 2
   trackCompletionCredits: 400

@@ -749,7 +749,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: jetItemName
-      value: 
+      value: Jet
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: acceleration
@@ -764,6 +764,10 @@ PrefabInstance:
       value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: airDriftSpeed
+      value: 75
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: brakeStrength
       value: 100
       objectReference: {fileID: 0}
@@ -773,11 +777,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turboDuration
-      value: 4
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turboItemName
-      value: 
+      value: Turbo
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: maxWheelTravel
@@ -789,7 +793,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftGripFactor
-      value: 0
+      value: 0.05
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: overspeedDamping
@@ -809,7 +813,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftBrakeStrength
-      value: 10
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: reverseAcceleration
@@ -818,6 +822,10 @@ PrefabInstance:
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: suspensionRayLength
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: airDriftAcceleration
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: orientationLerpSpeed

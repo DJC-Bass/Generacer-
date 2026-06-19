@@ -1729,7 +1729,7 @@ MonoBehaviour:
   engineBraking: 20
   centerOfMass: {fileID: 8433661904055072838}
   driftGripFactor: 0.05
-  driftBrakeStrength: 5
+  driftBrakeStrength: 1
   driftMaxDownforce: 30000
   driftTurnRateHighSpeed: 600
   maxDownforce: 20000
@@ -1739,7 +1739,7 @@ MonoBehaviour:
   climbTorqueBoost: 1
   fullAssistAngle: 25
   airDriftSpeed: 75
-  airDriftAcceleration: 75
+  airDriftAcceleration: 50
   airDriftGracePeriod: 0.4
   manualPitchSpeed: 30
   airBrakeGravityMultiplier: 6
@@ -1751,8 +1751,8 @@ MonoBehaviour:
   turboCooldown: 0
   jumpVelocity: 15
   jumpRequiresGround: 0
-  turboItemName: 
-  jetItemName: 
+  turboItemName: Turbo
+  jetItemName: Jet
   loopTag: Loop
   loopGravityDisableDot: -0.05
   loopGravityEnableDot: 0.1
