@@ -6,6 +6,12 @@ public class CameraFollow : MonoBehaviour
     [Header("Target")]
     public Transform target;                  // Drag your Car here
 
+    [Header("Rear View")]
+    [Tooltip("Tick to configure THIS camera as the rear-view camera: it sits in FRONT of the " +
+             "car and looks backward. Leave unticked for the normal forward camera. Switching " +
+             "between the two cameras is handled by CameraSwitcher on R3.")]
+    public bool rearView;
+
     [Header("Position Settings")]
     public Vector3 offset = new Vector3(0f, 3f, -7f);  // Behind and above the car
     [Tooltip("Lazy-Susan YAW lag: how slowly the camera's heading orbits to follow the car's. " +
@@ -58,30 +64,6 @@ public class CameraFollow : MonoBehaviour
     private CarController targetCar;        // NEW   to read turbo state
     private float turboFOVTimer = 0f;       // NEW   counts down the kick
     private bool prevTurboState = false;   // NEW   detects the activation moment
-
-    // Rear-view toggle. When true, the camera's local Z offset is flipped (placing
-    // it in front of the car) AND the look-ahead direction is reversed, so the
-    // camera looks backward at what's behind the car   like a rear-view mirror.
-    private GeneracerControls controls;
-    private bool rearView;
-
-    void OnEnable()
-    {
-        if (controls == null) controls = new GeneracerControls();
-        controls.Driving.Enable();
-    }
-
-    void OnDisable()
-    {
-        controls?.Driving.Disable();
-    }
-
-    void Update()
-    {
-        // Toggle rear view on R3 press. triggered fires once per press, not held.
-        if (controls.Driving.RearView.triggered)
-            rearView = !rearView;
-    }
 
     void Start()
     {
