@@ -93,6 +93,10 @@ public class CarController : MonoBehaviour
     [Tooltip("Fraction of sideways velocity removed each physics step (0-1). 1 = the " +
              "car tracks its forward direction perfectly (no slide); lower = looser.")]
     [Range(0f, 1f)] public float gripFactor = 0.9f;
+    [Tooltip("How quickly grip blends from the drift grip back up to Grip Factor after a drift " +
+             "ends (per second). Higher = snappier recovery; lower = eases out of the slide " +
+             "more gradually.")]
+    public float gripRecoverySpeed = 4f;
 
     [Header("Braking")]
     [Tooltip("Deceleration applied while braking (m/s^2).")]
@@ -214,6 +218,7 @@ public class CarController : MonoBehaviour
     private float brakeInput;
     private float manualPitchInput;
     private float smoothedSteer;          // steer input after lerp smoothing
+    private float currentGrip;            // grip value, lerped back to gripFactor after a drift
 
     private float airborneTimer = 0f;
     private float turboTimer = 0f;
@@ -272,6 +277,8 @@ public class CarController : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         if (centerOfMass != null)
             rb.centerOfMass = centerOfMass.localPosition;
+
+        currentGrip = gripFactor;
 
         anchors = new[] { wheelFL, wheelFR, wheelRL, wheelRR };
         wheelMeshes = new[] { meshFL, meshFR, meshRL, meshRR };
@@ -483,12 +490,18 @@ public class CarController : MonoBehaviour
     /// </summary>
     void ApplyGrip()
     {
+        // Snap to the low drift grip while drifting (so the slide starts crisply), then blend
+        // back up to the standard grip once the drift ends — the car eases out of the slide
+        // instead of snapping straight to full grip.
+        if (isDrifting)
+            currentGrip = driftGripFactor;
+        else
+            currentGrip = Mathf.Lerp(currentGrip, gripFactor, gripRecoverySpeed * Time.fixedDeltaTime);
+
         Vector3 vel = rb.linearVelocity;
         Vector3 right = transform.right;
         float lateral = Vector3.Dot(vel, right);
-
-        float grip = isDrifting ? driftGripFactor : gripFactor;
-        rb.linearVelocity = vel - right * (lateral * grip);
+        rb.linearVelocity = vel - right * (lateral * currentGrip);
     }
 
     // -------------------------------------------------------
