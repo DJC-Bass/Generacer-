@@ -121,6 +121,11 @@ public class CarController : MonoBehaviour
     [Tooltip("Turn rate (deg/s) at high speed while drifting — higher than the normal " +
          "high-speed rate so the player can counter-steer through a slide.")]
     public float driftTurnRateHighSpeed = 110f;
+    [Tooltip("Top-speed multiplier while drifting, scaled by how far the stick is steered. At " +
+         "full steer the cap reaches this multiple of Max Speed (2 = 600 mph from 300); at half " +
+         "steer it's halfway (1.5x). The car accelerates up to the raised cap; the normal cap " +
+         "(and overspeed damping) returns when the drift ends.")]
+    public float driftMaxSpeedMultiplier = 2f;
 
     [Header("Downforce / Stick")]
     [Tooltip("Maximum downforce in Newtons at top speed, applied along -ground normal. " +
@@ -514,6 +519,12 @@ public class CarController : MonoBehaviour
         float loopMult = loopFlag ? (float)loopSpeedMultiplier : 1f;
 
         float maxMs = maxSpeedMph * MPH_TO_MS * turbo * loopMult;
+
+        // While drifting, raise the top-speed cap with the steering angle: full stick = the
+        // full drift multiplier (e.g. 2x -> 600 mph), scaling linearly down to 1x at centre.
+        if (isDrifting)
+            maxMs *= 1f + (driftMaxSpeedMultiplier - 1f) * Mathf.Abs(steerInput);
+
         Vector3 fwd = transform.forward;
         float fwdSpeed = Vector3.Dot(rb.linearVelocity, fwd);
         float speedRatio = Mathf.Clamp01(Mathf.Abs(fwdSpeed) / Mathf.Max(maxMs, 0.01f));
@@ -548,11 +559,10 @@ public class CarController : MonoBehaviour
             ApplyForwardDecel(fwd, fwdSpeed, engineBraking);
         }
 
-        // Ease any speed left over the cap back down to it — unless we're drifting. While
-        // drifting the top-speed cap is lifted entirely, so any speed the player gains is kept;
-        // the clamp (and its overspeed damping) resumes the instant the drift ends.
-        if (!isDrifting)
-            ApplyTopSpeedClamp(maxMs);
+        // Ease any speed over the cap back down to it. While drifting that cap is the raised,
+        // steer-scaled value computed above (up to ~600 mph at full steer); when the drift ends
+        // the cap drops back to normal and overspeed damping bleeds the excess off.
+        ApplyTopSpeedClamp(maxMs);
     }
 
     /// <summary>Reduces the forward component of velocity toward zero by decel*dt.</summary>
