@@ -763,8 +763,8 @@ public class TrackGenerator : MonoBehaviour
         Vector3 up = Vector3.up;
 
         const float lowerFactor = 1f;
-        const float widthScale = 1.2f;
-        const float sweepFrac = 0.98f;
+        const float widthScale = 1f;
+        const float sweepFrac = 1f;
         const float endBlend = 0.12f;   // fraction at each end that flattens to road
         float rv = radius * lowerFactor;
         float rh = radius * widthScale;

@@ -548,9 +548,11 @@ public class CarController : MonoBehaviour
             ApplyForwardDecel(fwd, fwdSpeed, engineBraking);
         }
 
-        // Ease any speed left over the cap (after turbo ends or off a descent) back
-        // down to it — unless we're currently going downhill, where gravity should win.
-        ApplyTopSpeedClamp(maxMs);
+        // Ease any speed left over the cap back down to it — unless we're drifting. While
+        // drifting the top-speed cap is lifted entirely, so any speed the player gains is kept;
+        // the clamp (and its overspeed damping) resumes the instant the drift ends.
+        if (!isDrifting)
+            ApplyTopSpeedClamp(maxMs);
     }
 
     /// <summary>Reduces the forward component of velocity toward zero by decel*dt.</summary>
