@@ -793,7 +793,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftGripFactor
-      value: 0.05
+      value: 0.01
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: overspeedDamping
@@ -813,7 +813,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftBrakeStrength
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: reverseAcceleration
@@ -833,7 +833,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: driftTurnRateHighSpeed
-      value: 600
+      value: 1000
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: hillGravityCompensation
