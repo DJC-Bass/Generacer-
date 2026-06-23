@@ -1024,6 +1024,9 @@ public class TrackGenerator : MonoBehaviour
             SpawnShoulder(obj.transform, spline, resolution, rightSide: true);
             SpawnShoulder(obj.transform, spline, resolution, rightSide: false);
         }
+
+        // Put the road edge and its shoulder children on the Track layer.
+        ApplyTrackLayer(obj);
     }
 
     /// <summary>
@@ -1042,8 +1045,6 @@ public class TrackGenerator : MonoBehaviour
         obj.AddComponent<MeshCollider>().sharedMesh = loopMesh;
         obj.AddComponent<MeshRenderer>().sharedMaterial = GetRoadMaterial();
 
-        int trackLayer = LayerMask.NameToLayer("Track");
-        if (trackLayer >= 0) obj.layer = trackLayer;
         obj.tag = "Loop";
 
         if (shoulderWidth > 0f)
@@ -1051,6 +1052,9 @@ public class TrackGenerator : MonoBehaviour
             SpawnLoopShoulder(obj.transform, edge, Vector3.zero, true);
             SpawnLoopShoulder(obj.transform, edge, Vector3.zero, false);
         }
+
+        // Put the loop mesh and its shoulder children on the Track layer.
+        ApplyTrackLayer(obj);
     }
 
     void SpawnLoopShoulder(Transform parent, TrackEdge edge, Vector3 rotationAxis, bool rightSide)
@@ -1096,6 +1100,46 @@ public class TrackGenerator : MonoBehaviour
         Material m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         m.mainTexture = ArrowTextureGenerator.Generate();
         return m;
+    }
+
+    // -------------------------------------------------------
+    //  Layer assignment — all generated track geometry (road,
+    //  shoulders, loops, loop shoulders) goes on the Track layer
+    //  so the car's suspension ground mask can target the track.
+    // -------------------------------------------------------
+
+    [Header("Layers")]
+    [Tooltip("Name of the layer every generated track object (road, shoulders, loops) is " +
+             "placed on. Layer 8 is 'Track' by default; set the car's Ground Mask to it.")]
+    public string trackLayerName = "Track";
+    private bool warnedMissingTrackLayer;
+
+    /// <summary>
+    /// Puts a generated track object — and all of its children (e.g. the shoulder strips) —
+    /// on the configured track layer. No-op, with a one-time warning, if that layer isn't
+    /// defined in Tags and Layers.
+    /// </summary>
+    void ApplyTrackLayer(GameObject root)
+    {
+        int layer = LayerMask.NameToLayer(trackLayerName);
+        if (layer < 0)
+        {
+            if (!warnedMissingTrackLayer)
+            {
+                warnedMissingTrackLayer = true;
+                Debug.LogWarning($"[TrackGenerator] Layer '{trackLayerName}' not found in Tags " +
+                                 "and Layers — generated track left on its default layer.");
+            }
+            return;
+        }
+        SetLayerRecursively(root, layer);
+    }
+
+    static void SetLayerRecursively(GameObject go, int layer)
+    {
+        go.layer = layer;
+        foreach (Transform child in go.transform)
+            SetLayerRecursively(child.gameObject, layer);
     }
 
     // -------------------------------------------------------
