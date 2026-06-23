@@ -37,6 +37,10 @@ public class DroneCar : MonoBehaviour
     [Header("Shooting")]
     [Tooltip("Projectile prefab to fire.")]
     public GameObject projectilePrefab;
+    [Tooltip("Layer assigned to spawned projectiles (e.g. 'Projectile', layer 14). Lets the " +
+             "collision matrix treat them as their own layer. Blank = keep the prefab's layer.")]
+    public string projectileLayerName = "Projectile";
+    private bool warnedMissingProjectileLayer;
     [Tooltip("Forward distance from the drone center where projectiles spawn and " +
              "the vision cast originates (units). Positions the muzzle at the front.")]
     public float muzzleForwardOffset = 3f;
@@ -283,6 +287,9 @@ public class DroneCar : MonoBehaviour
         Quaternion rot = Quaternion.LookRotation(direction, Vector3.up);
         GameObject proj = Instantiate(projectilePrefab, origin, rot);
 
+        // Put the spawned projectile on its dedicated layer for collision-matrix filtering.
+        ApplyProjectileLayer(proj);
+
         var projectile = proj.GetComponent<DroneProjectile>();
         if (projectile != null)
             projectile.Launch(direction, projectileSpeed);
@@ -292,6 +299,33 @@ public class DroneCar : MonoBehaviour
         var projCol = proj.GetComponent<Collider>();
         if (myCol != null && projCol != null)
             Physics.IgnoreCollision(projCol, myCol);
+    }
+
+    /// <summary>Puts a freshly-spawned projectile (and any children) on the configured
+    /// projectile layer. No-op, with a one-time warning, if that layer isn't defined.</summary>
+    void ApplyProjectileLayer(GameObject proj)
+    {
+        if (proj == null || string.IsNullOrEmpty(projectileLayerName)) return;
+
+        int layer = LayerMask.NameToLayer(projectileLayerName);
+        if (layer < 0)
+        {
+            if (!warnedMissingProjectileLayer)
+            {
+                warnedMissingProjectileLayer = true;
+                Debug.LogWarning($"[DroneCar] Layer '{projectileLayerName}' not found in Tags and " +
+                                 "Layers — projectiles left on the prefab's layer.");
+            }
+            return;
+        }
+        SetLayerRecursively(proj, layer);
+    }
+
+    static void SetLayerRecursively(GameObject go, int layer)
+    {
+        go.layer = layer;
+        foreach (Transform child in go.transform)
+            SetLayerRecursively(child.gameObject, layer);
     }
 
     bool IsDrone(GameObject obj)

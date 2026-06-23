@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 6208333508044288229}
   - component: {fileID: 2501724937341610375}
   - component: {fileID: 6440025373964189700}
-  m_Layer: 0
+  m_Layer: 14
   m_Name: DronePissBall
   m_TagString: Untagged
   m_Icon: {fileID: 0}
