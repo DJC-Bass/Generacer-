@@ -263,6 +263,9 @@ public class CarController : MonoBehaviour
     /// <summary>True while the car is past vertical on a loop (drives the camera FOV kick).</summary>
     public bool IsLoopGravityCut => loopFlag;
     public bool IsManuallyPitching { get; private set; }
+    /// <summary>True while the car is genuinely airborne (off the ground past the brief grace
+    /// window that ignores crests/bumps). Read by anti-air logic such as the homing boulders.</summary>
+    public bool IsAirborne { get; private set; }
 
     private const float MS_TO_MPH = 2.23694f;
     private const float MPH_TO_MS = 1f / MS_TO_MPH;
@@ -348,6 +351,7 @@ public class CarController : MonoBehaviour
         UpdateDriftState();
 
         bool inRealAir = airborneTimer >= airDriftGracePeriod;
+        IsAirborne = inRealAir;
 
         if (grounded)
         {

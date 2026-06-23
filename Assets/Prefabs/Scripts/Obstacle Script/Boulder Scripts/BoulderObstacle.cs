@@ -24,8 +24,12 @@ public class BoulderObstacle : MonoBehaviour
     [Header("Homing")]
     [Tooltip("Tag of the player car to home onto.")]
     public string playerTag = "Player";
-    [Tooltip("How long the boulder homes onto the player after it starts falling (seconds).")]
+    [Tooltip("How long the boulder homes onto the player after it starts falling, while the " +
+             "player is on the GROUND (seconds).")]
     public float homingDuration = 2f;
+    [Tooltip("Longer homing window used while the PLAYER is airborne, so the boulder keeps " +
+             "tracking them through the air like an anti-air missile (seconds).")]
+    public float airborneHomingDuration = 5f;
     [Tooltip("Strength of the homing force (m/s� applied as acceleration). " +
              "Higher = sharper tracking, lower = gentler correction.")]
     public float homingStrength = 60f;
@@ -36,8 +40,9 @@ public class BoulderObstacle : MonoBehaviour
     private Rigidbody rb;
     private float spawnTime;
     private bool passedApex;
-    private float homingTimer;
+    private float homingElapsed;            // seconds spent homing since apex
     private Transform playerTransform;
+    private CarController playerCar;        // player's controller, for its airborne state
 
     void Awake()
     {
@@ -48,7 +53,11 @@ public class BoulderObstacle : MonoBehaviour
         // If the player is destroyed/replaced (e.g. after a scene reload), the
         // reference becomes null and homing simply stops applying force.
         var playerObj = GameObject.FindWithTag(playerTag);
-        if (playerObj != null) playerTransform = playerObj.transform;
+        if (playerObj != null)
+        {
+            playerTransform = playerObj.transform;
+            playerCar = playerObj.GetComponent<CarController>();
+        }
     }
 
     /// <summary>
@@ -74,12 +83,13 @@ public class BoulderObstacle : MonoBehaviour
         // Detect the moment the boulder transitions from rising to falling.
         // Once vertical velocity goes negative, open the homing window.
         if (!passedApex && rb.linearVelocity.y < 0f)
-        {
             passedApex = true;
-            homingTimer = homingDuration;
-        }
 
-        bool homing = passedApex && homingTimer > 0f;
+        // The homing window lasts longer while the player is airborne, so the boulder keeps
+        // chasing them through the air like an anti-air missile. Evaluated live: it extends the
+        // moment the player leaves the ground and reverts to the ground window once they land.
+        float maxHomingDuration = IsPlayerAirborne() ? airborneHomingDuration : homingDuration;
+        bool homing = passedApex && homingElapsed < maxHomingDuration;
 
         // Heat-seeking-missile mode: while homing, gravity is switched OFF so the
         // boulder flies straight at the player instead of arcing down. The instant
@@ -89,7 +99,7 @@ public class BoulderObstacle : MonoBehaviour
         if (homing)
         {
             ApplyHoming();
-            homingTimer -= Time.fixedDeltaTime;
+            homingElapsed += Time.fixedDeltaTime;
         }
         else if (gravityMultiplier > 1f)
         {
@@ -121,6 +131,10 @@ public class BoulderObstacle : MonoBehaviour
         if (rb.linearVelocity.magnitude > maxHomingSpeed)
             rb.linearVelocity = rb.linearVelocity.normalized * maxHomingSpeed;
     }
+
+    /// <summary>True when the player car reports it's airborne. False if there's no player or it
+    /// has no CarController — then only the ground homing duration applies.</summary>
+    bool IsPlayerAirborne() => playerCar != null && playerCar.IsAirborne;
 
     void Update()
     {

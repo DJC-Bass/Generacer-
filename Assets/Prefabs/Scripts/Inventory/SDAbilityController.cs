@@ -8,11 +8,13 @@ using UnityEngine.InputSystem;
 ///   • Wind SD      — the car collides ONLY with the "Track" and "Default" layers (Default is
 ///                    where the key triggers live), phasing through every obstacle (boulders,
 ///                    fans, lightning, drones) while still driving the road and hitting triggers.
-///   • Lightning SD — the car's colliders ignore the "Lightning" layer.
+///   • Lightning SD — REWINDS the car: it flies kinematically back along its recent path (see
+///                    CarRewind), undoing the last few seconds of travel while the toggle is on.
 ///
 /// Layer effects use per-collider <see cref="Collider.excludeLayers"/> so only the player passes
 /// through (the global collision matrix is untouched); the mass effect scales the car's
-/// <see cref="Rigidbody.mass"/> and restores it on deactivate.
+/// <see cref="Rigidbody.mass"/>; the rewind effect drives a <see cref="CarRewind"/> recorder kept
+/// on the car. All effects restore the car on deactivate.
 ///
 /// Costs credits while active (default 50/sec). Pressing Up with no equipped SD or no credits
 /// does nothing. Running out of credits while active auto-deactivates it. Switching the equipped
@@ -30,6 +32,7 @@ public class SDAbilityController : MonoBehaviour
         LayerExclude,   // car ignores collisions with ONE layer (layerName)
         CollideOnly,    // car ignores every layer EXCEPT the ones in collideLayers
         MassMultiply,   // car's mass is scaled by massMultiplier
+        Rewind,         // car rewinds back along its recent path (via CarRewind)
     }
 
     [System.Serializable]
@@ -40,18 +43,20 @@ public class SDAbilityController : MonoBehaviour
         public string layerName;        // LayerExclude: the single layer to ignore.
         public string[] collideLayers;  // CollideOnly: the layers the car STAYS solid against (all others ignored).
         public float massMultiplier;    // MassMultiply.
+        public float creditsPerSecond;  // per-second cost while active (0 = use defaultCreditsPerSecond).
     }
 
     // Equipped SD -> the effect applied to the player car while that SD's ability is active.
     private SDAbility[] abilities =
     {
-        new SDAbility { sdItemName = "Fire SD",      effect = SDEffectType.MassMultiply, massMultiplier = 100f },
-        new SDAbility { sdItemName = "Wind SD",      effect = SDEffectType.CollideOnly,  collideLayers = new[] { "Track", "Default" } },
-        new SDAbility { sdItemName = "Lightning SD", effect = SDEffectType.LayerExclude, layerName = "Lightning" },
+        new SDAbility { sdItemName = "Fire SD",      effect = SDEffectType.MassMultiply, massMultiplier = 100f, creditsPerSecond = 20f },
+        new SDAbility { sdItemName = "Wind SD",      effect = SDEffectType.CollideOnly,  collideLayers = new[] { "Track", "Default" }, creditsPerSecond = 25f },
+        new SDAbility { sdItemName = "Lightning SD", effect = SDEffectType.Rewind, creditsPerSecond = 50f },
     };
 
-    [Tooltip("Credits drained per second while an SD ability is active.")]
-    public float creditsPerSecond = 50f;
+    [Tooltip("Fallback credits-per-second drain for any SD that doesn't set its own cost " +
+             "(SDAbility.creditsPerSecond). Per-SD values take priority.")]
+    public float defaultCreditsPerSecond = 25f;
     [Tooltip("Tag on the player car the active effect is applied to.")]
     public string playerTag = "Player";
 
@@ -61,11 +66,17 @@ public class SDAbilityController : MonoBehaviour
     private SDEffectType activeEffect;
     private int activeExcludeMask = 0;        // layers excluded on the car while active (0 = none)
     private float activeMassMultiplier = 1f;  // MassMultiply: factor applied to the car's mass
+    private float activeCreditsPerSecond;     // resolved per-second cost of the active SD
     private float baselineMass = -1f;         // MassMultiply: the car's real mass before scaling
     private float drainAccumulator;
     private GameObject carGO;
     private Collider[] carColliders;
     private Rigidbody carRb;
+
+    // Rewind recorder. Kept on the player car continuously (independent of activation) so there's
+    // always recent history to rewind into the moment Lightning SD is toggled on.
+    private GameObject recorderCarGO;
+    private CarRewind rewinder;
 
     void Awake()
     {
@@ -75,6 +86,8 @@ public class SDAbilityController : MonoBehaviour
 
     void Update()
     {
+        EnsureRecorder();   // keep a rewind recorder on the car so history is ready before use
+
         var gp = Gamepad.current;
         if (gp != null && gp.dpad.up.wasPressedThisFrame && !MenuState.AnyOpen)
         {
@@ -91,6 +104,10 @@ public class SDAbilityController : MonoBehaviour
 
         EnsureCar();        // re-acquire + re-apply to a freshly spawned car after a scene load
         DrainCredits();     // may auto-deactivate when credits hit zero
+
+        // The rewind effect stops itself once it runs out of recorded history — turn off with it.
+        if (IsActive && activeEffect == SDEffectType.Rewind && (rewinder == null || !rewinder.IsRewinding))
+            Deactivate();
     }
 
     void TryActivate()
@@ -110,6 +127,7 @@ public class SDAbilityController : MonoBehaviour
 
         activeEffect = ability.effect;
         activeMassMultiplier = ability.massMultiplier;
+        activeCreditsPerSecond = ability.creditsPerSecond > 0f ? ability.creditsPerSecond : defaultCreditsPerSecond;
         ActiveSD = sd;
         IsActive = true;
         drainAccumulator = 0f;
@@ -139,7 +157,7 @@ public class SDAbilityController : MonoBehaviour
         var inv = PlayerInventory.Instance;
         if (inv == null) { Deactivate(); return; }
 
-        drainAccumulator += creditsPerSecond * Time.deltaTime;
+        drainAccumulator += activeCreditsPerSecond * Time.deltaTime;
         int whole = Mathf.FloorToInt(drainAccumulator);
         if (whole <= 0) return;
 
@@ -221,6 +239,7 @@ public class SDAbilityController : MonoBehaviour
             case SDEffectType.LayerExclude:
             case SDEffectType.CollideOnly:  ApplyExclude(on); break;
             case SDEffectType.MassMultiply: ApplyMass(on);    break;
+            case SDEffectType.Rewind:       ApplyRewind(on);  break;
         }
     }
 
@@ -253,5 +272,27 @@ public class SDAbilityController : MonoBehaviour
             if (baselineMass > 0f) carRb.mass = baselineMass;   // restore the real mass
             baselineMass = -1f;
         }
+    }
+
+    void ApplyRewind(bool on)
+    {
+        EnsureRecorder();
+        if (rewinder == null) return;
+        if (on) rewinder.BeginRewind();
+        else rewinder.EndRewind();
+    }
+
+    /// <summary>Keeps a <see cref="CarRewind"/> recorder attached to the current player car so it
+    /// is always recording — there's recent history to rewind into the instant Lightning SD is
+    /// toggled on. Re-finds + re-attaches after a scene load destroys the old car.</summary>
+    void EnsureRecorder()
+    {
+        if (recorderCarGO != null && rewinder != null) return;
+
+        recorderCarGO = GameObject.FindWithTag(playerTag);
+        if (recorderCarGO == null) { rewinder = null; return; }
+
+        rewinder = recorderCarGO.GetComponent<CarRewind>();
+        if (rewinder == null) rewinder = recorderCarGO.AddComponent<CarRewind>();
     }
 }
