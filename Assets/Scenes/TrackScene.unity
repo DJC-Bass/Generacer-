@@ -196,6 +196,10 @@ PrefabInstance:
       value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: gravityMultiplier
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: gripRecoverySpeed
       value: 0.1
       objectReference: {fileID: 0}
@@ -1356,6 +1360,10 @@ PrefabInstance:
     - target: {fileID: 5029893423165237662, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: m_Name
       value: TrackGenerator
+      objectReference: {fileID: 0}
+    - target: {fileID: 5029893423165237662, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: m_Layer
+      value: 8
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

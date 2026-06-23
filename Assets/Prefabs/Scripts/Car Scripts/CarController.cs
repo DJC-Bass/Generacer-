@@ -164,6 +164,13 @@ public class CarController : MonoBehaviour
          "lower track levels.")]
     public float airBrakeGravityMultiplier = 3f;
 
+    [Header("Gravity")]
+    [Tooltip("Multiplies gravity while the car is AIRBORNE so it falls faster and feels less " +
+             "floaty. 1 = normal, 2 = falls twice as fast. Applied off the ground only — the " +
+             "hover suspension handles vertical support when grounded, so it never fights the " +
+             "ride height or the loop stick force.")]
+    public float gravityMultiplier = 2f;
+
     [Header("Air Drag")]
     [Tooltip("Horizontal air resistance while airborne (per-second decay rate). Bleeds the " +
              "car's horizontal momentum so it can't just coast across the whole level in the " +
@@ -378,6 +385,12 @@ public class CarController : MonoBehaviour
             ApplyAirDrag();
         }
         // else: a brief hop within the grace window — just coast ballistically.
+
+        // Extra gravity while airborne so the car falls faster and feels less floaty. The
+        // hover spring handles vertical support on the ground, so this applies off the
+        // ground only — it never fights the ride height or the loop stick force.
+        if (!grounded)
+            ApplyGravityMultiplier();
     }
 
     // -------------------------------------------------------
@@ -725,6 +738,19 @@ public class CarController : MonoBehaviour
     {
         if (brakeInput < 0.05f) return;
         Vector3 extraGravity = Physics.gravity * (airBrakeGravityMultiplier - 1f) * brakeInput;
+        rb.AddForce(extraGravity, ForceMode.Acceleration);
+    }
+
+    /// <summary>
+    /// Extra downward gravity while airborne so the car falls faster and feels less floaty.
+    /// Mass-independent (ForceMode.Acceleration) just like world gravity, and additive on top
+    /// of it: gravityMultiplier = 2 means a 2x-strength fall. Stacks with the air-brake dive
+    /// when braking midair.
+    /// </summary>
+    void ApplyGravityMultiplier()
+    {
+        if (gravityMultiplier <= 1f) return;
+        Vector3 extraGravity = Physics.gravity * (gravityMultiplier - 1f);
         rb.AddForce(extraGravity, ForceMode.Acceleration);
     }
 
