@@ -57,8 +57,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1419087426020314372}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.7071067}
-  m_LocalPosition: {x: 0.8089026, y: -0.5233128, z: 6.297224}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.80890226, y: -0.523, z: 6.297224}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -283,7 +283,7 @@ WheelCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_Enabled: 1
+  m_Enabled: 0
   m_ProvidesContacts: 0
 --- !u!1 &2753501193525166218
 GameObject:
@@ -444,7 +444,7 @@ WheelCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_Enabled: 1
+  m_Enabled: 0
   m_ProvidesContacts: 0
 --- !u!1 &3277081959098091646
 GameObject:
@@ -515,7 +515,7 @@ WheelCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_Enabled: 1
+  m_Enabled: 0
   m_ProvidesContacts: 0
 --- !u!1 &3943875647313070225
 GameObject:
@@ -848,8 +848,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4836325786196888722}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.7071067}
-  m_LocalPosition: {x: -1.0126715, y: -0.5233128, z: 6.297224}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.0126718, y: -0.523, z: 6.297224}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -939,8 +939,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5379877061730456685}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.7071067}
-  m_LocalPosition: {x: 0.8089026, y: -0.5233128, z: 2.9312057}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.80890226, y: -0.523, z: 2.9312057}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1073,7 +1073,7 @@ WheelCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_Enabled: 1
+  m_Enabled: 0
   m_ProvidesContacts: 0
 --- !u!1 &5841050464535343268
 GameObject:
@@ -1356,8 +1356,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7141431981564641212}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.7071067}
-  m_LocalPosition: {x: -1.0126715, y: -0.5233128, z: 2.9312057}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -1.0126718, y: -0.523, z: 2.9312057}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1715,7 +1715,7 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  suspensionRayLength: 1
+  suspensionRayLength: 2
   rideHeight: 0.75
   springStrength: 1000
   springDamper: 20
@@ -1725,17 +1725,19 @@ MonoBehaviour:
   steerLerpSpeed: 5
   orientationLerpSpeed: 5
   gripFactor: 0.9
+  gripRecoverySpeed: 0.1
   brakeStrength: 100
   engineBraking: 20
   centerOfMass: {fileID: 8433661904055072838}
-  driftGripFactor: 0.05
-  driftBrakeStrength: 1
-  driftMaxDownforce: 30000
-  driftTurnRateHighSpeed: 600
-  maxDownforce: 20000
+  driftGripFactor: 0.01
+  driftBrakeStrength: 0
+  driftMaxDownforce: 10000
+  driftTurnRateHighSpeed: 1000
+  driftMaxSpeedMultiplier: 2
+  maxDownforce: 10000
   brakingDownforceMultiplier: 4
-  groundStickForce: 16
-  hillGravityCompensation: 1
+  groundStickForce: 10
+  hillGravityCompensation: 0
   climbTorqueBoost: 1
   fullAssistAngle: 25
   airDriftSpeed: 75
@@ -1743,14 +1745,17 @@ MonoBehaviour:
   airDriftGracePeriod: 0.4
   manualPitchSpeed: 30
   airBrakeGravityMultiplier: 6
+  gravityMultiplier: 2
   airDrag: 0.05
   airLevelingSpeed: 20
   airDriftLevelThreshold: 5
   turboMultiplier: 2
   turboDuration: 2
   turboCooldown: 0
-  jumpVelocity: 15
+  jumpVelocity: 20
   jumpRequiresGround: 0
+  jumpSuspensionRayLength: 0.5
+  jumpRayShortenDuration: 1
   turboItemName: Turbo
   jetItemName: Jet
   loopTag: Loop

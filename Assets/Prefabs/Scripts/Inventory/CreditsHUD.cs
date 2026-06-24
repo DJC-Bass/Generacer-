@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 using TMPro;
 
 /// <summary>
@@ -21,6 +22,7 @@ public class CreditsHUD : MonoBehaviour
     public string prefix = "Credits: ";
 
     private TextMeshProUGUI label;
+    private GameObject canvasGO;
 
     void Awake()
     {
@@ -37,13 +39,25 @@ public class CreditsHUD : MonoBehaviour
     {
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged += Refresh;
+        SceneManager.sceneLoaded += OnSceneLoaded;
         Refresh();
+        ApplyVisibility();
     }
 
     void OnDisable()
     {
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged -= Refresh;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    // Gameplay HUDs are hidden outside gameplay scenes (e.g. the main menu).
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyVisibility();
+
+    void ApplyVisibility()
+    {
+        if (canvasGO != null)
+            canvasGO.SetActive(GameplayHud.VisibleInScene(SceneManager.GetActiveScene().name));
     }
 
     void Refresh()
@@ -55,7 +69,7 @@ public class CreditsHUD : MonoBehaviour
 
     void BuildUI()
     {
-        var canvasGO = new GameObject("CreditsHUDCanvas");
+        canvasGO = new GameObject("CreditsHUDCanvas");
         DontDestroyOnLoad(canvasGO);
         var canvas = canvasGO.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;

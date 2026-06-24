@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 4752514936571300900}
   - component: {fileID: 279050347577569708}
   - component: {fileID: 7692560314290283657}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: TrackGenerator
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -46,17 +46,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   seed: 0
-  targetBranchLength: 22000
+  targetBranchLength: 25000
   branchLevels: 4
-  fanAngleDeg: 90
-  lateralSweep: 15000
-  minBranchAngle: 45
-  waypointSpacing: 100
-  meshSamplesPerUnit: 0.1
-  baseAltitude: 0
+  fanAngleDeg: 20
+  lateralSweep: 25000
+  minBranchAngle: 10
+  waypointSpacing: 0.05
+  meshSamplesPerUnit: 0.05
+  baseAltitude: 3000
   minAltitude: 0
   roadWidth: 70
-  roadThickness: -4
+  roadThickness: 4
   uvTilingFactor: 0.04
   shoulderWidth: 5
   shoulderMaterial: {fileID: 2100000, guid: dc5c6fe51f25a074680e2ac3be227082, type: 2}
@@ -64,30 +64,31 @@ MonoBehaviour:
   roadMaterial: {fileID: 2100000, guid: bc7690c75e844554c9bfbd7387a4843f, type: 2}
   carPrefab: {fileID: 0}
   endPortalPrefab: {fileID: 2711415986702523348, guid: e93035f0cebac7c4c9735606eadd1f34, type: 3}
-  altitudeVariance: 2000
-  verticalHandleFactor: 0.75
+  altitudeVariance: 500
+  verticalHandleFactor: 0.5
   branchVariance: 1
-  convergenceSwing: 6000
-  convergenceAltitudeSwing: 1500
-  convergenceAltitudeSwingVariance: 0
-  startLateralVariance: 4000
-  startAltitudeVariance: 6000
-  startForwardVariance: 1500
-  finishLateralVariance: 4000
-  finishAltitudeVariance: 6000
-  finishForwardVariance: 3000
+  convergenceSwing: 3500
+  convergenceAltitudeSwing: 3000
+  convergenceAltitudeSwingVariance: 500
+  startLateralVariance: 10000
+  startAltitudeVariance: 10000
+  startForwardVariance: 5000
+  finishLateralVariance: 10000
+  finishAltitudeVariance: 10000
+  finishForwardVariance: 5000
   finishLateralSpacing: 80
   spawnSpeedMph: 300
   followCamera: {fileID: 0}
-  carSpawnForwardOffset: 1500
+  carSpawnForwardOffset: 2000
   carSpawnHeightOffset: 6
-  spawnVelocityMph: 300
-  loopChance: 0.2
-  minLoopRadius: 200
-  maxLoopRadius: 350
-  minLoopExitOffset: 250
-  maxLoopExitOffset: 600
+  spawnVelocityMph: 600
+  loopChance: 0.33
+  minLoopRadius: 600
+  maxLoopRadius: 800
+  minLoopExitOffset: 400
+  maxLoopExitOffset: 3000
   loopExitForwardOffset: 0
+  trackLayerName: Track
 --- !u!64 &7692560314290283657
 MeshCollider:
   m_ObjectHideFlags: 0

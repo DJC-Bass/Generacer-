@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 using TMPro;
 
 /// <summary>
@@ -20,6 +21,7 @@ public class TurboJetHUD : MonoBehaviour
 
     private TextMeshProUGUI turboLabel;
     private TextMeshProUGUI jetLabel;
+    private GameObject canvasGO;
 
     void Awake()
     {
@@ -36,13 +38,25 @@ public class TurboJetHUD : MonoBehaviour
     {
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged += Refresh;
+        SceneManager.sceneLoaded += OnSceneLoaded;
         Refresh();
+        ApplyVisibility();
     }
 
     void OnDisable()
     {
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged -= Refresh;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    // Gameplay HUDs are hidden outside gameplay scenes (e.g. the main menu).
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyVisibility();
+
+    void ApplyVisibility()
+    {
+        if (canvasGO != null)
+            canvasGO.SetActive(GameplayHud.VisibleInScene(SceneManager.GetActiveScene().name));
     }
 
     void Refresh()
@@ -54,7 +68,7 @@ public class TurboJetHUD : MonoBehaviour
 
     void BuildUI()
     {
-        var canvasGO = new GameObject("TurboJetHUDCanvas");
+        canvasGO = new GameObject("TurboJetHUDCanvas");
         DontDestroyOnLoad(canvasGO);
         var canvas = canvasGO.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
