@@ -809,7 +809,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: gravityMultiplier
-      value: 4
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: gripRecoverySpeed
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: groundMask.m_Bits
@@ -844,8 +848,16 @@ PrefabInstance:
       value: 1000
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: jumpRayShortenDuration
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: hillGravityCompensation
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: jumpSuspensionRayLength
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: m_Name

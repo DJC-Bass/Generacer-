@@ -192,9 +192,9 @@ MonoBehaviour:
   gravityMultiplier: 124
   playerTag: Player
   homingDuration: 1
-  airborneHomingDuration: 5
-  homingStrength: 20000
-  maxHomingSpeed: 7500
+  airborneHomingDuration: 4
+  homingStrength: 10000
+  maxHomingSpeed: 6000
 --- !u!1 &8185159337952819718
 GameObject:
   m_ObjectHideFlags: 0

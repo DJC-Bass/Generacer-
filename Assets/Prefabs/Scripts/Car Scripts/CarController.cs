@@ -198,6 +198,14 @@ public class CarController : MonoBehaviour
     public float jumpVelocity = 12f;
     [Tooltip("If true, the car can only jump when grounded. Uncheck to allow midair jumps.")]
     public bool jumpRequiresGround = true;
+    [Tooltip("Suspension ray length used briefly right after a jump (metres). Shorter than the " +
+             "normal ray so the ground 'lets go' quickly and even a small Jump Velocity can lift " +
+             "the car off, instead of the hover spring instantly yanking it back to ride height.")]
+    public float jumpSuspensionRayLength = 0.4f;
+    [Tooltip("How long the shortened jump ray lasts after a jump (seconds). Make it long enough " +
+             "to cover the hop's airtime, or the full-length ray re-catches the car mid-air and " +
+             "the hover pulls it back down. The normal ray length returns afterward.")]
+    public float jumpRayShortenDuration = 0.35f;
 
     [Header("Ability Costs")]
     [Tooltip("Each turbo boost consumes 1 of this inventory item. Blank = free.")]
@@ -236,6 +244,7 @@ public class CarController : MonoBehaviour
     private float turboTimer = 0f;
     private float turboCooldownTimer = 0f;
     private bool jumpRequested;
+    private float jumpRayTimer;            // >0 = use the shortened jump suspension ray
     private bool manualPitchUnlocked;
     private bool isDrifting;
     private bool loopFlag;                // "in a loop" state for the camera (hysteresis)
@@ -336,6 +345,7 @@ public class CarController : MonoBehaviour
     {
         if (turboTimer > 0f) turboTimer -= Time.fixedDeltaTime;
         if (turboCooldownTimer > 0f) turboCooldownTimer -= Time.fixedDeltaTime;
+        if (jumpRayTimer > 0f) jumpRayTimer -= Time.fixedDeltaTime;
 
         ProbeGround();          // fills grounded / groundNormal / per-wheel contacts
         UpdateLoopFlag();
@@ -412,6 +422,10 @@ public class CarController : MonoBehaviour
         int hits = 0;
         groundCollider = null;
 
+        // Briefly after a jump the ray is shortened so the hover spring releases the car and a
+        // small Jump Velocity can actually lift it off; otherwise the full ray length is used.
+        float rayLen = jumpRayTimer > 0f ? jumpSuspensionRayLength : suspensionRayLength;
+
         for (int i = 0; i < 4; i++)
         {
             wheelGrounded[i] = false;
@@ -419,7 +433,7 @@ public class CarController : MonoBehaviour
             if (a == null) continue;
 
             if (Physics.Raycast(a.position, down, out RaycastHit hit,
-                                 suspensionRayLength, groundMask,
+                                 rayLen, groundMask,
                                  QueryTriggerInteraction.Ignore))
             {
                 wheelGrounded[i] = true;
@@ -431,7 +445,7 @@ public class CarController : MonoBehaviour
             else
             {
                 // No hit — record full droop for the visual wheel.
-                groundDistance[i] = suspensionRayLength;
+                groundDistance[i] = rayLen;
             }
         }
 
@@ -719,6 +733,10 @@ public class CarController : MonoBehaviour
         rb.linearVelocity = vel;
 
         rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
+
+        // Shorten the suspension ray for a moment so the hover spring lets go and the jump
+        // velocity can carry the car off the ground before the ray re-catches it.
+        jumpRayTimer = jumpRayShortenDuration;
     }
 
     /// <summary>

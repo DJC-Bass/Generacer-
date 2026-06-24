@@ -181,7 +181,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: jumpVelocity
-      value: 25
+      value: 20
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: turboCooldown
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: turboItemName
@@ -201,7 +205,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: gravityMultiplier
-      value: 4
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: gripRecoverySpeed
@@ -212,6 +216,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: suspensionRayLength
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: airDriftAcceleration
       value: 50
       objectReference: {fileID: 0}
@@ -220,8 +228,16 @@ PrefabInstance:
       value: 1000
       objectReference: {fileID: 0}
     - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: jumpRayShortenDuration
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: hillGravityCompensation
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6255029572297652319, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
+      propertyPath: jumpSuspensionRayLength
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
       propertyPath: m_Name
@@ -1179,11 +1195,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: loopChance
-      value: 0.15
+      value: 0.33
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: fanAngleDeg
-      value: 40
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: minAltitude
@@ -1207,11 +1223,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: maxLoopRadius
-      value: 1600
+      value: 800
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: minLoopRadius
-      value: 800
+      value: 600
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: roadThickness
@@ -1227,11 +1243,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: minBranchAngle
-      value: 20
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: waypointSpacing
-      value: 0.1
+      value: 0.05
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: altitudeVariance
@@ -1239,7 +1255,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceSwing
-      value: 4000
+      value: 3500
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: spawnVelocityMph
