@@ -76,6 +76,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<SDCardHUD>();            // equipped-SD readout + D-pad switching
         go.AddComponent<SDAbilityController>();  // D-pad up: toggle the equipped SD's ability
         go.AddComponent<PlayerCarSwapper>();     // swaps in the Car-Selection choice each gameplay scene
+        go.AddComponent<StartMenuController>();   // Start button: in-game menu (Resume/Audio/Controls/Settings/Quit)
         DontDestroyOnLoad(go);
     }
 

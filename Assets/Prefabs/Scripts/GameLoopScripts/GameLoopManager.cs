@@ -82,6 +82,13 @@ public class GameLoopManager : MonoBehaviour
         StartHubCountdown();
     }
 
+    void OnDestroy()
+    {
+        // Clear the static so the next GameLoopManager (e.g. after quitting to the menu and
+        // starting again) becomes the live singleton instead of self-destroying as a duplicate.
+        if (Instance == this) Instance = null;
+    }
+
     void Update()
     {
         switch (CurrentPhase)
@@ -195,5 +202,14 @@ public class GameLoopManager : MonoBehaviour
     public int GetNextTrackSeed()
     {
         return UnityEngine.Random.Range(1, 999999);
+    }
+
+    /// <summary>Ends the current run and destroys this manager so the NEXT Bootstrap load creates a
+    /// fresh GameLoopManager (round/phase/timer reset to the start). Call when quitting to the main
+    /// menu — otherwise this DontDestroyOnLoad singleton carries its old state into the next game,
+    /// stranding the player in the hub with no portal until the stale round finishes.</summary>
+    public static void EndRun()
+    {
+        if (Instance != null) Destroy(Instance.gameObject);
     }
 }

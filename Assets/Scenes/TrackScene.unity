@@ -922,6 +922,10 @@ PrefabInstance:
       value: 0.2
       objectReference: {fileID: 0}
     - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
+      propertyPath: targetFinishTime
+      value: 240
+      objectReference: {fileID: 0}
+    - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
       propertyPath: intraGroupSpacing
       value: 16
       objectReference: {fileID: 0}
@@ -1256,7 +1260,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: targetFinishTime
-      value: 240
+      value: 270
       objectReference: {fileID: 0}
     - target: {fileID: 4024389309093854848, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: m_LocalPosition.x

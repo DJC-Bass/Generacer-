@@ -118,6 +118,13 @@ public class CarSelectionController : MonoBehaviour
 #endif
     }
 
+    void LateUpdate()
+    {
+        // If a mouse click cleared the selection, pressing Up/Down re-highlights the first car so
+        // D-pad / arrow navigation never soft-locks.
+        MenuNavigation.EnsureSelectionOnNavigate(firstEntry);
+    }
+
     void OnDestroy()
     {
         if (previewCamera != null) previewCamera.targetTexture = null;
@@ -240,14 +247,19 @@ public class CarSelectionController : MonoBehaviour
             return;
         }
 
+        var entries = new Button[cars.Length];
         for (int i = 0; i < cars.Length; i++)
         {
             int idx = i;
             string carName = string.IsNullOrEmpty(cars[i].name) ? $"Car {i + 1}" : cars[i].name;
             var btn = CreateListButton(carName, go.transform, () => SelectCar(idx));
             btn.gameObject.AddComponent<CarListEntry>().Init(this, idx);
+            entries[i] = btn;
             if (i == 0) firstEntry = btn.gameObject;
         }
+
+        // Up on the top car wraps to the bottom and vice-versa.
+        MenuNavigation.WireVerticalWrap(entries);
     }
 
     void BuildInstructions(Transform parent)

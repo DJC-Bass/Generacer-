@@ -63,11 +63,20 @@ public class MainMenuController : MonoBehaviour
     [Tooltip("Scene that Tutorial loads. Leave blank until the tutorial scene exists.")]
     public string tutorialSceneName = "Tutorial";
 
+    private GameObject firstButton;   // top item — used to rescue navigation from a null selection
+
     void Start()
     {
         EnsureCamera();
         EnsureEventSystem();
         BuildUI();
+    }
+
+    void LateUpdate()
+    {
+        // If nothing is highlighted (e.g. a mouse click cleared the selection), pressing Up/Down
+        // re-highlights the top item so D-pad / arrow navigation never soft-locks.
+        MenuNavigation.EnsureSelectionOnNavigate(firstButton);
     }
 
     // -------------------------------------------------------
@@ -91,15 +100,20 @@ public class MainMenuController : MonoBehaviour
 
         // Buttons stacked top-to-bottom, under the title, on the upper-left.
         var menu = BuildButtonColumn(canvasGO.transform);
-        var first = CreateButton("START", menu, OnStart);
-        CreateButton("ONLINE MULTIPLAYER", menu, OnOnlineMultiplayer);
-        CreateButton("TUTORIAL", menu, OnTutorial);
-        CreateButton("SETTINGS", menu, OnSettings);
-        CreateButton("QUIT", menu, OnQuit);
+        var start = CreateButton("START", menu, OnStart);
+        var online = CreateButton("ONLINE MULTIPLAYER", menu, OnOnlineMultiplayer);
+        var tutorial = CreateButton("TUTORIAL", menu, OnTutorial);
+        var settings = CreateButton("SETTINGS", menu, OnSettings);
+        var quit = CreateButton("QUIT", menu, OnQuit);
+
+        // Up on the top entry wraps to the bottom and vice-versa.
+        MenuNavigation.WireVerticalWrap(new[] { start, online, tutorial, settings, quit });
+
+        firstButton = start != null ? start.gameObject : null;
 
         // Pre-select Start so a gamepad/keyboard can navigate the menu immediately.
-        if (EventSystem.current != null && first != null)
-            EventSystem.current.SetSelectedGameObject(first.gameObject);
+        if (EventSystem.current != null && firstButton != null)
+            EventSystem.current.SetSelectedGameObject(firstButton);
     }
 
     void BuildBackground(Transform parent)
