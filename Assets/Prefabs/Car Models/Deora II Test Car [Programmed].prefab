@@ -1731,10 +1731,10 @@ MonoBehaviour:
   centerOfMass: {fileID: 8433661904055072838}
   driftGripFactor: 0.01
   driftBrakeStrength: 0
-  driftMaxDownforce: 10000
+  driftMaxDownforce: 20000
   driftTurnRateHighSpeed: 1000
   driftMaxSpeedMultiplier: 2
-  maxDownforce: 10000
+  maxDownforce: 20000
   brakingDownforceMultiplier: 4
   groundStickForce: 10
   hillGravityCompensation: 0

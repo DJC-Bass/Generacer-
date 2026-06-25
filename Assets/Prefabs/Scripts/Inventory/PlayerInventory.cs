@@ -75,6 +75,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<LraAbortController>();   // L+R+A hold-to-abort + its progress bar
         go.AddComponent<SDCardHUD>();            // equipped-SD readout + D-pad switching
         go.AddComponent<SDAbilityController>();  // D-pad up: toggle the equipped SD's ability
+        go.AddComponent<PlayerCarSwapper>();     // swaps in the Car-Selection choice each gameplay scene
         DontDestroyOnLoad(go);
     }
 
