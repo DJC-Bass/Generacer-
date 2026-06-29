@@ -923,12 +923,12 @@ MonoBehaviour:
   centerOfMass: {fileID: 7181951043146601696}
   driftGripFactor: 0.01
   driftBrakeStrength: 0
-  driftMaxDownforce: 10000
+  driftMaxDownforce: 10
   driftTurnRateHighSpeed: 1000
   driftMaxSpeedMultiplier: 2
-  maxDownforce: 10000
-  brakingDownforceMultiplier: 4
-  groundStickForce: 10
+  maxDownforce: 10
+  brakingDownforceMultiplier: 2
+  groundStickForce: 1
   hillGravityCompensation: 0
   climbTorqueBoost: 1
   fullAssistAngle: 25
@@ -937,7 +937,7 @@ MonoBehaviour:
   airDriftGracePeriod: 0.4
   manualPitchSpeed: 30
   airBrakeGravityMultiplier: 6
-  gravityMultiplier: 2
+  gravityMultiplier: 4
   airDrag: 0.05
   airLevelingSpeed: 20
   airDriftLevelThreshold: 5

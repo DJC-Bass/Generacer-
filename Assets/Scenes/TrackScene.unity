@@ -959,6 +959,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Main Camera
       objectReference: {fileID: 0}
+    - target: {fileID: 6248677030961518842, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: far clip plane
+      value: 20000
+      objectReference: {fileID: 0}
     - target: {fileID: 6678529128030201846, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -1177,6 +1181,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 762074699419970283, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: far clip plane
+      value: 20000
+      objectReference: {fileID: 0}
     - target: {fileID: 1719848288373882537, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: m_Name
       value: Rear View Camera
