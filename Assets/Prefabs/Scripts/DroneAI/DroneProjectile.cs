@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// A spherical projectile fired by drone cars. Travels forward at high speed,
@@ -17,6 +18,9 @@ public class DroneProjectile : MonoBehaviour
     public float popUpForce = 80f;
     [Tooltip("Tag identifying the player car.")]
     public string playerTag = "Player";
+    [Tooltip("During the hub Drone ending, a hit sends the player to THIS scene (game over) instead " +
+             "of the normal pop-up. Normal track gameplay always uses the pop-up.")]
+    public string mainMenuSceneName = "MainMenu";
 
     private Rigidbody rb;
     private float spawnTime;
@@ -64,6 +68,14 @@ public class DroneProjectile : MonoBehaviour
 
     void HitPlayer(GameObject player)
     {
+        // During the hub Drone ending a hit is game over: send the player back to the main menu
+        // instead of the usual pop-up. (Normal track gameplay always gets the pop-up.)
+        if (IsDroneEndingHub())
+        {
+            ReturnToMainMenu();
+            return;
+        }
+
         var prb = player.GetComponent<Rigidbody>();
         if (prb == null) return;
 
@@ -75,7 +87,31 @@ public class DroneProjectile : MonoBehaviour
         vel.z = 0f;
         prb.linearVelocity = vel;
 
-        // Pop up — same feel as the lightning strike hit
+        // Pop up ï¿½ same feel as the lightning strike hit
         prb.AddForce(Vector3.up * popUpForce, ForceMode.VelocityChange);
+    }
+
+    /// <summary>True only when the game-over Drone ending is active AND we're in the hub scene â€” the
+    /// one situation where a projectile hit ends the game. The scene check keeps a track hit (even on
+    /// the frame the ending flag flips during a failure transition) on the normal pop-up.</summary>
+    bool IsDroneEndingHub()
+    {
+        var gm = GameLoopManager.Instance;
+        return gm != null
+            && gm.DroneEndingActive
+            && SceneManager.GetActiveScene().name == gm.hubSceneName;
+    }
+
+    /// <summary>Game over during the Drone ending: tear down the run (so the next game starts fresh,
+    /// like the QUIT button) and load the main menu.</summary>
+    void ReturnToMainMenu()
+    {
+        GameLoopManager.EndRun();
+        if (PlayerInventory.Instance != null) PlayerInventory.Instance.ResetToStarting();
+
+        if (!string.IsNullOrEmpty(mainMenuSceneName) && Application.CanStreamedLevelBeLoaded(mainMenuSceneName))
+            SceneManager.LoadScene(mainMenuSceneName);
+        else
+            Debug.LogWarning($"[DroneProjectile] Main menu scene '{mainMenuSceneName}' isn't in Build Settings.");
     }
 }

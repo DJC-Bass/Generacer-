@@ -85,6 +85,10 @@ public class ReturnPortalTrigger : MonoBehaviour
         // First place = no AI car has finished ahead of the player this round.
         bool firstPlace = manager == null || !manager.AnyRacerFinishedAhead;
 
+        // Tell the loop this round was a player win (so it isn't scored for the drones, and can
+        // clinch the game at 3 SDs). Anything other than first place is left to count as a drone win.
+        if (firstPlace && manager != null) manager.NotifyPlayerFirstPlace();
+
         int reward = completion + (firstPlace ? firstPlaceBonus : 0);
         inventory.AddCredits(reward);
 

@@ -490,6 +490,11 @@ MonoBehaviour:
   hubPortalPrefab: {fileID: 2711415986702523348, guid: aa6ee35722fee0b4db5270d81a8ce533, type: 3}
   boostGateSpawnPoint: {fileID: 4402446631612321382, guid: 94c8749db4d63834f8461bd1d74dfb42, type: 3}
   portalSpawnPoint: {fileID: 3464968713083386110, guid: aa6ee35722fee0b4db5270d81a8ce533, type: 3}
+  droneCarPrefab: {fileID: 3743406503546484475, guid: 93de631530202d149afab79e784371c2, type: 3}
+  droneEndingSpawnRate: 2
+  droneEndingMaxDrones: 30
+  droneEndingSpawnScatter: 12
+  droneLayerName: Drone
 --- !u!1 &1381584760 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}

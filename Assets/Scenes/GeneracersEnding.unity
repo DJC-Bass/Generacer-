@@ -573,7 +573,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CameraFollow
   target: {fileID: 242314603}
   rearView: 0
-  offset: {x: 0, y: 3, z: -7}
+  offset: {x: 0, y: 2.5, z: -7}
   positionSmoothTime: 0.5
   pitchSmoothTime: 0.25
   rollSmoothTime: 0.25

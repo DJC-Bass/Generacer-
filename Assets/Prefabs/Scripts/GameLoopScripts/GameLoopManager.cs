@@ -36,6 +36,14 @@ public class GameLoopManager : MonoBehaviour
              "Tweak for balancing.")]
     public int firstPlaceBonusCredits = 200;
 
+    [Header("Endings")]
+    [Tooltip("Number of SDs the player must collect (one per first-place finish) to WIN the game.")]
+    public int sdItemsToWin = 3;
+    [Tooltip("Drone wins that trigger the game-over Drone ending. A 'drone win' is any round — once " +
+             "the portal has spawned — that does NOT end in a player first-place finish: a drone " +
+             "beat the player to the End Portal, or the player died / aborted / skipped / timed out.")]
+    public int droneWinsToGameOver = 2;
+
     [Header("Scene Names")]
     public string hubSceneName = "HubWorld";
     public string trackSceneName = "TrackScene";
@@ -62,6 +70,20 @@ public class GameLoopManager : MonoBehaviour
     public event Action OnPortalShouldSpawn;
     public event Action OnPortalShouldDespawn;
     public event Action OnRoundTimeoutInTrack;
+
+    /// <summary>Rounds the drones have won so far (see <see cref="droneWinsToGameOver"/>).</summary>
+    public int DroneWins { get; private set; }
+    /// <summary>True once either ending has triggered — the normal round loop then halts.</summary>
+    public bool GameEnded { get; private set; }
+    /// <summary>True once the game-over Drone ending has begun; the hub reads this on load to start it.</summary>
+    public bool DroneEndingActive { get; private set; }
+
+    public event Action OnDroneEnding;   // fired once when the drones hit the game-over threshold
+    public event Action OnPlayerWin;     // fired once when the player collects enough SDs
+
+    // Per-round scoring flags, reset each time the portal spawns.
+    private bool playerFirstPlaceThisRound;
+    private bool roundOutcomeCounted;
 
     void Awake()
     {
@@ -91,6 +113,8 @@ public class GameLoopManager : MonoBehaviour
 
     void Update()
     {
+        if (GameEnded) return;   // an ending has taken over — stop the normal round loop
+
         switch (CurrentPhase)
         {
             case Phase.HubCountdown:
@@ -134,6 +158,8 @@ public class GameLoopManager : MonoBehaviour
         CurrentPhase = Phase.HubPortalActive;
         RoundTimeRemaining = roundDuration;
         RoundNumber++;   // each portal spawn begins a new game-loop round
+        playerFirstPlaceThisRound = false;   // fresh round — outcome not yet decided
+        roundOutcomeCounted = false;
         Debug.Log($"[GameLoop] Round {RoundNumber} — portal active, {RoundTimeRemaining:F0}s round timer started");
         OnPortalShouldSpawn?.Invoke();
     }
@@ -160,8 +186,58 @@ public class GameLoopManager : MonoBehaviour
 
     void EndRoundAndRestart()
     {
+        EvaluateRoundOutcome();      // score the round for the player or the drones (may end the game)
+
         CurrentPhase = Phase.RoundEnded;
+        if (GameEnded) return;       // an ending began — don't queue another round
         Invoke(nameof(StartHubCountdown), postRoundDelay);
+    }
+
+    /// <summary>
+    /// Scores the round that's ending. A player FIRST-place finish is a player round win (and clinches
+    /// the game once they hold <see cref="sdItemsToWin"/> SDs). Anything else — a drone beat the player
+    /// to the End Portal, or the player died / aborted / skipped / timed out — is a drone win, which
+    /// triggers the game-over Drone ending at <see cref="droneWinsToGameOver"/>. Runs once per round.
+    /// </summary>
+    void EvaluateRoundOutcome()
+    {
+        if (GameEnded || roundOutcomeCounted) return;
+        roundOutcomeCounted = true;
+
+        if (playerFirstPlaceThisRound)
+        {
+            if (CountPlayerSDs() >= sdItemsToWin)
+            {
+                GameEnded = true;
+                Debug.Log("[GameLoop] Player collected enough SDs — PLAYER WINS.");
+                OnPlayerWin?.Invoke();
+            }
+        }
+        else
+        {
+            DroneWins++;
+            Debug.Log($"[GameLoop] Drone win {DroneWins}/{droneWinsToGameOver}.");
+            if (DroneWins >= droneWinsToGameOver)
+            {
+                GameEnded = true;
+                DroneEndingActive = true;
+                Debug.Log("[GameLoop] Drones reached the win threshold — DRONE ENDING begins.");
+                OnDroneEnding?.Invoke();
+            }
+        }
+    }
+
+    /// <summary>Counts the distinct SD items the player currently holds (items whose name ends in " SD").</summary>
+    static int CountPlayerSDs()
+    {
+        var inv = PlayerInventory.Instance;
+        if (inv == null) return 0;
+
+        int count = 0;
+        foreach (var name in inv.Order)
+            if (!string.IsNullOrEmpty(name) && name.EndsWith(" SD") && inv.GetCount(name) > 0)
+                count++;
+        return count;
     }
 
     // -------------------------------------------------------
@@ -177,6 +253,13 @@ public class GameLoopManager : MonoBehaviour
             AnyRacerFinishedAhead = false;   // fresh race — nobody has finished yet
             Debug.Log($"[GameLoop] Player entered track � {RoundTimeRemaining:F0}s remaining");
         }
+    }
+
+    /// <summary>Called by the End Portal when the player completes the track in FIRST place (no AI
+    /// finished ahead). Marks this round as a player win, so it does NOT count toward the drones.</summary>
+    public void NotifyPlayerFirstPlace()
+    {
+        playerFirstPlaceThisRound = true;
     }
 
     /// <summary>Called by an AI car (drone/challenger) when it reaches the end of its

@@ -74,6 +74,19 @@ public class DroneCar : MonoBehaviour
              "into the kill floor. DroneCar = 100, ChallengerCar = 200.")]
     public int creditReward = 100;
 
+    [Header("Chase Mode (hub Drone ending)")]
+    [Tooltip("When true, the drone ignores its path and chases the player along the ground, firing " +
+             "as it closes — used by the game-over Drone ending swarm in the hub. Enable via BeginChase().")]
+    public bool chaseMode;
+    [Tooltip("Horizontal acceleration toward the player while chasing (units/s²).")]
+    public float chaseAcceleration = 35f;
+    [Tooltip("Maximum horizontal chase speed (units/s).")]
+    public float chaseMaxSpeed = 70f;
+    [Tooltip("Downward acceleration applied while chasing, imitating gravity so the drone settles " +
+             "onto and drives along the ground instead of flying up at the player (units/s²).")]
+    public float chaseDownforce = 30f;
+    private Transform chaseTarget;
+
     private TrackPath path;
     private Rigidbody rb;
     private float lastFireTime = -999f;
@@ -110,8 +123,12 @@ public class DroneCar : MonoBehaviour
 
     void FixedUpdate()
     {
-        if (path == null || !path.IsReady) return;
         if (finished) return;
+
+        // Hub Drone-ending swarm: ignore the path and home in on the player.
+        if (chaseMode) { ChasePlayer(); return; }
+
+        if (path == null || !path.IsReady) return;
 
         pathDistance += pathSpeed * Time.fixedDeltaTime;
 
@@ -161,6 +178,54 @@ public class DroneCar : MonoBehaviour
         // on the vertical axis.
         if (playerHit)
             rb.AddForce(Vector3.down * knockDownforce, ForceMode.Acceleration);
+    }
+
+    /// <summary>Switches this drone into hub Drone-ending chase mode: it chases the player along the
+    /// ground and fires, with no path required. Called by the spawner instead of Initialize().</summary>
+    public void BeginChase()
+    {
+        chaseMode = true;
+        var p = GameObject.FindWithTag(playerTag);
+        if (p != null) chaseTarget = p.transform;
+    }
+
+    /// <summary>Drives along the ground toward the player (horizontal seek + downforce) and fires.
+    /// Chasing on the ground plane — not flying up to the player's height — sells the "driving"
+    /// look; the downforce keeps it pressed onto the floor. The relentless hub-swarm behaviour.</summary>
+    void ChasePlayer()
+    {
+        if (chaseTarget == null)
+        {
+            var p = GameObject.FindWithTag(playerTag);
+            if (p == null) return;
+            chaseTarget = p.transform;
+        }
+
+        // Seek the player along the ground plane only (ignore the height difference).
+        Vector3 toPlayer = chaseTarget.position - transform.position;
+        Vector3 toPlayerFlat = new Vector3(toPlayer.x, 0f, toPlayer.z);
+
+        if (toPlayerFlat.sqrMagnitude > 0.0001f)
+        {
+            rb.AddForce(toPlayerFlat.normalized * chaseAcceleration, ForceMode.Acceleration);
+
+            // Cap only the horizontal speed; leave the vertical axis to gravity / landing.
+            Vector3 vel = rb.linearVelocity;
+            Vector3 horizontal = new Vector3(vel.x, 0f, vel.z);
+            if (horizontal.magnitude > chaseMaxSpeed)
+            {
+                horizontal = horizontal.normalized * chaseMaxSpeed;
+                rb.linearVelocity = new Vector3(horizontal.x, vel.y, horizontal.z);
+            }
+
+            Quaternion targetRot = Quaternion.LookRotation(toPlayerFlat.normalized, Vector3.up);
+            rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot, rotationCorrection * Time.fixedDeltaTime));
+        }
+
+        // Imitate gravity (the drone's own useGravity is off) so it sits on and drives along the ground.
+        rb.AddForce(Vector3.down * chaseDownforce, ForceMode.Acceleration);
+
+        TryShoot();
     }
 
     /// <summary>

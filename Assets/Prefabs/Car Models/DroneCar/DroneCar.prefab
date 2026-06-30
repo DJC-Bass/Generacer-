@@ -534,6 +534,10 @@ MonoBehaviour:
   fireCooldownDuration: 0.5
   knockDownforce: 20
   creditReward: 100
+  chaseMode: 0
+  chaseAcceleration: 100
+  chaseMaxSpeed: 150
+  chaseDownforce: 30
 --- !u!1 &4455739669367971782
 GameObject:
   m_ObjectHideFlags: 0
