@@ -77,6 +77,9 @@ public class GameLoopManager : MonoBehaviour
     public bool GameEnded { get; private set; }
     /// <summary>True once the game-over Drone ending has begun; the hub reads this on load to start it.</summary>
     public bool DroneEndingActive { get; private set; }
+    /// <summary>True once the player-victory ending has begun; the hub reads this on load to start it
+    /// (keeps the portal from spawning and flashes the "BOTS DEFEATED" banner).</summary>
+    public bool PlayerWinActive { get; private set; }
 
     public event Action OnDroneEnding;   // fired once when the drones hit the game-over threshold
     public event Action OnPlayerWin;     // fired once when the player collects enough SDs
@@ -209,6 +212,7 @@ public class GameLoopManager : MonoBehaviour
             if (CountPlayerSDs() >= sdItemsToWin)
             {
                 GameEnded = true;
+                PlayerWinActive = true;
                 Debug.Log("[GameLoop] Player collected enough SDs — PLAYER WINS.");
                 OnPlayerWin?.Invoke();
             }
