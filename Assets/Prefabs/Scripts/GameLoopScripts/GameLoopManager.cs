@@ -47,6 +47,9 @@ public class GameLoopManager : MonoBehaviour
     [Header("Scene Names")]
     public string hubSceneName = "HubWorld";
     public string trackSceneName = "TrackScene";
+    [Tooltip("Special \"flawless win\" ending scene — loaded straight from the track instead of the " +
+             "hub victory when the player collects all SDs WITHOUT ever using an SD ability this run.")]
+    public string specialEndingSceneName = "GeneracersEnding";
 
     // Singleton
     public static GameLoopManager Instance { get; private set; }
@@ -80,6 +83,17 @@ public class GameLoopManager : MonoBehaviour
     /// <summary>True once the player-victory ending has begun; the hub reads this on load to start it
     /// (keeps the portal from spawning and flashes the "BOTS DEFEATED" banner).</summary>
     public bool PlayerWinActive { get; private set; }
+
+    /// <summary>True if the player has activated ANY SD ability at least once this run. Latched by
+    /// <see cref="NotifySDAbilityUsed"/> the first time an ability turns on, never cleared within a
+    /// run (it survives a failure SD-wipe), and gone only when the manager is torn down for a new run.
+    /// Using even one SD forfeits the flawless "Generacers" ending.</summary>
+    public bool UsedAnySDThisRun { get; private set; }
+
+    /// <summary>True when the player has earned the special flawless ending: they just won
+    /// (<see cref="PlayerWinActive"/>) AND never used an SD ability all run. Read at the End Portal to
+    /// route the player to <see cref="specialEndingSceneName"/> instead of the hub victory banner.</summary>
+    public bool SpecialEndingEarned => PlayerWinActive && !UsedAnySDThisRun;
 
     public event Action OnDroneEnding;   // fired once when the drones hit the game-over threshold
     public event Action OnPlayerWin;     // fired once when the player collects enough SDs
@@ -264,6 +278,13 @@ public class GameLoopManager : MonoBehaviour
     public void NotifyPlayerFirstPlace()
     {
         playerFirstPlaceThisRound = true;
+    }
+
+    /// <summary>Called by <see cref="SDAbilityController"/> the first time an SD ability is activated.
+    /// Latches <see cref="UsedAnySDThisRun"/> for the rest of the run, forfeiting the flawless ending.</summary>
+    public void NotifySDAbilityUsed()
+    {
+        UsedAnySDThisRun = true;
     }
 
     /// <summary>Called by an AI car (drone/challenger) when it reaches the end of its

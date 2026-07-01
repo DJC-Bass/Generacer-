@@ -8,7 +8,7 @@ public static class GameplayHud
 {
     // Scenes the gameplay HUDs are visible in. Anything NOT listed (MainMenu, CarSelection, ...)
     // hides them.
-    public static readonly string[] GameplayScenes = { "HubWorld", "TrackScene" };
+    public static readonly string[] GameplayScenes = { "HubWorld", "TrackScene", "GeneracersEnding" };
 
     /// <summary>True if the gameplay HUDs should be visible in the named scene.</summary>
     public static bool VisibleInScene(string sceneName)

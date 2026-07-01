@@ -134,6 +134,9 @@ public class SDAbilityController : MonoBehaviour
         carGO = null;                           // force a fresh find + apply
         EnsureCar();
 
+        // Latch the run's "used an SD" flag so a flawless (no-SD) win can route to the special ending.
+        if (GameLoopManager.Instance != null) GameLoopManager.Instance.NotifySDAbilityUsed();
+
         Debug.Log($"[SDAbility] {sd} active ({ability.effect}).");
     }
 

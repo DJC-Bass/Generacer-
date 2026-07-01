@@ -53,14 +53,29 @@ public class ReturnPortalTrigger : MonoBehaviour
         // Reward the player for completing the track BEFORE the manager ends the round.
         AwardCompletionCredits();
 
-        // Notify the manager BEFORE loading the scene so the round properly ends
-        if (GameLoopManager.Instance != null)
-            GameLoopManager.Instance.NotifyReturnedToHub();
+        var manager = GameLoopManager.Instance;
+
+        // Notify the manager BEFORE loading the scene so the round properly ends. This is where a
+        // 3-SD finish is scored as the win (setting PlayerWinActive, and SpecialEndingEarned too if
+        // the player never used an SD ability all run).
+        if (manager != null)
+            manager.NotifyReturnedToHub();
+
+        // Flawless win — collected every SD WITHOUT ever using an SD ability — routes to the special
+        // "Generacers" ending scene instead of back to the hub for the standard victory banner. Falls
+        // through to the hub if that scene isn't in Build Settings, so a misconfig can't strand the player.
+        if (manager != null && manager.SpecialEndingEarned
+            && !string.IsNullOrEmpty(manager.specialEndingSceneName)
+            && Application.CanStreamedLevelBeLoaded(manager.specialEndingSceneName))
+        {
+            SceneManager.LoadScene(manager.specialEndingSceneName);
+            return;
+        }
 
         string sceneName = !string.IsNullOrEmpty(hubSceneNameOverride)
                          ? hubSceneNameOverride
-                         : GameLoopManager.Instance != null
-                             ? GameLoopManager.Instance.hubSceneName
+                         : manager != null
+                             ? manager.hubSceneName
                              : "HubWorld";
 
         SceneManager.LoadScene(sceneName);
