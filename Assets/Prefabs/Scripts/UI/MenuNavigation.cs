@@ -58,6 +58,24 @@ public static class MenuNavigation
             es.SetSelectedGameObject(defaultSelection);
     }
 
+    /// <summary>
+    /// Plays the shared "move" menu SFX (<see cref="AudioManager.PlayMenuMove"/>) whenever the
+    /// EventSystem's highlighted item changes to a different live item. Call once per frame from a
+    /// menu's LateUpdate, passing a field that remembers the last selection. The opening highlight
+    /// (nothing → first item) and losing the selection are silent; only genuine navigation between
+    /// two items plays. No-op without an EventSystem.
+    /// </summary>
+    public static void PlayMoveSfxOnSelectionChange(ref GameObject lastSelected)
+    {
+        var es = EventSystem.current;
+        var cur = es != null ? es.currentSelectedGameObject : null;
+        if (cur == lastSelected) return;
+
+        if (cur != null && lastSelected != null)   // moving between two real items, not open/close
+            AudioManager.PlayMenuMove();
+        lastSelected = cur;
+    }
+
     static bool NavUpOrDownPressed()
     {
 #if ENABLE_INPUT_SYSTEM

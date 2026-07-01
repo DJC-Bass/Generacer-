@@ -64,6 +64,7 @@ public class MainMenuController : MonoBehaviour
     public string tutorialSceneName = "Tutorial";
 
     private GameObject firstButton;   // top item — used to rescue navigation from a null selection
+    private GameObject lastSelectedForSfx;   // tracks the highlighted item so we can fire the "move" SFX
 
     void Start()
     {
@@ -77,6 +78,9 @@ public class MainMenuController : MonoBehaviour
         // If nothing is highlighted (e.g. a mouse click cleared the selection), pressing Up/Down
         // re-highlights the top item so D-pad / arrow navigation never soft-locks.
         MenuNavigation.EnsureSelectionOnNavigate(firstButton);
+
+        // Play the "move" SFX whenever the highlighted button changes (list navigation).
+        MenuNavigation.PlayMoveSfxOnSelectionChange(ref lastSelectedForSfx);
     }
 
     // -------------------------------------------------------
@@ -211,6 +215,7 @@ public class MainMenuController : MonoBehaviour
         cb.fadeDuration = buttonColorFadeDuration;
         btn.colors = cb;
         btn.onClick.AddListener(onClick);
+        btn.onClick.AddListener(AudioManager.PlayMenuSelect);   // "select" SFX on click / Submit (A)
 
         var textGO = new GameObject("Label", typeof(RectTransform));
         textGO.transform.SetParent(go.transform, false);
