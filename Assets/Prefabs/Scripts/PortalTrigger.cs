@@ -10,12 +10,17 @@ public class PortalTrigger : MonoBehaviour
 
     [Header("Visual Feedback")]
     public GameObject portalVisual;           // Drag your PortalMesh here
-    public ParticleSystem portalParticles;    // Optional — drag particle system here
+    public ParticleSystem portalParticles;    // Optional ï¿½ drag particle system here
     public float rotationSpeed = 90f;         // Portal spin speed (degrees per second)
 
     [Header("Activation")]
     public float activationDelay = 0.5f;      // Seconds before scene loads (feels better)
     public bool portalActive = true;          // Can disable portal via other scripts
+
+    [Header("Drone Ending Secret Exit")]
+    [Tooltip("If the player reaches this portal DURING the game-over Drone ending, they escape to " +
+             "this secret scene (loaded by name) instead of loading the normal track.")]
+    public string droneEndingSceneName = "ClipperEnding";
 
     private bool isLoading = false;           // Prevents double-triggering
     private Renderer portalRenderer;
@@ -66,11 +71,23 @@ public class PortalTrigger : MonoBehaviour
         // Brief pause so the player feels the portal "activate"
         yield return new WaitForSeconds(activationDelay);
 
+        // Secret ending: reaching this hub portal DURING the game-over Drone ending escapes to a
+        // special scene (by name) instead of loading the normal track. Falls through to the normal
+        // track load if that scene isn't in Build Settings, so a misconfig can't strand the player.
+        var gm = GameLoopManager.Instance;
+        if (gm != null && gm.DroneEndingActive
+            && !string.IsNullOrEmpty(droneEndingSceneName)
+            && Application.CanStreamedLevelBeLoaded(droneEndingSceneName))
+        {
+            SceneManager.LoadScene(droneEndingSceneName);
+            yield break;
+        }
+
         // Load asynchronously so Unity doesn't freeze on larger scenes
         AsyncOperation load = SceneManager.LoadSceneAsync(trackSceneIndex);
 
-        // Optionally show a loading bar by reading load.progress (0–0.9)
-        // 0.9 means the scene is ready but waiting — let it finish automatically
+        // Optionally show a loading bar by reading load.progress (0ï¿½0.9)
+        // 0.9 means the scene is ready but waiting ï¿½ let it finish automatically
         load.allowSceneActivation = true;
     }
 
