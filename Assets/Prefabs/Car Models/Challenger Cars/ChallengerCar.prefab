@@ -433,6 +433,7 @@ GameObject:
   - component: {fileID: 3137147913835012917}
   - component: {fileID: 5029817216806807594}
   - component: {fileID: 3972705873058387761}
+  - component: {fileID: 2718281828459045235}
   m_Layer: 0
   m_Name: ChallengerCar
   m_TagString: Untagged
@@ -544,6 +545,27 @@ MonoBehaviour:
   fireCooldownDuration: 1
   knockDownforce: 20
   creditReward: 200
+--- !u!114 &2718281828459045235
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4675093747225913974}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  engineClip: {fileID: 0}
+  idlePitch: 0.8
+  maxPitch: 2.2
+  speedForMaxPitch: 70
+  idleVolume: 0.4
+  fullVolume: 0.7
+  responsiveness: 6
+  spatialBlend: 1
+  maxDistance: 80
 --- !u!1 &5599075166028337191
 GameObject:
   m_ObjectHideFlags: 0

@@ -86,6 +86,7 @@ public class CarSelectionController : MonoBehaviour
     private int previewIndex = -1;
     private int selectedIndex = -1;
     private GameObject firstEntry;
+    private GameObject lastSelectedForSfx;   // tracks the highlighted car so we can fire the "move" SFX
 
     void Start()
     {
@@ -123,6 +124,9 @@ public class CarSelectionController : MonoBehaviour
         // If a mouse click cleared the selection, pressing Up/Down re-highlights the first car so
         // D-pad / arrow navigation never soft-locks.
         MenuNavigation.EnsureSelectionOnNavigate(firstEntry);
+
+        // Play the "move" SFX whenever the highlighted car changes (list navigation).
+        MenuNavigation.PlayMoveSfxOnSelectionChange(ref lastSelectedForSfx);
     }
 
     void OnDestroy()
@@ -358,13 +362,18 @@ public class CarSelectionController : MonoBehaviour
     /// <summary>A: store the chosen car and load Bootstrap to begin the game loop.</summary>
     void StartGame()
     {
+        AudioManager.PlayMenuSelect();   // "select" SFX on A / START
         if (selectedIndex >= 0 && selectedIndex < cars.Length)
             SelectedCarStore.Set(cars[selectedIndex].name, cars[selectedIndex].prefab);
         LoadScene(bootstrapSceneName, "Start");
     }
 
     /// <summary>B: return to the main menu.</summary>
-    void GoToMainMenu() => LoadScene(mainMenuSceneName, "Back");
+    void GoToMainMenu()
+    {
+        AudioManager.PlayMenuBack();   // "back" SFX on B / BACK
+        LoadScene(mainMenuSceneName, "Back");
+    }
 
     void LoadScene(string sceneName, string label)
     {
@@ -416,6 +425,7 @@ public class CarSelectionController : MonoBehaviour
         foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true)) mb.enabled = false;
         foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true)) { rb.isKinematic = true; rb.detectCollisions = false; }
         foreach (var col in go.GetComponentsInChildren<Collider>(true)) col.enabled = false;
+        foreach (var a in go.GetComponentsInChildren<AudioSource>(true)) { a.Stop(); a.enabled = false; }   // silent preview (engine, etc.)
     }
 
     void EnsureEventSystem()

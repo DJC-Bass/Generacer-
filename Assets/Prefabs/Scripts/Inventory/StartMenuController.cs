@@ -43,6 +43,7 @@ public class StartMenuController : MonoBehaviour
 
     private bool isOpen;
     private bool built;
+    private GameObject lastSelectedForSfx;   // tracks the highlighted item so we can fire the "move" SFX
 
     void Awake()
     {
@@ -72,6 +73,7 @@ public class StartMenuController : MonoBehaviour
         // B: step out of a sub-screen back to the list; at the top level it closes the menu.
         if (isOpen && gp.buttonEast.wasPressedThisFrame)
         {
+            AudioManager.PlayMenuBack();   // "back" SFX on B (backing out of a sub or closing the menu)
             if (currentSub != null) ShowMain();
             else Close();
         }
@@ -79,10 +81,20 @@ public class StartMenuController : MonoBehaviour
 
     void LateUpdate()
     {
-        // While open on the main list, rescue navigation from a null selection (e.g. a mouse click
-        // cleared it) so pressing Up/Down re-highlights the top item instead of soft-locking.
-        if (isOpen && currentSub == null)
-            MenuNavigation.EnsureSelectionOnNavigate(firstButton);
+        // Only the main list is navigable; reset the SFX tracker elsewhere so opening the menu or
+        // returning from a sub-screen doesn't fire a stray "move" sound.
+        if (!isOpen || currentSub != null)
+        {
+            lastSelectedForSfx = null;
+            return;
+        }
+
+        // Rescue navigation from a null selection (e.g. a mouse click cleared it) so pressing Up/Down
+        // re-highlights the top item instead of soft-locking.
+        MenuNavigation.EnsureSelectionOnNavigate(firstButton);
+
+        // Play the "move" SFX whenever the highlighted item changes (list navigation).
+        MenuNavigation.PlayMoveSfxOnSelectionChange(ref lastSelectedForSfx);
     }
 
     void Open()
@@ -281,6 +293,7 @@ public class StartMenuController : MonoBehaviour
         cb.colorMultiplier = 1f; cb.fadeDuration = 0.1f;
         btn.colors = cb;
         btn.onClick.AddListener(onClick);
+        btn.onClick.AddListener(AudioManager.PlayMenuSelect);   // "select" SFX on click / Submit (A)
 
         var tmp = NewText(go.transform, "Label", cfg.buttonFontSize, TextAlignmentOptions.Center);
         tmp.text = label; tmp.color = cfg.buttonTextColor;

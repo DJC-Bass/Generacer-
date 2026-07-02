@@ -10,8 +10,16 @@ using UnityEngine;
 public class AudioLibrary : ScriptableObject
 {
     [Header("Music")]
-    [Tooltip("Looping song for the menu scenes (Main Menu, Car Selection).")]
+    [Tooltip("Looping song for the Main Menu scene.")]
     public AudioClip mainMenuMusic;
+    [Tooltip("Looping song for the Car Selection scene (its own track, separate from the Main Menu).")]
+    public AudioClip carSelectionMusic;
+    [Tooltip("Looping song for the HUB world.")]
+    public AudioClip hubMusic;
+    [Tooltip("Looping song for the Generacers (flawless-win) ending scene.")]
+    public AudioClip generacersEndingMusic;
+    [Tooltip("Looping song for the Clipper (Drone-ending escape) ending scene.")]
+    public AudioClip clipperEndingMusic;
 
     [Header("Menu SFX")]
     [Tooltip("Played when the highlighted menu item changes (navigating up/down the list).")]

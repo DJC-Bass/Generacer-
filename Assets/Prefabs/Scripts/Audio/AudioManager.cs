@@ -19,9 +19,6 @@ public class AudioManager : MonoBehaviour
 {
     public static AudioManager Instance { get; private set; }
 
-    [Tooltip("Scenes that play the looping menu music. Any scene NOT listed stops the music.")]
-    public string[] menuMusicScenes = { "MainMenu", "CarSelection" };
-
     public AudioLibrary Library { get; private set; }
 
     private AudioSource musicSource;
@@ -73,18 +70,23 @@ public class AudioManager : MonoBehaviour
 
     void ApplyMusicForScene(string sceneName)
     {
-        if (Library != null && IsMenuMusicScene(sceneName))
-            PlayMusic(Library.mainMenuMusic);
-        else
-            StopMusic();
+        PlayMusic(MusicForScene(sceneName));   // PlayMusic(null) stops the music
     }
 
-    bool IsMenuMusicScene(string sceneName)
+    /// <summary>The looping track for a scene, or null for silence. Extend this as more scenes get
+    /// their own music (gameplay, endings, ...).</summary>
+    AudioClip MusicForScene(string sceneName)
     {
-        if (menuMusicScenes == null) return false;
-        foreach (var s in menuMusicScenes)
-            if (s == sceneName) return true;
-        return false;
+        if (Library == null) return null;
+        switch (sceneName)
+        {
+            case "MainMenu":         return Library.mainMenuMusic;
+            case "CarSelection":     return Library.carSelectionMusic;
+            case "HubWorld":         return Library.hubMusic;
+            case "GeneracersEnding": return Library.generacersEndingMusic;
+            case "ClipperEnding":    return Library.clipperEndingMusic;
+            default:                 return null;
+        }
     }
 
     // ---------------- Music ----------------
@@ -99,6 +101,7 @@ public class AudioManager : MonoBehaviour
         currentMusic = clip;
         if (musicSource == null) return;
         musicSource.clip = clip;
+        musicSource.loop = true;   // guarantee looping at the play site, regardless of source reuse
         musicSource.Play();
     }
 
