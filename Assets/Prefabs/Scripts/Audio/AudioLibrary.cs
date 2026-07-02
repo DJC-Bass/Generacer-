@@ -20,6 +20,9 @@ public class AudioLibrary : ScriptableObject
     public AudioClip generacersEndingMusic;
     [Tooltip("Looping song for the Clipper (Drone-ending escape) ending scene.")]
     public AudioClip clipperEndingMusic;
+    [Tooltip("TrackScene song pool — one is picked at random each time you enter the track (never the " +
+             "same one twice in a row), so races don't get a stale single theme. Add as many as you like.")]
+    public AudioClip[] trackMusic;
 
     [Header("Menu SFX")]
     [Tooltip("Played when the highlighted menu item changes (navigating up/down the list).")]
@@ -28,6 +31,12 @@ public class AudioLibrary : ScriptableObject
     public AudioClip menuSelect;
     [Tooltip("Played when backing out of a selection or sub-screen (B / Cancel).")]
     public AudioClip menuBack;
+
+    [Header("Vehicle SFX (universal — same for every car)")]
+    [Tooltip("One-shot played when Turbo Boost activates.")]
+    public AudioClip turboBoost;
+    [Tooltip("One-shot played when the car jumps (Jet).")]
+    public AudioClip jump;
 
     [Header("Default Mix (0..1)")]
     [Range(0f, 1f)] public float musicVolume = 0.6f;

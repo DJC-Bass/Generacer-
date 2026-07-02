@@ -1163,6 +1163,7 @@ GameObject:
   - component: {fileID: 1447494523489442288}
   - component: {fileID: 3071063960551978548}
   - component: {fileID: 272028573550546906}
+  - component: {fileID: 4322009895405194616}
   m_Layer: 11
   m_Name: 'S-Sen7[Black_White]'
   m_TagString: Player
@@ -1313,3 +1314,24 @@ MonoBehaviour:
   loopGravityEnableDot: 0.1
   loopStickForce: 0
   loopSpeedMultiplier: 2
+--- !u!114 &4322009895405194616
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9203637246216865349}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
+  engineClip: {fileID: 8300000, guid: 9e4b01b747eecfa41928668ebc6bd239, type: 3}
+  idlePitch: 0.8
+  maxPitch: 6
+  speedForMaxPitch: 400
+  idleVolume: 0.5
+  fullVolume: 0.9
+  responsiveness: 6
+  spatialBlend: 0
+  maxDistance: 60

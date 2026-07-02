@@ -2929,6 +2929,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1559327586}
   m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1598653947 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+  m_PrefabInstance: {fileID: 2124528238232008960}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1614080180
 GameObject:
   m_ObjectHideFlags: 0
@@ -4407,7 +4412,10 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      insertIndex: 3
+      addedObject: {fileID: 5258105072917245125}
   m_SourcePrefab: {fileID: 100100000, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
 --- !u!108 &2501286151513930407
 Light:
@@ -4716,6 +4724,27 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
   m_PrefabInstance: {fileID: 2124528238232008960}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &5258105072917245125
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1598653947}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
+  engineClip: {fileID: 8300000, guid: 0f104c576d65b7a40a65239d580779ba, type: 3}
+  idlePitch: 0.8
+  maxPitch: 6
+  speedForMaxPitch: 400
+  idleVolume: 0.5
+  fullVolume: 0.9
+  responsiveness: 6
+  spatialBlend: 0
+  maxDistance: 60
 --- !u!33 &6830203501103379223
 MeshFilter:
   m_ObjectHideFlags: 0

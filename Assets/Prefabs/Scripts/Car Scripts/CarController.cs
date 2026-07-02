@@ -712,6 +712,7 @@ public class CarController : MonoBehaviour
 
         turboTimer = turboDuration;
         turboCooldownTimer = turboCooldown + turboDuration;
+        AudioManager.PlayTurbo();
     }
 
     bool TrySpend(string itemName)
@@ -733,6 +734,7 @@ public class CarController : MonoBehaviour
         rb.linearVelocity = vel;
 
         rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
+        AudioManager.PlayJump();
 
         // Shorten the suspension ray for a moment so the hover spring lets go and the jump
         // velocity can carry the car off the ground before the ray re-catches it.

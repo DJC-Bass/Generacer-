@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -24,6 +25,7 @@ public class AudioManager : MonoBehaviour
     private AudioSource musicSource;
     private AudioSource sfxSource;
     private AudioClip currentMusic;
+    private AudioClip lastTrackMusic;   // last TrackScene song, so a random re-entry avoids repeating it
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
@@ -85,8 +87,28 @@ public class AudioManager : MonoBehaviour
             case "HubWorld":         return Library.hubMusic;
             case "GeneracersEnding": return Library.generacersEndingMusic;
             case "ClipperEnding":    return Library.clipperEndingMusic;
+            case "TrackScene":       return PickTrackMusic();
             default:                 return null;
         }
+    }
+
+    /// <summary>A random TrackScene song from the pool, never the one played last time (so repeated
+    /// entries vary). Null/empty pool → silence; null entries in the pool are skipped.</summary>
+    AudioClip PickTrackMusic()
+    {
+        var clips = Library != null ? Library.trackMusic : null;
+        if (clips == null) return null;
+
+        var options = new List<AudioClip>();
+        foreach (var c in clips) if (c != null) options.Add(c);
+        if (options.Count == 0) return null;
+
+        AudioClip chosen = options[Random.Range(0, options.Count)];
+        for (int i = 0; i < 8 && options.Count > 1 && chosen == lastTrackMusic; i++)
+            chosen = options[Random.Range(0, options.Count)];
+
+        lastTrackMusic = chosen;
+        return chosen;
     }
 
     // ---------------- Music ----------------
@@ -124,6 +146,10 @@ public class AudioManager : MonoBehaviour
     public static void PlayMenuMove()   => PlayLibrarySfx(Lib != null ? Lib.menuMove   : null);
     public static void PlayMenuSelect() => PlayLibrarySfx(Lib != null ? Lib.menuSelect : null);
     public static void PlayMenuBack()   => PlayLibrarySfx(Lib != null ? Lib.menuBack   : null);
+
+    // Universal vehicle one-shots (same clip for every car), fired by the player CarController.
+    public static void PlayTurbo() => PlayLibrarySfx(Lib != null ? Lib.turboBoost : null);
+    public static void PlayJump()  => PlayLibrarySfx(Lib != null ? Lib.jump       : null);
 
     static AudioLibrary Lib => Instance != null ? Instance.Library : null;
     static void PlayLibrarySfx(AudioClip clip) { if (Instance != null) Instance.PlaySfx(clip); }

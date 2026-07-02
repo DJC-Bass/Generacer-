@@ -12,9 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4a6b8c0d2e1f3a5b7c9d0e2f4a6b8c0d, type: 3}
   m_Name: AudioLibrary
   m_EditorClassIdentifier: 
-  mainMenuMusic: {fileID: 8300000, guid: 3246ab764ce9deb41ab089f714999311, type: 3}
+  mainMenuMusic: {fileID: 8300000, guid: ba21a7de3d6354547a35c64822c09ae3, type: 3}
+  carSelectionMusic: {fileID: 0}
+  hubMusic: {fileID: 0}
+  generacersEndingMusic: {fileID: 0}
+  clipperEndingMusic: {fileID: 0}
+  trackMusic: []
   menuMove: {fileID: 8300000, guid: 452ec68f30712b3458ea688e043e908a, type: 3}
   menuSelect: {fileID: 8300000, guid: e138cd0bf8571fc4490373b1b7bee8a3, type: 3}
   menuBack: {fileID: 0}
+  turboBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
+  jump: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   musicVolume: 0.6
   sfxVolume: 0.9
