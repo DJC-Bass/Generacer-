@@ -75,6 +75,12 @@ public class AudioManager : MonoBehaviour
         PlayMusic(MusicForScene(sceneName));   // PlayMusic(null) stops the music
     }
 
+    /// <summary>Re-evaluates and applies the CURRENT scene's music. Call after a state change that
+    /// should swap the track without a scene reload (e.g. the Drone ending starting while the player
+    /// is already in the hub). Idempotent — no-op if the right track is already playing.</summary>
+    public void RefreshCurrentSceneMusic() => ApplyMusicForScene(SceneManager.GetActiveScene().name);
+    public static void RefreshSceneMusic() { if (Instance != null) Instance.RefreshCurrentSceneMusic(); }
+
     /// <summary>The looping track for a scene, or null for silence. Extend this as more scenes get
     /// their own music (gameplay, endings, ...).</summary>
     AudioClip MusicForScene(string sceneName)
@@ -84,12 +90,26 @@ public class AudioManager : MonoBehaviour
         {
             case "MainMenu":         return Library.mainMenuMusic;
             case "CarSelection":     return Library.carSelectionMusic;
-            case "HubWorld":         return Library.hubMusic;
+            case "HubWorld":         return HubMusic();
             case "GeneracersEnding": return Library.generacersEndingMusic;
             case "ClipperEnding":    return Library.clipperEndingMusic;
             case "TrackScene":       return PickTrackMusic();
             default:                 return null;
         }
+    }
+
+    /// <summary>Hub music: the Drone-ending track during that game-over swarm, the player-victory track
+    /// during the BOTS DEFEATED sequence, otherwise the normal hub song.</summary>
+    AudioClip HubMusic()
+    {
+        if (Library == null) return null;
+        var gm = GameLoopManager.Instance;
+        if (gm != null)
+        {
+            if (gm.DroneEndingActive && Library.droneEndingMusic   != null) return Library.droneEndingMusic;
+            if (gm.PlayerWinActive   && Library.playerVictoryMusic != null) return Library.playerVictoryMusic;
+        }
+        return Library.hubMusic;
     }
 
     /// <summary>A random TrackScene song from the pool, never the one played last time (so repeated
@@ -142,6 +162,27 @@ public class AudioManager : MonoBehaviour
         sfxSource.PlayOneShot(clip);
     }
 
+    /// <summary>Fire-and-forget 3D one-shot at a WORLD position (obstacles, world events). Spawns a
+    /// temporary positional AudioSource that cleans itself up, scaled by the global SFX level, so
+    /// distant events are quieter than nearby ones. Null clip is ignored.</summary>
+    public void PlaySfxAt(AudioClip clip, Vector3 position, float maxDistance = 150f)
+    {
+        if (clip == null) return;
+
+        var go = new GameObject("SFX_" + clip.name);
+        go.transform.position = position;
+        var src = go.AddComponent<AudioSource>();
+        src.clip = clip;
+        src.spatialBlend = 1f;                          // 3D — positioned in the world
+        src.rolloffMode = AudioRolloffMode.Linear;
+        src.minDistance = 8f;
+        src.maxDistance = maxDistance;
+        src.dopplerLevel = 0f;
+        src.volume = sfxSource != null ? sfxSource.volume : 1f;
+        src.Play();
+        Destroy(go, clip.length + 0.1f);
+    }
+
     // Null-safe static shortcuts the menu controllers use for the three shared UI sounds.
     public static void PlayMenuMove()   => PlayLibrarySfx(Lib != null ? Lib.menuMove   : null);
     public static void PlayMenuSelect() => PlayLibrarySfx(Lib != null ? Lib.menuSelect : null);
@@ -151,8 +192,18 @@ public class AudioManager : MonoBehaviour
     public static void PlayTurbo() => PlayLibrarySfx(Lib != null ? Lib.turboBoost : null);
     public static void PlayJump()  => PlayLibrarySfx(Lib != null ? Lib.jump       : null);
 
+    // Positional obstacle one-shots (3D, at the event's world location).
+    public static void PlayLightningWarning(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.lightningWarning : null, position);
+    public static void PlayLightningStrike(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.lightningStrike  : null, position);
+
+    // Drone projectile one-shots (3D). Distinct sound for hitting the player vs the environment.
+    public static void PlayDroneShoot(Vector3 position)              => PlayLibrarySfxAt(Lib != null ? Lib.droneShoot               : null, position);
+    public static void PlayProjectileHitEnvironment(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitEnvironment : null, position);
+    public static void PlayProjectileHitPlayer(Vector3 position)      => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitPlayer      : null, position);
+
     static AudioLibrary Lib => Instance != null ? Instance.Library : null;
     static void PlayLibrarySfx(AudioClip clip) { if (Instance != null) Instance.PlaySfx(clip); }
+    static void PlayLibrarySfxAt(AudioClip clip, Vector3 position) { if (Instance != null) Instance.PlaySfxAt(clip, position); }
 
     // ---------------- Volume (for the future Audio submenu) ----------------
 

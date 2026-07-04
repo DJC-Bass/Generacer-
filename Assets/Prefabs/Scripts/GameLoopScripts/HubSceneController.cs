@@ -125,6 +125,7 @@ public class HubSceneController : MonoBehaviour
         droneEndingStarted = true;
 
         Debug.Log("[HubSceneController] Drone ending — portal spawns and the swarm closes in.");
+        AudioManager.RefreshSceneMusic();            // swap the hub theme for the Drone-ending track
         SpawnPortalAndGate();                        // portal spawns immediately
         droneSpawnOrigin = ComputePortalCenter();    // swarm spawns at the portal's visible centre
         StartCoroutine(SpawnDroneSwarm());
@@ -198,6 +199,7 @@ public class HubSceneController : MonoBehaviour
         playerVictoryStarted = true;
 
         Debug.Log("[HubSceneController] Player victory — BOTS DEFEATED. Portal stays down.");
+        AudioManager.RefreshSceneMusic();            // swap the hub theme for the player-victory track
         StartCoroutine(ShowVictoryBanner());
     }
 

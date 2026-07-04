@@ -51,16 +51,22 @@ public class DroneProjectile : MonoBehaviour
         consumed = true;
 
         // Check if we hit the player (walk up hierarchy for sub-colliders)
+        bool hitPlayer = false;
         Transform t = collision.transform;
         while (t != null)
         {
             if (t.CompareTag(playerTag))
             {
                 HitPlayer(t.gameObject);
+                hitPlayer = true;
                 break;
             }
             t = t.parent;
         }
+
+        // Impact SFX (3D): a distinct sound for striking the player vs the environment.
+        if (hitPlayer) AudioManager.PlayProjectileHitPlayer(transform.position);
+        else AudioManager.PlayProjectileHitEnvironment(transform.position);
 
         // Despawn on any collision regardless of what was hit
         Destroy(gameObject);

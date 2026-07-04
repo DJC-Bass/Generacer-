@@ -47,6 +47,8 @@ public class LightningStrike : MonoBehaviour
 
     void SpawnWarning()
     {
+        AudioManager.PlayLightningWarning(strikePoint);
+
         var obj = new GameObject("WarningColumn");
         if (lightningLayer >= 0) obj.layer = lightningLayer;
         // NOT parented to this � independent lifetime so this controller's
@@ -66,6 +68,8 @@ public class LightningStrike : MonoBehaviour
 
     void SpawnBolt()
     {
+        AudioManager.PlayLightningStrike(strikePoint);
+
         var obj = new GameObject("LightningBolt");
         if (lightningLayer >= 0) obj.layer = lightningLayer;
         obj.transform.position = strikePoint;

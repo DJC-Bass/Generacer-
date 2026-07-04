@@ -12,16 +12,27 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4a6b8c0d2e1f3a5b7c9d0e2f4a6b8c0d, type: 3}
   m_Name: AudioLibrary
   m_EditorClassIdentifier: 
-  mainMenuMusic: {fileID: 8300000, guid: ba21a7de3d6354547a35c64822c09ae3, type: 3}
-  carSelectionMusic: {fileID: 0}
-  hubMusic: {fileID: 0}
-  generacersEndingMusic: {fileID: 0}
-  clipperEndingMusic: {fileID: 0}
-  trackMusic: []
-  menuMove: {fileID: 8300000, guid: 452ec68f30712b3458ea688e043e908a, type: 3}
-  menuSelect: {fileID: 8300000, guid: e138cd0bf8571fc4490373b1b7bee8a3, type: 3}
-  menuBack: {fileID: 0}
+  mainMenuMusic: {fileID: 8300000, guid: 55c2eae55c38eb642b2989db4465c73f, type: 3}
+  carSelectionMusic: {fileID: 8300000, guid: a3787bd3e37ab9640addcaeed2b4810b, type: 3}
+  hubMusic: {fileID: 8300000, guid: 8e66316843aadb9489d2d124162f5daf, type: 3}
+  droneEndingMusic: {fileID: 8300000, guid: 7dd5ada76196bbf4583d62b283b87310, type: 3}
+  playerVictoryMusic: {fileID: 0}
+  generacersEndingMusic: {fileID: 8300000, guid: 7f62f6f8ffc898c468c0a488ae45c241, type: 3}
+  clipperEndingMusic: {fileID: 8300000, guid: 6130065a4e5fab9419106cf5a0038d5e, type: 3}
+  trackMusic:
+  - {fileID: 0}
+  menuMove: {fileID: 8300000, guid: f81f55d27c305a14bbed3f4c07877fce, type: 3}
+  menuSelect: {fileID: 8300000, guid: 7b412cd8c0b9cf846b957ba4d69592ab, type: 3}
+  menuBack: {fileID: 8300000, guid: c577f354cd732894ba3f45f55927bcf3, type: 3}
   turboBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
-  jump: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
-  musicVolume: 0.6
-  sfxVolume: 0.9
+  jump: {fileID: 8300000, guid: e489c81a33c011f438c6cd4094709df9, type: 3}
+  lightningWarning: {fileID: 0}
+  lightningStrike: {fileID: 8300000, guid: c37d16dcba325984dba47e9c30615a7c, type: 3}
+  boulderSpawn: {fileID: 8300000, guid: 63c87bbc3aeac1d4aa9a600886d54d89, type: 3}
+  boulderFly: {fileID: 8300000, guid: 7d59ee3d979dc5f48a76b7427792f810, type: 3}
+  boulderImpact: {fileID: 8300000, guid: 5d3279e5da6b4cd4bbc91e2f92f0df1d, type: 3}
+  droneShoot: {fileID: 8300000, guid: 3226991065b1c9a4e957b99fd38ccb97, type: 3}
+  projectileHitEnvironment: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
+  projectileHitPlayer: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
+  musicVolume: 0.5
+  sfxVolume: 1
