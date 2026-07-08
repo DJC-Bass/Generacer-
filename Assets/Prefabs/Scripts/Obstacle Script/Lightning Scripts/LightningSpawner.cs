@@ -37,6 +37,11 @@ public class LightningSpawner : MonoBehaviour
     public int boltSegments = 12;
     public float zigzagRadius = 200f;
 
+    [Header("Audio (3D)")]
+    [Tooltip("3D playback settings — Min/Max Distance, rolloff, spatial blend, volume — for the " +
+             "lightning warning + strike sounds. Applied to every strike this spawner creates.")]
+    public Spatial3DSettings lightningAudio = new Spatial3DSettings();
+
     private List<Vector3> trackPoints;
     private float nextStrikeTime;
 
@@ -162,6 +167,7 @@ public class LightningSpawner : MonoBehaviour
         strike.boltThickness = boltThickness;
         strike.boltSegments = boltSegments;
         strike.zigzagRadius = zigzagRadius;
+        strike.audio3D = lightningAudio;
 
         strike.Trigger(strikePoint, warningMaterial, boltMaterial);
     }

@@ -211,8 +211,8 @@ MonoBehaviour:
   spatial:
     spatialBlend: 1
     volume: 0.9
-    minDistance: 300
-    maxDistance: 500
+    minDistance: 2000
+    maxDistance: 4000
     rolloffMode: 1
     dopplerLevel: 0
   impactArmDelay: 0.1

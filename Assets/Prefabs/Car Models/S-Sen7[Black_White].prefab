@@ -1314,6 +1314,13 @@ MonoBehaviour:
   loopGravityEnableDot: 0.1
   loopStickForce: 0
   loopSpeedMultiplier: 2
+  driftScreechMaxVolume: 1
+  driftScreechMinPitch: 0.8
+  driftScreechMaxPitch: 1.5
+  driftScreechResponsiveness: 5
+  driftScreechFullSpeedMph: 1
+  driftScreechSpatialBlend: 1
+  driftScreechMaxDistance: 100
 --- !u!114 &4322009895405194616
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1326,12 +1333,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
-  engineClip: {fileID: 8300000, guid: f3816cfd3a69bc740a72f5d2e313befe, type: 3}
+  engineClip: {fileID: 8300000, guid: c5e64a493f86ce14a9b3f60d40a98900, type: 3}
   idlePitch: 0.8
   maxPitch: 6
   speedForMaxPitch: 400
   idleVolume: 0.5
   fullVolume: 0.9
   responsiveness: 6
-  spatialBlend: 0
+  spatialBlend: 1
   maxDistance: 60

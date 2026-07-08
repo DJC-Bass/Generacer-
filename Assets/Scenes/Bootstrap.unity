@@ -148,9 +148,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2a6e975028013614689acffbf149736b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  minPortalCountdown: 2
-  maxPortalCountdown: 4
-  roundDuration: 300
+  minPortalCountdown: 20
+  maxPortalCountdown: 40
+  roundDuration: 400
   postRoundDelay: 2
   trackCompletionCredits: 400
   firstPlaceBonusCredits: 200
@@ -158,6 +158,7 @@ MonoBehaviour:
   droneWinsToGameOver: 2
   hubSceneName: HubWorld
   trackSceneName: TrackScene
+  specialEndingSceneName: GeneracersEnding
 --- !u!4 &1485610137
 Transform:
   m_ObjectHideFlags: 0

@@ -22,6 +22,9 @@ public class LightningStrike : MonoBehaviour
     // LightningSpawner; -1 leaves them on the Default layer.
     [HideInInspector] public int lightningLayer = -1;
 
+    // 3D audio settings for the warning + strike sounds. Set by the LightningSpawner; null = defaults.
+    [HideInInspector] public Spatial3DSettings audio3D;
+
     private Vector3 strikePoint;
 
     public void Trigger(Vector3 point, Material warning, Material bolt)
@@ -47,7 +50,7 @@ public class LightningStrike : MonoBehaviour
 
     void SpawnWarning()
     {
-        AudioManager.PlayLightningWarning(strikePoint);
+        AudioManager.PlayLightningWarning(strikePoint, audio3D);
 
         var obj = new GameObject("WarningColumn");
         if (lightningLayer >= 0) obj.layer = lightningLayer;
@@ -68,7 +71,7 @@ public class LightningStrike : MonoBehaviour
 
     void SpawnBolt()
     {
-        AudioManager.PlayLightningStrike(strikePoint);
+        AudioManager.PlayLightningStrike(strikePoint, audio3D);
 
         var obj = new GameObject("LightningBolt");
         if (lightningLayer >= 0) obj.layer = lightningLayer;
@@ -157,6 +160,10 @@ public class LightningHitDetector : MonoBehaviour
             // Visible reaction � kicks the car upward and slightly forward
             // so a hit feels like an actual lightning strike, not just a sound effect
             rb.AddForce(Vector3.up * 80f, ForceMode.VelocityChange);
+
+            // Briefly shorten the car's suspension ray so the pop-up actually launches it (like a jump).
+            var car = player.GetComponent<CarController>();
+            if (car != null) car.ShortenSuspensionRayForPopUp();
         }
     }
 }

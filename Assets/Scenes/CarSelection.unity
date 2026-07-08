@@ -168,9 +168,9 @@ MonoBehaviour:
     prefab: {fileID: 9203637246216865349, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
   - name: 'DEORA II [ILLEGAL]'
     prefab: {fileID: 9202048553954101649, guid: ecd69f24a2729444fad4968e185c7f01, type: 3}
-  - name: D404
+  - name: B404
     prefab: {fileID: 1759841690232557877, guid: 2d2b64a31f3647c46b470bf42554a9d1, type: 3}
-  - name: Clipper
+  - name: CLIPPER
     prefab: {fileID: 3903790226683730671, guid: e23c970a888dc5043a340f4f4fbd6743, type: 3}
   backgroundSprite: {fileID: 0}
   backgroundColor: {r: 0.1027946, g: 0.11229325, b: 0.13207549, a: 1}

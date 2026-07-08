@@ -164,8 +164,10 @@ public class AudioManager : MonoBehaviour
 
     /// <summary>Fire-and-forget 3D one-shot at a WORLD position (obstacles, world events). Spawns a
     /// temporary positional AudioSource that cleans itself up, scaled by the global SFX level, so
-    /// distant events are quieter than nearby ones. Null clip is ignored.</summary>
-    public void PlaySfxAt(AudioClip clip, Vector3 position, float maxDistance = 150f)
+    /// distant events are quieter than nearby ones. Pass <paramref name="settings"/> to control the
+    /// 3D falloff (min/max distance, rolloff, spatial blend, volume); null uses sensible defaults.
+    /// Null clip is ignored.</summary>
+    public void PlaySfxAt(AudioClip clip, Vector3 position, Spatial3DSettings settings = null)
     {
         if (clip == null) return;
 
@@ -173,12 +175,22 @@ public class AudioManager : MonoBehaviour
         go.transform.position = position;
         var src = go.AddComponent<AudioSource>();
         src.clip = clip;
-        src.spatialBlend = 1f;                          // 3D — positioned in the world
-        src.rolloffMode = AudioRolloffMode.Linear;
-        src.minDistance = 8f;
-        src.maxDistance = maxDistance;
-        src.dopplerLevel = 0f;
-        src.volume = sfxSource != null ? sfxSource.volume : 1f;
+
+        float sfx = sfxSource != null ? sfxSource.volume : 1f;
+        if (settings != null)
+        {
+            settings.ApplyTo(src, sfx);                 // tweakable per-emitter 3D settings
+        }
+        else
+        {
+            src.spatialBlend = 1f;                      // 3D — positioned in the world
+            src.rolloffMode = AudioRolloffMode.Linear;
+            src.minDistance = 8f;
+            src.maxDistance = 150f;
+            src.dopplerLevel = 0f;
+            src.volume = sfx;
+        }
+
         src.Play();
         Destroy(go, clip.length + 0.1f);
     }
@@ -188,22 +200,47 @@ public class AudioManager : MonoBehaviour
     public static void PlayMenuSelect() => PlayLibrarySfx(Lib != null ? Lib.menuSelect : null);
     public static void PlayMenuBack()   => PlayLibrarySfx(Lib != null ? Lib.menuBack   : null);
 
-    // Universal vehicle one-shots (same clip for every car), fired by the player CarController.
-    public static void PlayTurbo() => PlayLibrarySfx(Lib != null ? Lib.turboBoost : null);
-    public static void PlayJump()  => PlayLibrarySfx(Lib != null ? Lib.jump       : null);
+    // Store menu SFX (2D — separate clips from the main-menu buttons).
+    public static void PlayStoreMove()   => PlayLibrarySfx(Lib != null ? Lib.storeMove   : null);
+    public static void PlayStoreSelect() => PlayLibrarySfx(Lib != null ? Lib.storeSelect : null);
 
-    // Positional obstacle one-shots (3D, at the event's world location).
-    public static void PlayLightningWarning(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.lightningWarning : null, position);
-    public static void PlayLightningStrike(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.lightningStrike  : null, position);
+    // Universal vehicle one-shots (same clip for every car), fired AT the car by the player
+    // CarController — 3D so other players can hear them (2D is reserved for menu SFX + music).
+    public static void PlayTurbo(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.turboBoost : null, position);
+    public static void PlayJump(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.jump       : null, position);
+    public static void PlayCarLanding(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.carLanding : null, position);
+    public static void PlayTurboCrafted(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.turboCrafted : null, position);
+    public static void PlayJetCrafted(Vector3 position)   => PlayLibrarySfxAt(Lib != null ? Lib.jetCrafted   : null, position);
+
+    // SD ability one-shots (3D at the car). The "while active" loop is managed by SDAbilityController.
+    public static void PlaySdActivate(Vector3 position)   => PlayLibrarySfxAt(Lib != null ? Lib.sdActivate   : null, position);
+    public static void PlaySdDeactivate(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.sdDeactivate : null, position);
+
+    // Positional obstacle one-shots (3D, at the event's world location). Optional Spatial3DSettings
+    // let the caller (e.g. the LightningSpawner) tweak the 3D falloff.
+    public static void PlayLightningWarning(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.lightningWarning : null, position, settings);
+    public static void PlayLightningStrike(Vector3 position, Spatial3DSettings settings = null)  => PlayLibrarySfxAt(PickRandom(Lib != null ? Lib.lightningStrike : null), position, settings);
 
     // Drone projectile one-shots (3D). Distinct sound for hitting the player vs the environment.
-    public static void PlayDroneShoot(Vector3 position)              => PlayLibrarySfxAt(Lib != null ? Lib.droneShoot               : null, position);
-    public static void PlayProjectileHitEnvironment(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitEnvironment : null, position);
-    public static void PlayProjectileHitPlayer(Vector3 position)      => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitPlayer      : null, position);
+    // Optional Spatial3DSettings let the DronePissBall prefab tweak the 3D falloff.
+    public static void PlayDroneShoot(Vector3 position, Spatial3DSettings settings = null)              => PlayLibrarySfxAt(Lib != null ? Lib.droneShoot               : null, position, settings);
+    public static void PlayProjectileHitEnvironment(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitEnvironment : null, position, settings);
+    public static void PlayProjectileHitPlayer(Vector3 position, Spatial3DSettings settings = null)      => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitPlayer      : null, position, settings);
 
     static AudioLibrary Lib => Instance != null ? Instance.Library : null;
     static void PlayLibrarySfx(AudioClip clip) { if (Instance != null) Instance.PlaySfx(clip); }
-    static void PlayLibrarySfxAt(AudioClip clip, Vector3 position) { if (Instance != null) Instance.PlaySfxAt(clip, position); }
+    static void PlayLibrarySfxAt(AudioClip clip, Vector3 position, Spatial3DSettings settings = null) { if (Instance != null) Instance.PlaySfxAt(clip, position, settings); }
+
+    /// <summary>A random non-null clip from a pool (empty/null pool → null). Gives per-event variety,
+    /// e.g. a different lightning-strike sound each strike.</summary>
+    static AudioClip PickRandom(AudioClip[] clips)
+    {
+        if (clips == null || clips.Length == 0) return null;
+        var chosen = clips[Random.Range(0, clips.Length)];
+        if (chosen != null) return chosen;
+        foreach (var c in clips) if (c != null) return c;   // fallback if the random slot was empty
+        return null;
+    }
 
     // ---------------- Volume (for the future Audio submenu) ----------------
 

@@ -87,11 +87,17 @@ public class UpgradeRampController : MonoBehaviour
     private GameObject root;
     private RectTransform turboFill, jetFill;
     private TextMeshProUGUI turboCounts, jetCounts;
+    private AudioSource craftLoopSource;   // looping turbo-craft sound (plays while the turbo bar charges)
 
     void Reset()
     {
         var col = GetComponent<Collider>();
         if (col != null) col.isTrigger = true;
+    }
+
+    void Awake()
+    {
+        SetUpCraftAudio();
     }
 
     // -------------------------------------------------------
@@ -149,6 +155,7 @@ public class UpgradeRampController : MonoBehaviour
 
         TickCrafting(xHeld, aHeld);
         UpdateBars();
+        SyncCraftLoop();
     }
 
     void TickCrafting(bool xHeld, bool aHeld)
@@ -226,6 +233,67 @@ public class UpgradeRampController : MonoBehaviour
         if (!string.IsNullOrEmpty(r.materialB)) inv.Consume(r.materialB, 1);
         inv.Add(r.product, 1);
         RefreshCounts();
+
+        // The recipe's "crafted & stored" one-shot — via an independent source so it isn't cut when
+        // the loop stops.
+        if (r == turbo)
+        {
+            AudioManager.PlayTurboCrafted(transform.position);
+            // Cut the charge loop each turbo craft so the next progress bar restarts its audio fresh
+            // (SyncCraftLoop replays it from the top next frame if still charging).
+            if (craftLoopSource != null) craftLoopSource.Stop();
+        }
+        else if (r == jet) AudioManager.PlayJetCrafted(transform.position);
+    }
+
+    // -------------------------------------------------------
+    //  Crafting audio
+    // -------------------------------------------------------
+
+    void SetUpCraftAudio()
+    {
+        var lib = AudioManager.Instance != null ? AudioManager.Instance.Library : null;
+        craftLoopSource = gameObject.AddComponent<AudioSource>();
+        craftLoopSource.loop = true;
+        craftLoopSource.playOnAwake = false;
+        craftLoopSource.spatialBlend = 1f;              // 3D at the ramp
+        craftLoopSource.rolloffMode = AudioRolloffMode.Linear;
+        craftLoopSource.minDistance = 5f;
+        craftLoopSource.maxDistance = 60f;
+        craftLoopSource.dopplerLevel = 0f;
+        // Clip is set per-craft in SyncCraftLoop (turbo vs jet).
+    }
+
+    /// <summary>Plays the looping craft sound for whichever bar is charging — the Turbo loop for the
+    /// Turbo bar, the Jet loop for the Jet bar — and cuts it the moment that bar stops (released,
+    /// cancelled, out of materials, or the menu closed). One source, its clip swapped per recipe.</summary>
+    void SyncCraftLoop()
+    {
+        if (craftLoopSource == null) return;
+
+        var lib = AudioManager.Instance != null ? AudioManager.Instance.Library : null;
+        AudioClip want = null;
+        if (lib != null)
+            want = active == Craft.Turbo ? lib.turboCraftLoop
+                 : active == Craft.Jet   ? lib.jetCraftLoop
+                 : null;
+
+        if (want == null)
+        {
+            if (craftLoopSource.isPlaying) craftLoopSource.Stop();
+            return;
+        }
+
+        if (craftLoopSource.clip != want)   // switched recipe — swap the loop clip
+        {
+            craftLoopSource.Stop();
+            craftLoopSource.clip = want;
+        }
+        if (!craftLoopSource.isPlaying)
+        {
+            craftLoopSource.volume = AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 1f;
+            craftLoopSource.Play();
+        }
     }
 
     // -------------------------------------------------------
@@ -251,6 +319,7 @@ public class UpgradeRampController : MonoBehaviour
         progress = 0f;
         isOpen = false;
         MenuState.AnyOpen = false;
+        if (craftLoopSource != null) craftLoopSource.Stop();   // cut the crafting loop
     }
 
     void OnDisable()

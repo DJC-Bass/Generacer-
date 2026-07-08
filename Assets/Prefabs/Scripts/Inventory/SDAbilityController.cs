@@ -78,6 +78,9 @@ public class SDAbilityController : MonoBehaviour
     private GameObject recorderCarGO;
     private CarRewind rewinder;
 
+    // 3D looping "SD active" sound on its own object, moved to the car while an ability is active.
+    private AudioSource sdLoopSource;
+
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(this); return; }
@@ -103,6 +106,11 @@ public class SDAbilityController : MonoBehaviour
         if (inv == null || inv.EquippedSD != ActiveSD) { Deactivate(); return; }
 
         EnsureCar();        // re-acquire + re-apply to a freshly spawned car after a scene load
+
+        // Keep the "while active" loop positioned at the car.
+        if (sdLoopSource != null && sdLoopSource.isPlaying && carGO != null)
+            sdLoopSource.transform.position = carGO.transform.position;
+
         DrainCredits();     // may auto-deactivate when credits hit zero
 
         // The rewind effect stops itself once it runs out of recorded history — turn off with it.
@@ -134,6 +142,10 @@ public class SDAbilityController : MonoBehaviour
         carGO = null;                           // force a fresh find + apply
         EnsureCar();
 
+        // SD audio (3D at the car): activation one-shot + start the "while active" loop.
+        if (carGO != null) AudioManager.PlaySdActivate(carGO.transform.position);
+        StartSdLoop();
+
         // Latch the run's "used an SD" flag so a flawless (no-SD) win can route to the special ending.
         if (GameLoopManager.Instance != null) GameLoopManager.Instance.NotifySDAbilityUsed();
 
@@ -144,6 +156,11 @@ public class SDAbilityController : MonoBehaviour
     {
         if (!IsActive) return;
         ApplyEffect(false);                     // restore the current car (collisions / mass)
+
+        // SD audio: deactivation one-shot at the car + stop the "while active" loop.
+        if (carGO != null) AudioManager.PlaySdDeactivate(carGO.transform.position);
+        StopSdLoop();
+
         IsActive = false;
         ActiveSD = "";
         activeExcludeMask = 0;
@@ -153,6 +170,43 @@ public class SDAbilityController : MonoBehaviour
         carColliders = null;
         carRb = null;
         Debug.Log("[SDAbility] Deactivated");
+    }
+
+    // -------------------------------------------------------
+    //  SD ability loop audio (3D, follows the car while active)
+    // -------------------------------------------------------
+
+    void StartSdLoop()
+    {
+        var lib = AudioManager.Instance != null ? AudioManager.Instance.Library : null;
+        if (lib == null || lib.sdActiveLoop == null || carGO == null) return;
+
+        EnsureSdLoopSource();
+        sdLoopSource.clip = lib.sdActiveLoop;
+        sdLoopSource.transform.position = carGO.transform.position;
+        sdLoopSource.volume = AudioManager.Instance.SfxVolume;
+        sdLoopSource.Play();
+    }
+
+    void StopSdLoop()
+    {
+        if (sdLoopSource != null) sdLoopSource.Stop();
+    }
+
+    void EnsureSdLoopSource()
+    {
+        if (sdLoopSource != null) return;
+
+        var go = new GameObject("SDAbilityLoopAudio");
+        DontDestroyOnLoad(go);
+        sdLoopSource = go.AddComponent<AudioSource>();
+        sdLoopSource.loop = true;
+        sdLoopSource.playOnAwake = false;
+        sdLoopSource.spatialBlend = 1f;              // 3D
+        sdLoopSource.rolloffMode = AudioRolloffMode.Linear;
+        sdLoopSource.minDistance = 5f;
+        sdLoopSource.maxDistance = 60f;
+        sdLoopSource.dopplerLevel = 0f;
     }
 
     void DrainCredits()

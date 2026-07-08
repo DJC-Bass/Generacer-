@@ -36,17 +36,40 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("Played when backing out of a selection or sub-screen (B / Cancel).")]
     public AudioClip menuBack;
 
+    [Header("Store SFX (separate from the main-menu buttons)")]
+    [Tooltip("Played when the highlighted store row changes (navigating up/down).")]
+    public AudioClip storeMove;
+    [Tooltip("Played when buying / selecting a store row (A).")]
+    public AudioClip storeSelect;
+
+    [Header("Upgrade Ramp SFX")]
+    [Tooltip("Looping sound while a Turbo is being crafted on the ramp — plays with the progress bar " +
+             "and cuts when it stops (release / cancel / close).")]
+    public AudioClip turboCraftLoop;
+    [Tooltip("One-shot when a Turbo finishes crafting and is added to the inventory.")]
+    public AudioClip turboCrafted;
+    [Tooltip("Looping sound while a Jet is being crafted on the ramp — plays with the progress bar " +
+             "and cuts when it stops (release / cancel / close).")]
+    public AudioClip jetCraftLoop;
+    [Tooltip("One-shot when a Jet finishes crafting and is added to the inventory.")]
+    public AudioClip jetCrafted;
+
     [Header("Vehicle SFX (universal — same for every car)")]
     [Tooltip("One-shot played when Turbo Boost activates.")]
     public AudioClip turboBoost;
     [Tooltip("One-shot played when the car jumps (Jet).")]
     public AudioClip jump;
+    [Tooltip("Looping tire-screech played while drifting; its volume + pitch rise with steering sharpness.")]
+    public AudioClip driftScreech;
+    [Tooltip("One-shot played when the car lands back on the ground after being airborne.")]
+    public AudioClip carLanding;
 
     [Header("Obstacle SFX")]
     [Tooltip("Played (in 3D, at the strike location) when a lightning warning column appears.")]
     public AudioClip lightningWarning;
-    [Tooltip("Played (in 3D, at the strike location) when the lightning bolt strikes.")]
-    public AudioClip lightningStrike;
+    [Tooltip("Pool of strike sounds — one is chosen at random each time the bolt strikes, so strikes " +
+             "aren't all the same clip. Add as many as you like.")]
+    public AudioClip[] lightningStrike;
     [Tooltip("Played (3D) when a boulder spawns / launches.")]
     public AudioClip boulderSpawn;
     [Tooltip("Looping 3D 'on fire' sound while a boulder is airborne.")]
@@ -59,6 +82,24 @@ public class AudioLibrary : ScriptableObject
     public AudioClip projectileHitEnvironment;
     [Tooltip("Played (3D) when the DronePissBall projectile hits the Player.")]
     public AudioClip projectileHitPlayer;
+
+    [Header("SD Ability SFX (uniform across all SDs)")]
+    [Tooltip("One-shot (3D, at the car) when an SD ability is activated.")]
+    public AudioClip sdActivate;
+    [Tooltip("Looping 3D sound at the car while an SD ability is active.")]
+    public AudioClip sdActiveLoop;
+    [Tooltip("One-shot (3D, at the car) when an SD ability is deactivated.")]
+    public AudioClip sdDeactivate;
+
+    [Header("Portal SFX (uniform across all portals)")]
+    [Tooltip("Played (3D) when a portal spawns.")]
+    public AudioClip portalSpawn;
+    [Tooltip("Looping 3D hum while a portal is active.")]
+    public AudioClip portalActiveLoop;
+    [Tooltip("Played (3D) when a car / physics object passes into a portal.")]
+    public AudioClip portalCollision;
+    [Tooltip("Played (3D) when a portal despawns (e.g. it times out) — NOT when the player travels through it.")]
+    public AudioClip portalDespawn;
 
     [Header("Default Mix (0..1)")]
     [Range(0f, 1f)] public float musicVolume = 0.6f;

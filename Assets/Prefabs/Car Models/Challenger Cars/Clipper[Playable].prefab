@@ -577,6 +577,7 @@ GameObject:
   - component: {fileID: 1688520128053003132}
   - component: {fileID: 8069188734928704697}
   - component: {fileID: 769468959633877115}
+  - component: {fileID: 6586277709160518083}
   m_Layer: 11
   m_Name: 'Clipper[Playable]'
   m_TagString: Player
@@ -727,6 +728,34 @@ MonoBehaviour:
   loopGravityEnableDot: 0.1
   loopStickForce: 0
   loopSpeedMultiplier: 2
+  driftScreechMaxVolume: 1
+  driftScreechMinPitch: 0.9
+  driftScreechMaxPitch: 1.5
+  driftScreechResponsiveness: 10
+  driftScreechFullSpeedMph: 150
+  driftScreechSpatialBlend: 1
+  driftScreechMaxDistance: 80
+--- !u!114 &6586277709160518083
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3903790226683730671}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
+  engineClip: {fileID: 8300000, guid: b4bc61ba57fd62649b4a8e221f1c45c8, type: 3}
+  idlePitch: 0.8
+  maxPitch: 6
+  speedForMaxPitch: 400
+  idleVolume: 0.5
+  fullVolume: 0.9
+  responsiveness: 6
+  spatialBlend: 1
+  maxDistance: 100
 --- !u!1 &4500940537939236168
 GameObject:
   m_ObjectHideFlags: 0

@@ -119,6 +119,11 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &276107662 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+  m_PrefabInstance: {fileID: 513852949}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &310890318
 GameObject:
   m_ObjectHideFlags: 0
@@ -305,13 +310,37 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 513852954}
   m_SourcePrefab: {fileID: 100100000, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
 --- !u!4 &513852950 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
   m_PrefabInstance: {fileID: 513852949}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &513852954
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 276107662}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
+  engineClip: {fileID: 8300000, guid: bbc790c1803a7b145b40811637748082, type: 3}
+  idlePitch: 0.8
+  maxPitch: 6
+  speedForMaxPitch: 400
+  idleVolume: 0.5
+  fullVolume: 0.9
+  responsiveness: 6
+  spatialBlend: 0
+  maxDistance: 60
 --- !u!1001 &867425769
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -368,6 +397,18 @@ PrefabInstance:
       propertyPath: trackGenerator
       value: 
       objectReference: {fileID: 1171030678}
+    - target: {fileID: 8983406537102416638, guid: 30204a1bf060edf46ab89cbb0a961d0d, type: 3}
+      propertyPath: lightningAudio.volume
+      value: 0.6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8983406537102416638, guid: 30204a1bf060edf46ab89cbb0a961d0d, type: 3}
+      propertyPath: lightningAudio.maxDistance
+      value: 4000
+      objectReference: {fileID: 0}
+    - target: {fileID: 8983406537102416638, guid: 30204a1bf060edf46ab89cbb0a961d0d, type: 3}
+      propertyPath: lightningAudio.minDistance
+      value: 2000
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -923,7 +964,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
       propertyPath: targetFinishTime
-      value: 240
+      value: 300
       objectReference: {fileID: 0}
     - target: {fileID: 8806969589528715547, guid: 8740f0fc936685140a659c6d4ef8fbf3, type: 3}
       propertyPath: intraGroupSpacing
@@ -1268,7 +1309,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3430804653560232203, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: targetFinishTime
-      value: 270
+      value: 330
       objectReference: {fileID: 0}
     - target: {fileID: 4024389309093854848, guid: a47aef57d7389ba4aaeb28e3923c4baf, type: 3}
       propertyPath: m_LocalPosition.x

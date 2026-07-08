@@ -22,6 +22,11 @@ public class DroneProjectile : MonoBehaviour
              "of the normal pop-up. Normal track gameplay always uses the pop-up.")]
     public string mainMenuSceneName = "MainMenu";
 
+    [Header("Audio (3D)")]
+    [Tooltip("3D playback settings — Min/Max Distance, rolloff, spatial blend, volume — shared by all " +
+             "three DronePissBall sounds: the drone firing it, and its environment / player impacts.")]
+    public Spatial3DSettings audio3D = new Spatial3DSettings();
+
     private Rigidbody rb;
     private float spawnTime;
     private bool consumed;
@@ -65,8 +70,8 @@ public class DroneProjectile : MonoBehaviour
         }
 
         // Impact SFX (3D): a distinct sound for striking the player vs the environment.
-        if (hitPlayer) AudioManager.PlayProjectileHitPlayer(transform.position);
-        else AudioManager.PlayProjectileHitEnvironment(transform.position);
+        if (hitPlayer) AudioManager.PlayProjectileHitPlayer(transform.position, audio3D);
+        else AudioManager.PlayProjectileHitEnvironment(transform.position, audio3D);
 
         // Despawn on any collision regardless of what was hit
         Destroy(gameObject);
@@ -95,6 +100,10 @@ public class DroneProjectile : MonoBehaviour
 
         // Pop up � same feel as the lightning strike hit
         prb.AddForce(Vector3.up * popUpForce, ForceMode.VelocityChange);
+
+        // Briefly shorten the car's suspension ray so the pop-up actually launches it (like a jump).
+        var car = player.GetComponent<CarController>();
+        if (car != null) car.ShortenSuspensionRayForPopUp();
     }
 
     /// <summary>True only when the game-over Drone ending is active AND we're in the hub scene — the

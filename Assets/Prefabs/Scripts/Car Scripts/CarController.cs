@@ -232,6 +232,25 @@ public class CarController : MonoBehaviour
     //  Internal
     // -------------------------------------------------------
 
+    [Header("Drift Audio")]
+    [Tooltip("Tire-screech volume at FULL stick deflection. Volume scales linearly from 0 (stick " +
+             "centred — no squeal) up to this at full lock.")]
+    [Range(0f, 1f)] public float driftScreechMaxVolume = 1f;
+    [Tooltip("Tire-screech pitch at the shallowest drift steer.")]
+    public float driftScreechMinPitch = 0.9f;
+    [Tooltip("Tire-screech pitch at full drift steer.")]
+    public float driftScreechMaxPitch = 1.5f;
+    [Tooltip("How fast volume & pitch chase the stick (higher = snappier / near-instant, lower = " +
+             "softer glide).")]
+    public float driftScreechResponsiveness = 10f;
+    [Tooltip("Track speed (mph) at which the screech reaches full volume. Volume scales with speed " +
+             "below this and is silent at a standstill (stationary tires don't screech).")]
+    public float driftScreechFullSpeedMph = 150f;
+    [Tooltip("Spatial blend for the drift screech: 1 = 3D positional (others hear it), 0 = 2D.")]
+    [Range(0f, 1f)] public float driftScreechSpatialBlend = 1f;
+    [Tooltip("For 3D blend, distance in metres beyond which the drift screech fades out.")]
+    public float driftScreechMaxDistance = 80f;
+
     private Rigidbody rb;
     private float throttleInput;
     private float steerInput;
@@ -265,6 +284,8 @@ public class CarController : MonoBehaviour
     private Collider groundCollider;
 
     private GeneracerControls controls;
+    private AudioSource driftSource;   // looping tire-screech while drifting
+    private bool wasAirborne;          // tracks the airborne -> grounded edge for the landing sound
 
     public bool IsTurboActive => turboTimer > 0f;
     /// <summary>True while the car is in the drift state (throttle + brake held).</summary>
@@ -317,6 +338,8 @@ public class CarController : MonoBehaviour
                 anchorTransforms[i] = anchors[i].transform;
             }
         }
+
+        SetUpDriftAudio();
     }
 
     // -------------------------------------------------------
@@ -339,6 +362,64 @@ public class CarController : MonoBehaviour
             jumpRequested = true;
 
         UpdateWheelMeshes();
+        UpdateDriftAudio();
+        UpdateLandingAudio();
+    }
+
+    void SetUpDriftAudio()
+    {
+        driftSource = gameObject.AddComponent<AudioSource>();
+        driftSource.loop = true;
+        driftSource.playOnAwake = false;
+        driftSource.spatialBlend = driftScreechSpatialBlend;   // 3D by default so others hear it
+        driftSource.rolloffMode = AudioRolloffMode.Linear;
+        driftSource.minDistance = 5f;
+        driftSource.maxDistance = driftScreechMaxDistance;
+        driftSource.dopplerLevel = 0f;   // pitch is driven by steering — kill doppler so the car's motion doesn't shift it
+        driftSource.volume = 0f;
+        driftSource.pitch = driftScreechMinPitch;
+
+        var lib = AudioManager.Instance != null ? AudioManager.Instance.Library : null;
+        if (lib != null && lib.driftScreech != null)
+        {
+            driftSource.clip = lib.driftScreech;
+            driftSource.Play();   // runs at volume 0; UpdateDriftAudio fades it in while drifting
+        }
+    }
+
+    /// <summary>Drives the looping tire-screech while drifting on the GROUND. Volume and pitch TARGET
+    /// the RAW steering (|stick|) — volume also scales with track SPEED (silent at a standstill), and
+    /// the whole thing is cut when airborne or not drifting. The source then eases toward those targets
+    /// at Drift Screech Responsiveness (higher = snappier / near-instant, lower = softer glide).</summary>
+    void UpdateDriftAudio()
+    {
+        if (driftSource == null || driftSource.clip == null) return;
+
+        float steer = Mathf.Clamp01(Mathf.Abs(steerInput));                           // raw stick
+        float speed = Mathf.Clamp01(SpeedMph / Mathf.Max(1f, driftScreechFullSpeedMph));
+        float sfx = AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 1f;
+
+        // Only while drifting AND grounded — no tire squeal in the air.
+        bool screeching = isDrifting && !IsAirborne;
+
+        float targetVol = screeching ? driftScreechMaxVolume * steer * speed * sfx : 0f;
+        float targetPitch = Mathf.Lerp(driftScreechMinPitch, driftScreechMaxPitch, steer);
+
+        // Smoothing pass: ease toward the targets (frame-rate independent).
+        float k = 1f - Mathf.Exp(-driftScreechResponsiveness * Time.deltaTime);
+        driftSource.volume = Mathf.Lerp(driftSource.volume, targetVol, k);
+        driftSource.pitch = Mathf.Lerp(driftSource.pitch, targetPitch, k);
+    }
+
+    /// <summary>Plays a one-shot the moment the car touches down after real airtime — the grace-based
+    /// IsAirborne going true -> false — so small bumps don't trigger it. 3D at the car, like the other
+    /// vehicle sounds.</summary>
+    void UpdateLandingAudio()
+    {
+        bool airborne = IsAirborne;
+        if (wasAirborne && !airborne)
+            AudioManager.PlayCarLanding(transform.position);
+        wasAirborne = airborne;
     }
 
     void FixedUpdate()
@@ -712,7 +793,7 @@ public class CarController : MonoBehaviour
 
         turboTimer = turboDuration;
         turboCooldownTimer = turboCooldown + turboDuration;
-        AudioManager.PlayTurbo();
+        AudioManager.PlayTurbo(transform.position);
     }
 
     bool TrySpend(string itemName)
@@ -734,10 +815,19 @@ public class CarController : MonoBehaviour
         rb.linearVelocity = vel;
 
         rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
-        AudioManager.PlayJump();
+        AudioManager.PlayJump(transform.position);
 
         // Shorten the suspension ray for a moment so the hover spring lets go and the jump
         // velocity can carry the car off the ground before the ray re-catches it.
+        jumpRayTimer = jumpRayShortenDuration;
+    }
+
+    /// <summary>Temporarily shortens the suspension ray (the same brief window a jump uses) so an
+    /// external upward pop-up — a DronePissBall hit or a lightning strike — can actually launch the
+    /// car into the air instead of being caught and damped by the hover spring. The impulse itself is
+    /// applied by the hitting script; this just releases the spring for the launch.</summary>
+    public void ShortenSuspensionRayForPopUp()
+    {
         jumpRayTimer = jumpRayShortenDuration;
     }
 

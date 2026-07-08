@@ -352,12 +352,14 @@ public class DroneCar : MonoBehaviour
         Quaternion rot = Quaternion.LookRotation(direction, Vector3.up);
         GameObject proj = Instantiate(projectilePrefab, origin, rot);
 
-        AudioManager.PlayDroneShoot(origin);   // 3D drone fire sound at the muzzle
-
         // Put the spawned projectile on its dedicated layer for collision-matrix filtering.
         ApplyProjectileLayer(proj);
 
         var projectile = proj.GetComponent<DroneProjectile>();
+
+        // 3D drone fire sound at the muzzle, using the projectile's own tweakable 3D settings.
+        AudioManager.PlayDroneShoot(origin, projectile != null ? projectile.audio3D : null);
+
         if (projectile != null)
             projectile.Launch(direction, projectileSpeed);
 

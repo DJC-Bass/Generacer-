@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 6243380120814585462}
   - component: {fileID: 1721648663414653880}
   - component: {fileID: 254366612106336038}
+  - component: {fileID: 1234567890987654321}
   m_Layer: 0
   m_Name: PortalTrigger
   m_TagString: Untagged
@@ -72,6 +73,27 @@ MonoBehaviour:
   rotationSpeed: 0
   activationDelay: 0.5
   portalActive: 1
+  droneEndingSceneName: ClipperEnding
+--- !u!114 &1234567890987654321
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 459002390963599}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e0a2c4f6183a5c7e9f0b2d4a6c8e0f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  spatial:
+    spatialBlend: 1
+    volume: 0.9
+    minDistance: 8
+    maxDistance: 150
+    rolloffMode: 1
+    dopplerLevel: 0
+  collisionCooldown: 0.1
 --- !u!1 &1674484778209847424
 GameObject:
   m_ObjectHideFlags: 0
@@ -195,6 +217,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3464968713083386110}
+  - component: {fileID: -8164794143000553149}
   m_Layer: 0
   m_Name: Portal
   m_TagString: Untagged
@@ -220,6 +243,26 @@ Transform:
   - {fileID: 6243380120814585462}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &-8164794143000553149
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2711415986702523348}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e0a2c4f6183a5c7e9f0b2d4a6c8e0f2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PortalAudio
+  spatial:
+    spatialBlend: 1
+    volume: 0.9
+    minDistance: 100
+    maxDistance: 200
+    rolloffMode: 1
+    dopplerLevel: 0
+  collisionCooldown: 0.1
 --- !u!1 &3473230404904630555
 GameObject:
   m_ObjectHideFlags: 0

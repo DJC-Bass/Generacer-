@@ -191,6 +191,7 @@ public class StoreController : MonoBehaviour
     {
         if (items.Count == 0) return;
         selected = (selected + dir + items.Count) % items.Count;
+        AudioManager.PlayStoreMove();
         RefreshRows();
     }
 
@@ -198,6 +199,8 @@ public class StoreController : MonoBehaviour
     {
         var inv = PlayerInventory.Instance;
         if (inv == null || items.Count == 0) return;
+
+        AudioManager.PlayStoreSelect();
 
         var def = items[selected];
         int amount = Mathf.Max(1, def.grantAmount);

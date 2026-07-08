@@ -39,8 +39,9 @@ public class CarEngineAudio : MonoBehaviour
     [Header("Feel / 3D")]
     [Tooltip("How quickly pitch & volume chase their target (higher = snappier).")]
     public float responsiveness = 6f;
-    [Range(0f, 1f)] [Tooltip("0 = 2D (always full — good for the player car). 1 = 3D positional (good for AI cars).")]
-    public float spatialBlend = 0f;
+    [Range(0f, 1f)] [Tooltip("0 = 2D, 1 = 3D positional. Cars are 3D so other players can hear them; " +
+                             "2D is reserved for menu SFX and music.")]
+    public float spatialBlend = 1f;
     [Tooltip("For 3D blend, distance in metres beyond which the engine fades out.")]
     public float maxDistance = 60f;
 
