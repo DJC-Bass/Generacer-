@@ -552,7 +552,7 @@ MonoBehaviour:
   playerTagForShooting: Player
   fireWindowDuration: 1
   fireCooldownDuration: 1
-  knockDownforce: 20
+  knockDownforce: 40
   creditReward: 200
   chaseMode: 0
   chaseAcceleration: 35

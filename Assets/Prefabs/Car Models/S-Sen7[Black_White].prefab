@@ -1337,8 +1337,8 @@ MonoBehaviour:
   idlePitch: 0.8
   maxPitch: 6
   speedForMaxPitch: 400
-  idleVolume: 0.5
-  fullVolume: 0.9
+  idleVolume: 0.3
+  fullVolume: 0.6
   responsiveness: 6
   spatialBlend: 1
   maxDistance: 60
