@@ -200,18 +200,18 @@ public class StoreController : MonoBehaviour
         var inv = PlayerInventory.Instance;
         if (inv == null || items.Count == 0) return;
 
-        AudioManager.PlayStoreSelect();
-
         var def = items[selected];
         int amount = Mathf.Max(1, def.grantAmount);
         bool ok = inv.TryPurchase(def.GrantedName, amount, def.maxOwned, def.price, enforceCredits);
 
         if (ok)
         {
+            AudioManager.PlayStoreSelect();          // confirm chime only on a successful buy
             ShowFeedback($"Bought {def.itemName}");
         }
         else
         {
+            AudioManager.PlayStoreDenied();          // rejected: can't afford, or already at max
             int owned = inv.GetCount(def.GrantedName);
             if (def.maxOwned > 0 && owned + amount > def.maxOwned)
                 ShowFeedback("Max owned");

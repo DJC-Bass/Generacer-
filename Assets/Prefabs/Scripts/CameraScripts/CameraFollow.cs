@@ -65,6 +65,13 @@ public class CameraFollow : MonoBehaviour
     private float turboFOVTimer = 0f;       // NEW   counts down the kick
     private bool prevTurboState = false;   // NEW   detects the activation moment
 
+    /// <summary>
+    /// Fires the same one-shot FOV kick a Turbo activation produces. For external boosts that
+    /// bypass CarController's turbo state (e.g. driving through a BoostGate), which the
+    /// rising-edge poll in UpdateFOV can't see.
+    /// </summary>
+    public void TriggerTurboFOVKick() => turboFOVTimer = turboFOVDuration;
+
     void Start()
     {
         cam = GetComponent<Camera>();

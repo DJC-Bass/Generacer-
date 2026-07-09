@@ -36,9 +36,13 @@ public class HubSceneController : MonoBehaviour
     [Header("Player Victory (game over — you win)")]
     [Tooltip("Banner text shown centre-screen when the player wins by collecting enough SDs.")]
     public string victoryBannerText = "BOTS DEFEATED";
-    [Tooltip("Seconds the banner stays fully visible before it begins to fade.")]
+    [Tooltip("Seconds after the victory sequence starts before the banner begins to fade in.")]
+    public float victoryBannerDelaySeconds = 0.5f;
+    [Tooltip("Seconds the banner stays fully visible before it begins to fade. The hold only " +
+             "starts once the fade-in has finished, so the fully-solid time is unaffected by it.")]
     public float victoryBannerHoldSeconds = 2f;
-    [Tooltip("Seconds the banner takes to fade away after the hold.")]
+    [Tooltip("Seconds the banner takes to fade — used for BOTH the fade-in and the fade-out, " +
+             "so the banner appears and disappears at the same rate.")]
     public float victoryBannerFadeSeconds = 1f;
     [Tooltip("Banner font size, at the 1920x1080 reference resolution.")]
     public float victoryBannerFontSize = 160f;
@@ -215,8 +219,10 @@ public class HubSceneController : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 0.5f;
 
-        // CanvasGroup drives the fade in one place (text + any future children).
+        // CanvasGroup drives the fades in one place (text + any future children). Starts invisible:
+        // the banner waits out the entry delay, then fades in before the hold.
         var group = canvasGO.AddComponent<CanvasGroup>();
+        group.alpha = 0f;
 
         var textGO = new GameObject("VictoryText", typeof(RectTransform));
         textGO.transform.SetParent(canvasGO.transform, false);
@@ -235,11 +241,28 @@ public class HubSceneController : MonoBehaviour
         rt.sizeDelta = new Vector2(1600f, 400f);
         rt.anchoredPosition = Vector2.zero;
 
-        // Hold fully visible, then fade to nothing.
-        yield return new WaitForSeconds(victoryBannerHoldSeconds);
+        // Wait out the entry delay (banner exists but is invisible), then fade in at the same
+        // rate as the fade-out. The stinger fires as the fade-in starts, not when it's solid.
+        if (victoryBannerDelaySeconds > 0f)
+            yield return new WaitForSeconds(victoryBannerDelaySeconds);
+
+        AudioManager.PlayVictoryBanner();
 
         float fade = Mathf.Max(0.01f, victoryBannerFadeSeconds);
         float t = 0f;
+        while (t < fade)
+        {
+            t += Time.deltaTime;
+            group.alpha = Mathf.Clamp01(t / fade);
+            yield return null;
+        }
+        group.alpha = 1f;
+
+        // Hold fully visible — timed from full solidity, so the fade-in doesn't eat into it —
+        // then fade to nothing.
+        yield return new WaitForSeconds(victoryBannerHoldSeconds);
+
+        t = 0f;
         while (t < fade)
         {
             t += Time.deltaTime;

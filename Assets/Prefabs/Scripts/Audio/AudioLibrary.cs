@@ -39,8 +39,11 @@ public class AudioLibrary : ScriptableObject
     [Header("Store SFX (separate from the main-menu buttons)")]
     [Tooltip("Played when the highlighted store row changes (navigating up/down).")]
     public AudioClip storeMove;
-    [Tooltip("Played when buying / selecting a store row (A).")]
+    [Tooltip("Played when buying / selecting a store row (A) succeeds.")]
     public AudioClip storeSelect;
+    [Tooltip("Played when a store purchase is REJECTED — the player can't afford it or already " +
+             "owns the maximum allowed of that item.")]
+    public AudioClip storeDenied;
 
     [Header("Upgrade Ramp SFX")]
     [Tooltip("Looping sound while a Turbo is being crafted on the ramp — plays with the progress bar " +
@@ -100,6 +103,16 @@ public class AudioLibrary : ScriptableObject
     public AudioClip portalCollision;
     [Tooltip("Played (3D) when a portal despawns (e.g. it times out) — NOT when the player travels through it.")]
     public AudioClip portalDespawn;
+
+    [Header("Boost Gate SFX")]
+    [Tooltip("Played (3D, at the gate) when a Boost Gate spawns in the hub.")]
+    public AudioClip boostGateSpawn;
+    [Tooltip("Played (3D, at the gate) when the player car drives through the gate and receives the boost.")]
+    public AudioClip boostGateBoost;
+
+    [Header("Player Victory SFX")]
+    [Tooltip("One-shot (2D — screen UI) played when the BOTS DEFEATED banner begins fading in.")]
+    public AudioClip victoryBanner;
 
     [Header("Default Mix (0..1)")]
     [Range(0f, 1f)] public float musicVolume = 0.6f;

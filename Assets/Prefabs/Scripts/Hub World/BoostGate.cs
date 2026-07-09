@@ -3,7 +3,7 @@ using UnityEngine;
 /// <summary>
 /// Trigger volume that boosts the player car when driven through. Boost
 /// direction is determined by the car's forward direction at the moment
-/// of contact — driving forward gives a forward boost, driving backward
+/// of contact ï¿½ driving forward gives a forward boost, driving backward
 /// gives a backward boost.
 /// </summary>
 [RequireComponent(typeof(Collider))]
@@ -18,6 +18,10 @@ public class BoostGate : MonoBehaviour
              "Prevents repeated boosts as the car passes through the trigger volume.")]
     public float cooldown = 1f;
 
+    [Header("Audio")]
+    [Tooltip("3D playback settings for the gate's spawn + boost sounds (spatial blend, volume, falloff).")]
+    public Spatial3DSettings audio3D = new Spatial3DSettings();
+
     private float lastBoostTime = -999f;
 
     void Reset()
@@ -25,6 +29,13 @@ public class BoostGate : MonoBehaviour
         // Auto-configure as trigger when added in editor
         var col = GetComponent<Collider>();
         if (col != null) col.isTrigger = true;
+    }
+
+    void Start()
+    {
+        // The gate is Instantiate()'d by HubSceneController when a round becomes active, so Start
+        // doubles as its spawn moment.
+        AudioManager.PlayBoostGateSpawn(transform.position, audio3D);
     }
 
     void OnTriggerEnter(Collider other)
@@ -50,7 +61,24 @@ public class BoostGate : MonoBehaviour
         if (rb == null) return;
 
         ApplyBoost(playerRoot, rb);
+        AudioManager.PlayBoostGateBoost(transform.position, audio3D);
+        KickFollowCameras(playerRoot);
         lastBoostTime = Time.time;
+    }
+
+    /// <summary>
+    /// Gives every follow-camera watching the boosted car the same FOV kick a normal Turbo
+    /// produces, so the gate boost reads with the same punch. Cameras following other cars
+    /// (future multiplayer) are left alone.
+    /// </summary>
+    void KickFollowCameras(GameObject player)
+    {
+        foreach (var cf in Object.FindObjectsByType<CameraFollow>(FindObjectsSortMode.None))
+        {
+            if (cf.target == null) continue;
+            if (cf.target == player.transform || cf.target.IsChildOf(player.transform))
+                cf.TriggerTurboFOVKick();
+        }
     }
 
     void ApplyBoost(GameObject player, Rigidbody rb)
@@ -71,7 +99,7 @@ public class BoostGate : MonoBehaviour
         Vector3 boostDirection;
         if (Mathf.Abs(forwardDot) < 0.5f)
         {
-            // Car has near-zero forward/backward velocity — default to forward
+            // Car has near-zero forward/backward velocity ï¿½ default to forward
             boostDirection = forward;
         }
         else

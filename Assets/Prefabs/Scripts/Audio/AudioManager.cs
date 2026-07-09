@@ -203,6 +203,7 @@ public class AudioManager : MonoBehaviour
     // Store menu SFX (2D — separate clips from the main-menu buttons).
     public static void PlayStoreMove()   => PlayLibrarySfx(Lib != null ? Lib.storeMove   : null);
     public static void PlayStoreSelect() => PlayLibrarySfx(Lib != null ? Lib.storeSelect : null);
+    public static void PlayStoreDenied() => PlayLibrarySfx(Lib != null ? Lib.storeDenied : null);
 
     // Universal vehicle one-shots (same clip for every car), fired AT the car by the player
     // CarController — 3D so other players can hear them (2D is reserved for menu SFX + music).
@@ -226,6 +227,15 @@ public class AudioManager : MonoBehaviour
     public static void PlayDroneShoot(Vector3 position, Spatial3DSettings settings = null)              => PlayLibrarySfxAt(Lib != null ? Lib.droneShoot               : null, position, settings);
     public static void PlayProjectileHitEnvironment(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitEnvironment : null, position, settings);
     public static void PlayProjectileHitPlayer(Vector3 position, Spatial3DSettings settings = null)      => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitPlayer      : null, position, settings);
+
+    // Boost Gate one-shots (3D, at the gate). Optional Spatial3DSettings let the gate prefab tweak
+    // the 3D falloff.
+    public static void PlayBoostGateSpawn(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.boostGateSpawn : null, position, settings);
+    public static void PlayBoostGateBoost(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.boostGateBoost : null, position, settings);
+
+    // Player-victory banner stinger (2D — screen UI, not a world event). Fired the moment the
+    // BOTS DEFEATED text begins its fade-in.
+    public static void PlayVictoryBanner() => PlayLibrarySfx(Lib != null ? Lib.victoryBanner : null);
 
     static AudioLibrary Lib => Instance != null ? Instance.Library : null;
     static void PlayLibrarySfx(AudioClip clip) { if (Instance != null) Instance.PlaySfx(clip); }

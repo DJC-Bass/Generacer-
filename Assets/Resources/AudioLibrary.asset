@@ -37,10 +37,11 @@ MonoBehaviour:
   menuBack: {fileID: 8300000, guid: c577f354cd732894ba3f45f55927bcf3, type: 3}
   storeMove: {fileID: 8300000, guid: a50eb66abf680dc4a8808b6f9db2a0d0, type: 3}
   storeSelect: {fileID: 8300000, guid: f633b248d7ecec54aa73e225dd5b1401, type: 3}
+  storeDenied: {fileID: 0}
   turboCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
-  turboCrafted: {fileID: 8300000, guid: 3c2715988bb70ee41aff3fa09a3b4db6, type: 3}
+  turboCrafted: {fileID: 8300000, guid: b5a5414855fb088418da1b06091ad2d8, type: 3}
   jetCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
-  jetCrafted: {fileID: 8300000, guid: 8d5d3e09131f53645ac34196ffd503bb, type: 3}
+  jetCrafted: {fileID: 8300000, guid: 8bf290c2c3a2ef342a6b6b4c93347ce3, type: 3}
   turboBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   jump: {fileID: 8300000, guid: e489c81a33c011f438c6cd4094709df9, type: 3}
   driftScreech: {fileID: 8300000, guid: ae1af34f9f1f7b84d99b545c55ceb328, type: 3}
@@ -57,12 +58,15 @@ MonoBehaviour:
   droneShoot: {fileID: 8300000, guid: 3226991065b1c9a4e957b99fd38ccb97, type: 3}
   projectileHitEnvironment: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
   projectileHitPlayer: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
-  sdActivate: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
-  sdActiveLoop: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
-  sdDeactivate: {fileID: 0}
+  sdActivate: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
+  sdActiveLoop: {fileID: 0}
+  sdDeactivate: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
   portalSpawn: {fileID: 0}
   portalActiveLoop: {fileID: 8300000, guid: 38f994c7e40032e438d4148ba8f01be3, type: 3}
   portalCollision: {fileID: 0}
   portalDespawn: {fileID: 0}
+  boostGateSpawn: {fileID: 8300000, guid: f1e18f5db1a870e4280daeeb52856e2e, type: 3}
+  boostGateBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
+  victoryBanner: {fileID: 0}
   musicVolume: 0.5
-  sfxVolume: 1
+  sfxVolume: 0.5

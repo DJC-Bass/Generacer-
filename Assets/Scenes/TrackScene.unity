@@ -399,7 +399,7 @@ PrefabInstance:
       objectReference: {fileID: 1171030678}
     - target: {fileID: 8983406537102416638, guid: 30204a1bf060edf46ab89cbb0a961d0d, type: 3}
       propertyPath: lightningAudio.volume
-      value: 0.6
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 8983406537102416638, guid: 30204a1bf060edf46ab89cbb0a961d0d, type: 3}
       propertyPath: lightningAudio.maxDistance
@@ -1127,7 +1127,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: startLateralVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: verticalHandleFactor
@@ -1143,15 +1143,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: finishLateralVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: startAltitudeVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: finishAltitudeVariance
-      value: 10000
+      value: 20000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceAltitudeSwing
