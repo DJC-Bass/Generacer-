@@ -52,9 +52,34 @@ public class CameraFollow : MonoBehaviour
              "vertical on a loop). Lasts as long as that state is active.")]
     public float loopFOVBoost = 30f;
 
+    [Header("Speed Barrier FOV Kick")]
+    [Tooltip("At or above this speed (mph) a sustained FOV kick engages, as if the car has broken " +
+             "through the speed barrier.")]
+    public float speedBarrierMph = 750f;
+    [Tooltip("Once engaged, the kick holds until speed drops below THIS (mph). Kept a touch under " +
+             "the engage speed so cruising right around the barrier doesn't flicker the kick on/off.")]
+    public float speedBarrierReleaseMph = 700f;
+    [Tooltip("Extra FOV added while the speed-barrier kick is engaged.")]
+    public float speedBarrierFOVBoost = 30f;
+
+    [Header("Speed Barrier Audio (low-pass muffle)")]
+    [Tooltip("While the speed-barrier kick is engaged, heavily muffle everything THIS player hears " +
+             "with a low-pass filter on their AudioListener. It's per-listener, so when multiplayer " +
+             "lands only the player who broke the barrier is muffled; everyone else hears normally.")]
+    public bool speedBarrierMuffle = true;
+    [Tooltip("Low-pass cutoff (Hz) at full muffle. Lower = more muffled / underwater. ~500-1000 is heavy.")]
+    public float barrierMuffleCutoff = 700f;
+
     private Rigidbody targetRb;
     private float currentFOVVelocity;
     private Camera cam;
+    private const float MS_TO_MPH = 2.23694f;   // matches CarController.SpeedMph
+
+    private AudioListener barrierListener;        // this camera's listener (only the ACTIVE one drives barrier audio)
+    private AudioLowPassFilter barrierLowPass;   // on this camera's AudioListener; muffles the LOCAL mix at the barrier
+    private float barrierAudioBlend;             // smoothed 0..1 muffle amount (eased with the FOV smooth time)
+    private float barrierAudioVel;               // SmoothDamp velocity for barrierAudioBlend
+    private const float BarrierCutoffOpen = 22000f;   // fully open — effectively no filtering
 
     // Per-axis camera rotation lag. The camera's reference rotation eases toward the car's,
     // with separate smooth times for yaw / pitch / roll. The offset is placed using this
@@ -64,6 +89,7 @@ public class CameraFollow : MonoBehaviour
     private CarController targetCar;        // NEW   to read turbo state
     private float turboFOVTimer = 0f;       // NEW   counts down the kick
     private bool prevTurboState = false;   // NEW   detects the activation moment
+    private bool speedBarrierActive = false;   // hysteresis: on at speedBarrierMph, off below speedBarrierReleaseMph
 
     /// <summary>
     /// Fires the same one-shot FOV kick a Turbo activation produces. For external boosts that
@@ -75,6 +101,18 @@ public class CameraFollow : MonoBehaviour
     void Start()
     {
         cam = GetComponent<Camera>();
+
+        // Speed-barrier muffle lives on THIS camera's AudioListener, so it only affects the local
+        // player's mix. The main camera holds the (single) active listener; the rear camera's is
+        // disabled by CameraSwitcher, so a filter there is a harmless no-op.
+        barrierListener = GetComponent<AudioListener>();
+        if (barrierListener != null)
+        {
+            barrierLowPass = GetComponent<AudioLowPassFilter>();
+            if (barrierLowPass == null) barrierLowPass = gameObject.AddComponent<AudioLowPassFilter>();
+            barrierLowPass.cutoffFrequency = BarrierCutoffOpen;   // start open (no muffle)
+            barrierLowPass.enabled = false;
+        }
 
         if (target != null)
         {
@@ -106,6 +144,7 @@ public class CameraFollow : MonoBehaviour
         FollowPosition();
         FollowRotation();
         UpdateFOV();
+        UpdateSpeedBarrierAudio();
     }
 
     void FollowPosition()
@@ -220,11 +259,63 @@ public class CameraFollow : MonoBehaviour
         if (targetCar != null && targetCar.IsLoopGravityCut)
             targetFOV += loopFOVBoost;
 
+        // Speed-barrier kick: sustained "broke through the barrier" FOV boost with hysteresis, so
+        // cruising right at the threshold doesn't flicker it. Engages at speedBarrierMph and holds
+        // until speed falls below the slightly-lower speedBarrierReleaseMph.
+        float speedMph = targetRb.linearVelocity.magnitude * MS_TO_MPH;
+        bool wasBarrier = speedBarrierActive;
+        if (!speedBarrierActive && speedMph >= speedBarrierMph) speedBarrierActive = true;
+        else if (speedBarrierActive && speedMph < speedBarrierReleaseMph) speedBarrierActive = false;
+        if (speedBarrierActive)
+            targetFOV += speedBarrierFOVBoost;
+
+        // On the break/leave edge, fire the 3D stinger — but ONLY from the camera that owns the active
+        // AudioListener, so the two always-running CameraFollows (main + rear) don't double-trigger it.
+        // The clip rides the car and bypasses the muffle, so it's heard clean over the low-pass.
+        if (speedBarrierActive != wasBarrier && target != null
+            && barrierListener != null && barrierListener.enabled)
+        {
+            if (speedBarrierActive) AudioManager.PlaySpeedBarrierBreak(target);
+            else                    AudioManager.PlaySpeedBarrierLeave(target);
+        }
+
         cam.fieldOfView = Mathf.SmoothDamp(
             cam.fieldOfView,
             targetFOV,
             ref currentFOVVelocity,
             fovSmoothTime
         );
+    }
+
+    /// <summary>
+    /// Drives a low-pass filter on this camera's AudioListener so the whole local mix goes heavily
+    /// muffled while the speed-barrier kick is engaged, then clears as it releases. The muffle amount
+    /// is eased with the SAME smooth time as the FOV kick so the two blend in and out together — no
+    /// sudden cut. Because it's on the listener, it only affects THIS player; a remote player who
+    /// hasn't broken the barrier keeps hearing normally.
+    /// </summary>
+    void UpdateSpeedBarrierAudio()
+    {
+        // Only the camera holding the ACTIVE listener drives the muffle (the rear camera's listener is
+        // disabled by CameraSwitcher, so its filter stays a transparent no-op).
+        if (barrierLowPass == null || barrierListener == null || !barrierListener.enabled) return;
+
+        // 0 = open, 1 = fully muffled. Same fovSmoothTime as the FOV kick → matched blend.
+        float targetMuffle = (speedBarrierMuffle && speedBarrierActive) ? 1f : 0f;
+        barrierAudioBlend = Mathf.SmoothDamp(barrierAudioBlend, targetMuffle,
+                                             ref barrierAudioVel, fovSmoothTime);
+
+        if (barrierAudioBlend < 0.001f)
+        {
+            barrierLowPass.enabled = false;   // fully open: switch the filter off so it's truly transparent
+            return;
+        }
+        barrierLowPass.enabled = true;
+
+        // Sweep the cutoff in LOG (octave) space so the darkening is perceptually even across the
+        // blend, instead of the audible change all bunching up at the very end of a linear sweep.
+        float logOpen = Mathf.Log(BarrierCutoffOpen);
+        float logMuffled = Mathf.Log(Mathf.Max(10f, barrierMuffleCutoff));
+        barrierLowPass.cutoffFrequency = Mathf.Exp(Mathf.Lerp(logOpen, logMuffled, barrierAudioBlend));
     }
 }

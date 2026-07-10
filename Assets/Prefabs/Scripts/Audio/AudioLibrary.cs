@@ -117,6 +117,18 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("One-shot (2D — screen UI) played when the BOTS DEFEATED banner begins fading in.")]
     public AudioClip victoryBanner;
 
+    [Header("Speed Barrier SFX")]
+    [Tooltip("One-shot (3D, riding the car) when the player FIRST breaks the speed barrier. Bypasses " +
+             "the broken-barrier low-pass muffle so it's heard clean.")]
+    public AudioClip speedBarrierBreak;
+    [Range(0f, 1f)] [Tooltip("Volume of the speed-barrier BREAK stinger. Scales on top of the global SFX level.")]
+    public float speedBarrierBreakVolume = 1f;
+    [Tooltip("One-shot (3D, riding the car) when the player drops back below the barrier. Bypasses the " +
+             "muffle so it's heard clean.")]
+    public AudioClip speedBarrierLeave;
+    [Range(0f, 1f)] [Tooltip("Volume of the speed-barrier LEAVE stinger. Scales on top of the global SFX level.")]
+    public float speedBarrierLeaveVolume = 1f;
+
     [Header("Default Mix (0..1)")]
     [Range(0f, 1f)] public float musicVolume = 0.6f;
     [Range(0f, 1f)] public float sfxVolume = 0.9f;

@@ -19,6 +19,7 @@ As of the last read of `Assets/Resources/AudioLibrary.asset`:
 - `victoryBanner` — 2D stinger as the BOTS DEFEATED banner starts fading in (added after this handoff)
 - `storeDenied` — 2D buzzer when a store purchase is rejected (can't afford / at max owned) (added after this handoff)
 - `loopBoost` — 3D one-shot at the car when the Loop Speed Multiplier engages entering a loop (added after this handoff)
+- `speedBarrierBreak`, `speedBarrierLeave` — 3D one-shots (ride the car, bypass the broken-barrier low-pass muffle) when the player crosses 750 mph / drops back below 700 mph (added after this handoff)
 
 Everything else is assigned. **Two slots currently reuse a placeholder clip** and may want distinct sounds:
 - `turboCraftLoop` and `jetCraftLoop` share the same clip.

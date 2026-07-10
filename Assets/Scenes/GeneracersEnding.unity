@@ -706,6 +706,11 @@ MonoBehaviour:
   rollBlendStart: 25
   rollBlendFull: 80
   loopFOVBoost: 30
+  speedBarrierMph: 750
+  speedBarrierReleaseMph: 725
+  speedBarrierFOVBoost: 45
+  speedBarrierMuffle: 1
+  barrierMuffleCutoff: 400
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -195,6 +195,45 @@ public class AudioManager : MonoBehaviour
         Destroy(go, clip.length + 0.1f);
     }
 
+    /// <summary>Fire-and-forget 3D one-shot that RIDES a moving transform, so a very fast emitter
+    /// (e.g. a car past the speed barrier, which outruns a world-anchored sound) keeps it audible.
+    /// <paramref name="bypassListenerEffects"/> lets the sound skip the AudioListener's filters — used
+    /// so the speed-barrier stingers are heard CLEAN over the broken-barrier low-pass muffle. Null
+    /// clip / follow are ignored.</summary>
+    public void PlaySfxFollow(AudioClip clip, Transform follow, Spatial3DSettings settings = null,
+                              bool bypassListenerEffects = false, float volumeScale = 1f)
+    {
+        if (clip == null || follow == null) return;
+
+        var go = new GameObject("SFX_" + clip.name);
+        go.transform.SetParent(follow, false);         // ride along so a fast emitter can't outrun it
+        go.transform.localPosition = Vector3.zero;
+
+        var src = go.AddComponent<AudioSource>();
+        src.clip = clip;
+        src.bypassListenerEffects = bypassListenerEffects;
+
+        float sfx = sfxSource != null ? sfxSource.volume : 1f;
+        if (settings != null)
+        {
+            settings.ApplyTo(src, sfx);
+        }
+        else
+        {
+            src.spatialBlend = 1f;                      // 3D — positioned in the world
+            src.rolloffMode = AudioRolloffMode.Linear;
+            src.minDistance = 8f;
+            src.maxDistance = 150f;
+            src.dopplerLevel = 0f;                      // no pitch bend from the car's speed
+            src.volume = sfx;
+        }
+
+        src.volume *= Mathf.Clamp01(volumeScale);       // per-clip Inspector volume, on top of the global SFX level
+
+        src.Play();
+        Destroy(go, clip.length + 0.1f);
+    }
+
     // Null-safe static shortcuts the menu controllers use for the three shared UI sounds.
     public static void PlayMenuMove()   => PlayLibrarySfx(Lib != null ? Lib.menuMove   : null);
     public static void PlayMenuSelect() => PlayLibrarySfx(Lib != null ? Lib.menuSelect : null);
@@ -211,6 +250,11 @@ public class AudioManager : MonoBehaviour
     public static void PlayJump(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.jump       : null, position);
     public static void PlayCarLanding(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.carLanding : null, position);
     public static void PlayLoopBoost(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.loopBoost  : null, position);
+
+    // Speed-barrier stingers (3D, riding the car so they stay audible at 750+ mph). They bypass the
+    // AudioListener's low-pass so they're heard CLEAN over the broken-barrier muffle.
+    public static void PlaySpeedBarrierBreak(Transform car) => PlayLibrarySfxFollow(Lib != null ? Lib.speedBarrierBreak : null, car, Lib != null ? Lib.speedBarrierBreakVolume : 1f);
+    public static void PlaySpeedBarrierLeave(Transform car) => PlayLibrarySfxFollow(Lib != null ? Lib.speedBarrierLeave : null, car, Lib != null ? Lib.speedBarrierLeaveVolume : 1f);
     public static void PlayTurboCrafted(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.turboCrafted : null, position);
     public static void PlayJetCrafted(Vector3 position)   => PlayLibrarySfxAt(Lib != null ? Lib.jetCrafted   : null, position);
 
@@ -241,6 +285,8 @@ public class AudioManager : MonoBehaviour
     static AudioLibrary Lib => Instance != null ? Instance.Library : null;
     static void PlayLibrarySfx(AudioClip clip) { if (Instance != null) Instance.PlaySfx(clip); }
     static void PlayLibrarySfxAt(AudioClip clip, Vector3 position, Spatial3DSettings settings = null) { if (Instance != null) Instance.PlaySfxAt(clip, position, settings); }
+    // Rides the emitter and bypasses listener effects — for the speed-barrier stingers.
+    static void PlayLibrarySfxFollow(AudioClip clip, Transform follow, float volumeScale = 1f) { if (Instance != null) Instance.PlaySfxFollow(clip, follow, null, true, volumeScale); }
 
     /// <summary>A random non-null clip from a pool (empty/null pool → null). Gives per-event variety,
     /// e.g. a different lightning-strike sound each strike.</summary>
