@@ -1200,7 +1200,7 @@ Rigidbody:
   serializedVersion: 5
   m_Mass: 1500
   m_LinearDamping: 0
-  m_AngularDamping: 20
+  m_AngularDamping: 2
   m_CenterOfMass: {x: 0, y: 0, z: 0}
   m_InertiaTensor: {x: 1, y: 1, z: 1}
   m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
@@ -1303,7 +1303,13 @@ MonoBehaviour:
   turboMultiplier: 2
   turboDuration: 2
   turboCooldown: 0
-  jumpVelocity: 20
+  turboTrails: 1
+  turboTrailTime: 1
+  turboTrailWidth: 0.5
+  turboTrailColor: {r: 0.08, g: 0.08, b: 0.08, a: 0.75}
+  turboTrailHeightOffset: 0.2
+  turboTrailMaterial: {fileID: 2100000, guid: 1da06100f0cfdef4d993c67d3f5194d8, type: 2}
+  jumpVelocity: 25
   jumpRequiresGround: 0
   jumpSuspensionRayLength: 0.5
   jumpRayShortenDuration: 1

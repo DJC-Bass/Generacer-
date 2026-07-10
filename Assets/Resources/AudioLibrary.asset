@@ -46,6 +46,7 @@ MonoBehaviour:
   jump: {fileID: 8300000, guid: e489c81a33c011f438c6cd4094709df9, type: 3}
   driftScreech: {fileID: 8300000, guid: ae1af34f9f1f7b84d99b545c55ceb328, type: 3}
   carLanding: {fileID: 0}
+  loopBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   lightningWarning: {fileID: 0}
   lightningStrike:
   - {fileID: 8300000, guid: 9ecc002aab6202842a5a28474abce42a, type: 3}

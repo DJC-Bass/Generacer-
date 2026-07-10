@@ -66,6 +66,9 @@ public class AudioLibrary : ScriptableObject
     public AudioClip driftScreech;
     [Tooltip("One-shot played when the car lands back on the ground after being airborne.")]
     public AudioClip carLanding;
+    [Tooltip("One-shot (3D, at the car) played when the car enters a loop and the Loop Speed " +
+             "Multiplier kicks in — the same moment the loop FOV kick starts.")]
+    public AudioClip loopBoost;
 
     [Header("Obstacle SFX")]
     [Tooltip("Played (in 3D, at the strike location) when a lightning warning column appears.")]

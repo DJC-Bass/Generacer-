@@ -210,6 +210,7 @@ public class AudioManager : MonoBehaviour
     public static void PlayTurbo(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.turboBoost : null, position);
     public static void PlayJump(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.jump       : null, position);
     public static void PlayCarLanding(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.carLanding : null, position);
+    public static void PlayLoopBoost(Vector3 position)  => PlayLibrarySfxAt(Lib != null ? Lib.loopBoost  : null, position);
     public static void PlayTurboCrafted(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.turboCrafted : null, position);
     public static void PlayJetCrafted(Vector3 position)   => PlayLibrarySfxAt(Lib != null ? Lib.jetCrafted   : null, position);
 

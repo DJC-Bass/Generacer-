@@ -193,6 +193,21 @@ public class CarController : MonoBehaviour
     [Tooltip("Cooldown before turbo can be used again (seconds). 0 = no cooldown.")]
     public float turboCooldown = 0f;
 
+    [Header("Turbo Tire Trails")]
+    [Tooltip("Draw skid-mark trails from the rear tires while the Turbo Boost is active.")]
+    public bool turboTrails = true;
+    [Tooltip("How long each piece of trail stays on the track before it fades away (seconds).")]
+    public float turboTrailTime = 1f;
+    [Tooltip("Width of the tire trail at the tire, tapering to ~60% at its tail (metres).")]
+    public float turboTrailWidth = 0.3f;
+    [Tooltip("Trail colour. Its alpha fades to zero over the trail's lifetime.")]
+    public Color turboTrailColor = new Color(0.08f, 0.08f, 0.08f, 0.75f);
+    [Tooltip("Lifts the trail up the car's local Y off the ground contact (metres) so it sits ON TOP " +
+             "of the track surface instead of bleeding into it (z-fighting). Small values, ~0.02–0.05.")]
+    public float turboTrailHeightOffset = 0.03f;
+    [Tooltip("Optional material for the trail. Leave empty to auto-build a simple alpha-blended one.")]
+    public Material turboTrailMaterial;
+
     [Header("Jump")]
     [Tooltip("Instantaneous velocity (m/s) added along the car's local up when A is pressed.")]
     public float jumpVelocity = 12f;
@@ -287,6 +302,11 @@ public class CarController : MonoBehaviour
     private AudioSource driftSource;   // looping tire-screech while drifting
     private bool wasAirborne;          // tracks the airborne -> grounded edge for the landing sound
 
+    private TrailRenderer trailRL;     // rear-left turbo skid mark
+    private TrailRenderer trailRR;     // rear-right turbo skid mark
+    private bool trailsWereAirborne;   // rising edge of real airtime, to break the trail across a jump
+    private float trailKickTimer;      // >0 forces the trail on for an external boost (BoostGate), no real turbo
+
     public bool IsTurboActive => turboTimer > 0f;
     /// <summary>True while the car is in the drift state (throttle + brake held).</summary>
     public bool IsDrifting => isDrifting;
@@ -340,6 +360,7 @@ public class CarController : MonoBehaviour
         }
 
         SetUpDriftAudio();
+        SetUpTurboTrails();
     }
 
     // -------------------------------------------------------
@@ -362,6 +383,7 @@ public class CarController : MonoBehaviour
             jumpRequested = true;
 
         UpdateWheelMeshes();
+        UpdateTurboTrails();
         UpdateDriftAudio();
         UpdateLandingAudio();
     }
@@ -777,7 +799,13 @@ public class CarController : MonoBehaviour
         }
 
         float uprightDot = Vector3.Dot(transform.up, Vector3.up);
-        if (!loopFlag && uprightDot < loopGravityDisableDot) loopFlag = true;
+        if (!loopFlag && uprightDot < loopGravityDisableDot)
+        {
+            loopFlag = true;
+            // Rising edge only (guarded by !loopFlag above): fire the one-shot once as the Loop Speed
+            // Multiplier engages, at the car (3D).
+            AudioManager.PlayLoopBoost(transform.position);
+        }
         else if (loopFlag && uprightDot > loopGravityEnableDot) loopFlag = false;
     }
 
@@ -829,6 +857,16 @@ public class CarController : MonoBehaviour
     public void ShortenSuspensionRayForPopUp()
     {
         jumpRayTimer = jumpRayShortenDuration;
+    }
+
+    /// <summary>Lays the rear-tire turbo skid trail for a moment as if a normal Turbo were firing,
+    /// WITHOUT granting the turbo speed boost — used by external boosts (e.g. driving through a
+    /// BoostGate) so their launch leaves the same marks. Still grounded-only, like a real turbo trail.
+    /// Duration defaults to the normal turbo length so it reads just like a real boost.</summary>
+    public void TriggerTurboTrail(float duration = -1f)
+    {
+        float d = duration > 0f ? duration : turboDuration;
+        trailKickTimer = Mathf.Max(trailKickTimer, d);
     }
 
     /// <summary>
@@ -1005,6 +1043,100 @@ public class CarController : MonoBehaviour
                           * Quaternion.Euler(0f, steerVis, 0f)
                           * Quaternion.Euler(wheelSpinAngle[i], 0f, 0f);
         }
+    }
+
+    // -------------------------------------------------------
+    //  Turbo tire trails
+    // -------------------------------------------------------
+
+    /// <summary>Builds a TrailRenderer for each rear tire once at startup. They live as children of
+    /// the car (so they clean up with it) but lay their marks in WORLD space, and start switched off —
+    /// <see cref="UpdateTurboTrails"/> turns them on only while the turbo is firing on the ground.</summary>
+    void SetUpTurboTrails()
+    {
+        if (!turboTrails) return;
+
+        // One shared, alpha-blended, vertex-coloured material (no texture needed). The per-vertex
+        // colour comes from the gradient below, so the trail fades out along its length.
+        Material mat = turboTrailMaterial != null
+            ? turboTrailMaterial
+            : new Material(Shader.Find("Sprites/Default"));
+
+        trailRL = CreateTireTrail("TurboTrailRL", mat);
+        trailRR = CreateTireTrail("TurboTrailRR", mat);
+    }
+
+    TrailRenderer CreateTireTrail(string name, Material mat)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(transform, false);
+
+        var tr = go.AddComponent<TrailRenderer>();
+        tr.time = Mathf.Max(0.01f, turboTrailTime);        // seconds a mark lingers before it's gone
+        tr.startWidth = turboTrailWidth;
+        tr.endWidth = turboTrailWidth * 0.6f;
+        tr.minVertexDistance = 0.05f;
+        tr.numCornerVertices = 2;
+        tr.numCapVertices = 2;
+        tr.autodestruct = false;
+        tr.emitting = false;                               // off until the turbo fires
+        tr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        tr.receiveShadows = false;
+        tr.material = mat;
+
+        // Solid at the tire, fading to transparent at the tail over the trail's lifetime.
+        var grad = new Gradient();
+        grad.SetKeys(
+            new[] { new GradientColorKey(turboTrailColor, 0f), new GradientColorKey(turboTrailColor, 1f) },
+            new[] { new GradientAlphaKey(turboTrailColor.a, 0f), new GradientAlphaKey(0f, 1f) });
+        tr.colorGradient = grad;
+
+        return tr;
+    }
+
+    /// <summary>Each frame, pins each rear trail to that wheel's ground-contact point and emits only
+    /// while the turbo is active AND the wheel is grounded — so marks are laid on the track, never in
+    /// the air. When the turbo (or ground contact) ends, emitting stops and the existing mark fades
+    /// over Turbo Trail Time. The trail is cut at the start of a real jump so landing doesn't streak a
+    /// line back to the take-off point.</summary>
+    void UpdateTurboTrails()
+    {
+        if (!turboTrails) return;
+
+        if (trailKickTimer > 0f) trailKickTimer -= Time.deltaTime;
+
+        if (IsAirborne && !trailsWereAirborne)
+        {
+            if (trailRL != null) trailRL.Clear();
+            if (trailRR != null) trailRR.Clear();
+        }
+        trailsWereAirborne = IsAirborne;
+
+        UpdateOneTrail(trailRL, 2);   // rear-left  wheel index
+        UpdateOneTrail(trailRR, 3);   // rear-right wheel index
+    }
+
+    void UpdateOneTrail(TrailRenderer tr, int wheelIndex)
+    {
+        if (tr == null) return;
+
+        // Emit only while "boosting" — a real turbo, an external boost's trail kick (BoostGate), or
+        // the loop speed-multiplier state (IsLoopGravityCut, the same flag that drives the loop FOV
+        // kick) — AND this rear wheel is on the ground. The loop term is read-only / purely visual
+        // here; the loop multiplier itself lives in the drive code and is unaffected.
+        bool emit = (IsTurboActive || trailKickTimer > 0f || IsLoopGravityCut) && wheelGrounded[wheelIndex];
+
+        // Keep the emitter parked on the contact point while it's drawing. Left in place when not
+        // emitting so a one-frame bump doesn't smear a line to a far-away point on the next contact.
+        if (emit)
+        {
+            Transform a = anchorTransforms[wheelIndex];
+            if (a != null)
+                tr.transform.position = a.position
+                                      - transform.up * (groundDistance[wheelIndex] - turboTrailHeightOffset);
+        }
+
+        tr.emitting = emit;
     }
 
     // -------------------------------------------------------

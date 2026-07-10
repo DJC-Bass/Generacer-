@@ -63,6 +63,11 @@ public class BoostGate : MonoBehaviour
         ApplyBoost(playerRoot, rb);
         AudioManager.PlayBoostGateBoost(transform.position, audio3D);
         KickFollowCameras(playerRoot);
+
+        // Lay the same rear-tire skid marks a normal Turbo would, so the gate launch reads the same.
+        var car = playerRoot.GetComponent<CarController>();
+        if (car != null) car.TriggerTurboTrail();
+
         lastBoostTime = Time.time;
     }
 

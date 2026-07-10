@@ -18,6 +18,7 @@ As of the last read of `Assets/Resources/AudioLibrary.asset`:
 - `boostGateSpawn`, `boostGateBoost` — hub Boost Gate appearing / player driving through it (added after this handoff)
 - `victoryBanner` — 2D stinger as the BOTS DEFEATED banner starts fading in (added after this handoff)
 - `storeDenied` — 2D buzzer when a store purchase is rejected (can't afford / at max owned) (added after this handoff)
+- `loopBoost` — 3D one-shot at the car when the Loop Speed Multiplier engages entering a loop (added after this handoff)
 
 Everything else is assigned. **Two slots currently reuse a placeholder clip** and may want distinct sounds:
 - `turboCraftLoop` and `jetCraftLoop` share the same clip.
