@@ -61,6 +61,11 @@ public class CameraFollow : MonoBehaviour
     public float speedBarrierReleaseMph = 700f;
     [Tooltip("Extra FOV added while the speed-barrier kick is engaged.")]
     public float speedBarrierFOVBoost = 30f;
+    [Tooltip("The effect only runs while the car is grounded. It tolerates this many seconds of airtime " +
+             "(crests, short hops) before force-exiting; sustained airtime drops it until the car lands " +
+             "again. Also fades the muffle out before a high-speed fall to the kill floor reloads the " +
+             "hub, so there's no audio pop.")]
+    public float speedBarrierGroundedGrace = 1f;
 
     [Header("Speed Barrier Audio (low-pass muffle)")]
     [Tooltip("While the speed-barrier kick is engaged, heavily muffle everything THIS player hears " +
@@ -263,9 +268,15 @@ public class CameraFollow : MonoBehaviour
         // cruising right at the threshold doesn't flicker it. Engages at speedBarrierMph and holds
         // until speed falls below the slightly-lower speedBarrierReleaseMph.
         float speedMph = targetRb.linearVelocity.magnitude * MS_TO_MPH;
+
+        // The effect only runs while grounded, with a grace window so crests / short hops don't drop
+        // it. Sustained airtime force-exits it — which also fades the muffle out BEFORE a high-speed
+        // fall reaches the kill floor, so the hub reload doesn't pop the filter off mid-muffle.
+        bool groundedEnough = targetCar == null || targetCar.AirborneTime <= speedBarrierGroundedGrace;
+
         bool wasBarrier = speedBarrierActive;
-        if (!speedBarrierActive && speedMph >= speedBarrierMph) speedBarrierActive = true;
-        else if (speedBarrierActive && speedMph < speedBarrierReleaseMph) speedBarrierActive = false;
+        if (!speedBarrierActive && groundedEnough && speedMph >= speedBarrierMph) speedBarrierActive = true;
+        else if (speedBarrierActive && (!groundedEnough || speedMph < speedBarrierReleaseMph)) speedBarrierActive = false;
         if (speedBarrierActive)
             targetFOV += speedBarrierFOVBoost;
 

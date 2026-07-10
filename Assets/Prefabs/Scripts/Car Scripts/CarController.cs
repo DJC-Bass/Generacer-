@@ -316,6 +316,10 @@ public class CarController : MonoBehaviour
     /// <summary>True while the car is genuinely airborne (off the ground past the brief grace
     /// window that ignores crests/bumps). Read by anti-air logic such as the homing boulders.</summary>
     public bool IsAirborne { get; private set; }
+    /// <summary>Seconds since the car was last grounded — 0 while any wheel is on the ground, counting
+    /// up while fully airborne. Lets external effects (e.g. the speed-barrier kick) apply their own
+    /// grounded grace window.</summary>
+    public float AirborneTime => airborneTimer;
 
     private const float MS_TO_MPH = 2.23694f;
     private const float MPH_TO_MS = 1f / MS_TO_MPH;

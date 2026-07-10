@@ -1054,7 +1054,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: barrierMuffleCutoff
-      value: 400
+      value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: speedBarrierFOVBoost
@@ -1352,7 +1352,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: barrierMuffleCutoff
-      value: 400
+      value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierFOVBoost
