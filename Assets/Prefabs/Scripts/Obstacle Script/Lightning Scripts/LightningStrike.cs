@@ -92,9 +92,18 @@ public class LightningStrike : MonoBehaviour
 
         // Trigger collider � physically passes through everything, but reports
         // collisions via OnTriggerEnter on the LightningHitDetector script.
-        var collider = obj.AddComponent<MeshCollider>();
-        collider.sharedMesh = mesh;
-        collider.convex = true;
+        // The hit volume is a simple vertical capsule, NOT a convex MeshCollider cooked from the
+        // bolt ribbon. Cooking that 9000-unit-tall, zero-volume zigzag mesh made PhysX warn
+        // ("triangles ... greater than 500 units ... can impact simulation and query stability")
+        // on every strike, and with many such hulls alive near the car it could hang the editor
+        // outright during the scene switch when leaving the track (infinite freeze in the physics
+        // teardown). A capsule needs no cooking, is perfectly stable, and matches the bolt's
+        // visible core at ground level where the car actually gets struck.
+        var collider = obj.AddComponent<CapsuleCollider>();
+        collider.direction = 1;                                  // Y — the bolt is a vertical column
+        collider.radius = boltThickness;
+        collider.height = strikeHeight + boltThickness * 2f;     // cover the full bolt, caps past the ends
+        collider.center = new Vector3(0f, strikeHeight * 0.5f, 0f);
         collider.isTrigger = true;
 
         // Trigger detection requires a Rigidbody on at least one of the colliders
