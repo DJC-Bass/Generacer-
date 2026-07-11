@@ -135,6 +135,7 @@ GameObject:
   - component: {fileID: 310890320}
   - component: {fileID: 310890319}
   - component: {fileID: 310890321}
+  - component: {fileID: 310890322}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -251,6 +252,20 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!114 &310890322
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 310890318}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4f2c8e1d9b34756802e1f3a5c7d9e0b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoundDirectionalLightToggle
+  directionalLight: {fileID: 310890319}
+  deactivateChance: 0.4
 --- !u!1001 &513852949
 PrefabInstance:
   m_ObjectHideFlags: 0
