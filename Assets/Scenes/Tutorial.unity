@@ -167,6 +167,14 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      propertyPath: jetItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      propertyPath: turboItemName
+      value: 
+      objectReference: {fileID: 0}
     - target: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
       propertyPath: m_Name
       value: 'S-Sen7[Red]'
@@ -660,6 +668,12 @@ MonoBehaviour:
   rollBlendStart: 25
   rollBlendFull: 80
   loopFOVBoost: 30
+  speedBarrierMph: 750
+  speedBarrierReleaseMph: 725
+  speedBarrierFOVBoost: 45
+  speedBarrierGroundedGrace: 1
+  speedBarrierMuffle: 1
+  barrierMuffleCutoff: 200
 --- !u!114 &1521426899
 MonoBehaviour:
   m_ObjectHideFlags: 0

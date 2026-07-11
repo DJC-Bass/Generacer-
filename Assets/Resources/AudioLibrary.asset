@@ -69,9 +69,9 @@ MonoBehaviour:
   boostGateSpawn: {fileID: 8300000, guid: f1e18f5db1a870e4280daeeb52856e2e, type: 3}
   boostGateBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   victoryBanner: {fileID: 0}
-  speedBarrierBreak: {fileID: 8300000, guid: 9ecc002aab6202842a5a28474abce42a, type: 3}
+  speedBarrierBreak: {fileID: 8300000, guid: 8976a3c01be38bb45b9298f7b61f7514, type: 3}
   speedBarrierBreakVolume: 0.5
-  speedBarrierLeave: {fileID: 8300000, guid: 9ecc002aab6202842a5a28474abce42a, type: 3}
+  speedBarrierLeave: {fileID: 8300000, guid: 8976a3c01be38bb45b9298f7b61f7514, type: 3}
   speedBarrierLeaveVolume: 0.5
   musicVolume: 0.5
   sfxVolume: 0.5

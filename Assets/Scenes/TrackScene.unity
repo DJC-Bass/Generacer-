@@ -384,7 +384,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
-  engineClip: {fileID: 8300000, guid: bbc790c1803a7b145b40811637748082, type: 3}
+  engineClip: {fileID: 8300000, guid: c5e64a493f86ce14a9b3f60d40a98900, type: 3}
   idlePitch: 0.8
   maxPitch: 6
   speedForMaxPitch: 400
@@ -1051,6 +1051,10 @@ PrefabInstance:
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: turboFOVDuration
       value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: speedBarrierMuffle
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: barrierMuffleCutoff
