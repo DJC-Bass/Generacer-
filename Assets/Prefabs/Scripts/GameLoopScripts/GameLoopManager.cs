@@ -104,10 +104,6 @@ public class GameLoopManager : MonoBehaviour
 
     void Awake()
     {
-
-        // On the GameLoopManager, in Awake after singleton setup:
-        SceneManager.LoadScene(hubSceneName);
-
         // Standard singleton setup with persistence
         if (Instance != null && Instance != this)
         {
@@ -116,6 +112,11 @@ public class GameLoopManager : MonoBehaviour
         }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+
+        // Bootstrap redirect: this manager lives in the Bootstrap scene, whose only job is to
+        // create it and hand off to the hub. Safely behind the singleton guard, so a duplicate
+        // manager in some other scene can never bounce the game back to the hub.
+        SceneManager.LoadScene(hubSceneName);
 
         // Start the loop in countdown phase
         StartHubCountdown();
