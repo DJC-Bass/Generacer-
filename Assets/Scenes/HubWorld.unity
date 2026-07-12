@@ -3585,26 +3585,32 @@ MonoBehaviour:
     maxOwned: 8
     grantItem: 
     grantAmount: 1
+    description: The max amount of Turbos you can carry.
   - itemName: Jet Pack
     price: 100
     maxOwned: 4
     grantItem: 
     grantAmount: 1
+    description: Each pack allows you to hold 5 more Jets.
   - itemName: Turbo Juice
     price: 50
     maxOwned: 0
     grantItem: 
     grantAmount: 1
+    description: Juice to craft Turbos on the Upgrade Ramp.
   - itemName: Jet Fuel Pack
     price: 50
     maxOwned: 0
     grantItem: Jet Fuel
     grantAmount: 5
+    description: A bundle of 5 Fuel canisters to craft Jets on the Upgrade Ramp.
   - itemName: LRA
     price: 100
     maxOwned: 1
     grantItem: 
     grantAmount: 1
+    description: Press L, R and A to grant safe passage back home and keep your inventory
+      (one time use).
   enforceCredits: 1
   startingCredits: 200
   playerTag: Player

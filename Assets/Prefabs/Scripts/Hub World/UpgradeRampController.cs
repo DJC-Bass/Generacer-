@@ -310,6 +310,7 @@ public class UpgradeRampController : MonoBehaviour
         root.SetActive(true);
         isOpen = true;
         MenuState.AnyOpen = true;
+        AudioManager.PlayRampOpen();
     }
 
     void Close()
@@ -320,6 +321,7 @@ public class UpgradeRampController : MonoBehaviour
         isOpen = false;
         MenuState.AnyOpen = false;
         if (craftLoopSource != null) craftLoopSource.Stop();   // cut the crafting loop
+        AudioManager.PlayRampClose();
     }
 
     void OnDisable()

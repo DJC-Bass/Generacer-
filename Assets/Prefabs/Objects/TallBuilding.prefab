@@ -44,6 +44,18 @@ PrefabInstance:
       propertyPath: m_Name
       value: FodderBuilding
       objectReference: {fileID: 0}
+    - target: {fileID: 1759789101043835348, guid: ab94846720ce79b43aea41e1a1c0447e, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4087290622007330992, guid: ab94846720ce79b43aea41e1a1c0447e, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 4735a7789f2afa747bb50b855f3e8a65, type: 2}
+    - target: {fileID: 4087290622007330992, guid: ab94846720ce79b43aea41e1a1c0447e, type: 3}
+      propertyPath: 'm_Materials.Array.data[1]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 66dc60e010fa0314a9b8c6e4ece876d8, type: 2}
     - target: {fileID: 5814075683520504929, guid: ab94846720ce79b43aea41e1a1c0447e, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0

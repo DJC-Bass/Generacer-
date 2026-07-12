@@ -68,7 +68,8 @@ public class PlayerInventory : MonoBehaviour
     {
         if (Instance != null) return;
         var go = new GameObject("PlayerSystems");
-        go.AddComponent<PlayerInventory>();   // sets Instance in Awake (added first)
+        go.AddComponent<EventSystemGuard>();  // enforce exactly one EventSystem (added first, before any menu makes one)
+        go.AddComponent<PlayerInventory>();   // sets Instance in Awake
         go.AddComponent<InventoryView>();
         go.AddComponent<CreditsHUD>();
         go.AddComponent<TurboJetHUD>();
@@ -77,6 +78,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<SDAbilityController>();  // D-pad up: toggle the equipped SD's ability
         go.AddComponent<PlayerCarSwapper>();     // swaps in the Car-Selection choice each gameplay scene
         go.AddComponent<StartMenuController>();   // Start button: in-game menu (Resume/Audio/Controls/Settings/Quit)
+        go.AddComponent<TutorialGuide>();         // Tutorial scene's top-screen instruction messages
         DontDestroyOnLoad(go);
     }
 

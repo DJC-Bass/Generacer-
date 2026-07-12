@@ -90,6 +90,7 @@ public class AudioManager : MonoBehaviour
         {
             case "MainMenu":         return Library.mainMenuMusic;
             case "CarSelection":     return Library.carSelectionMusic;
+            case "Tutorial":         return Library.tutorialMusic;
             case "HubWorld":         return HubMusic();
             case "GeneracersEnding": return Library.generacersEndingMusic;
             case "ClipperEnding":    return Library.clipperEndingMusic;
@@ -234,15 +235,24 @@ public class AudioManager : MonoBehaviour
         Destroy(go, clip.length + 0.1f);
     }
 
-    // Null-safe static shortcuts the menu controllers use for the three shared UI sounds.
+    // Null-safe static shortcuts the menu controllers use for the shared UI sounds.
     public static void PlayMenuMove()   => PlayLibrarySfx(Lib != null ? Lib.menuMove   : null);
     public static void PlayMenuSelect() => PlayLibrarySfx(Lib != null ? Lib.menuSelect : null);
     public static void PlayMenuBack()   => PlayLibrarySfx(Lib != null ? Lib.menuBack   : null);
+    // Full-screen menu open/close (shared by the Start menu + Inventory).
+    public static void PlayMenuOpen()   => PlayLibrarySfx(Lib != null ? Lib.menuOpen   : null);
+    public static void PlayMenuClose()  => PlayLibrarySfx(Lib != null ? Lib.menuClose  : null);
 
     // Store menu SFX (2D — separate clips from the main-menu buttons).
     public static void PlayStoreMove()   => PlayLibrarySfx(Lib != null ? Lib.storeMove   : null);
     public static void PlayStoreSelect() => PlayLibrarySfx(Lib != null ? Lib.storeSelect : null);
     public static void PlayStoreDenied() => PlayLibrarySfx(Lib != null ? Lib.storeDenied : null);
+    public static void PlayStoreOpen()   => PlayLibrarySfx(Lib != null ? Lib.storeOpen   : null);
+    public static void PlayStoreClose()  => PlayLibrarySfx(Lib != null ? Lib.storeClose  : null);
+
+    // Upgrade Ramp menu open/close (2D).
+    public static void PlayRampOpen()    => PlayLibrarySfx(Lib != null ? Lib.rampOpen    : null);
+    public static void PlayRampClose()   => PlayLibrarySfx(Lib != null ? Lib.rampClose   : null);
 
     // Universal vehicle one-shots (same clip for every car), fired AT the car by the player
     // CarController — 3D so other players can hear them (2D is reserved for menu SFX + music).
@@ -277,6 +287,10 @@ public class AudioManager : MonoBehaviour
     // the 3D falloff.
     public static void PlayBoostGateSpawn(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.boostGateSpawn : null, position, settings);
     public static void PlayBoostGateBoost(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.boostGateBoost : null, position, settings);
+
+    // Windows trigger one-shots (3D, at the volume). Optional Spatial3DSettings tweak the 3D falloff.
+    public static void PlayWindowsEnter(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.windowsEnter : null, position, settings);
+    public static void PlayWindowsExit(Vector3 position, Spatial3DSettings settings = null)  => PlayLibrarySfxAt(Lib != null ? Lib.windowsExit  : null, position, settings);
 
     // Player-victory banner stinger (2D — screen UI, not a world event). Fired the moment the
     // BOTS DEFEATED text begins its fade-in.

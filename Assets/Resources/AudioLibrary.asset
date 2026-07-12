@@ -14,14 +14,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mainMenuMusic: {fileID: 8300000, guid: 55c2eae55c38eb642b2989db4465c73f, type: 3}
   carSelectionMusic: {fileID: 8300000, guid: a3787bd3e37ab9640addcaeed2b4810b, type: 3}
+  tutorialMusic: {fileID: 8300000, guid: 0b067a2bf76270e45917a06c903bf066, type: 3}
   hubMusic: {fileID: 8300000, guid: 8e66316843aadb9489d2d124162f5daf, type: 3}
   droneEndingMusic: {fileID: 8300000, guid: 7dd5ada76196bbf4583d62b283b87310, type: 3}
   playerVictoryMusic: {fileID: 0}
   generacersEndingMusic: {fileID: 8300000, guid: 7f62f6f8ffc898c468c0a488ae45c241, type: 3}
   clipperEndingMusic: {fileID: 8300000, guid: 6130065a4e5fab9419106cf5a0038d5e, type: 3}
   trackMusic:
-  - {fileID: 8300000, guid: 385b9954ae6ef5246a9f73bbdd39300f, type: 3}
-  - {fileID: 8300000, guid: 3a5154420c82d6a4d9a3f5e07fecb10d, type: 3}
+  - {fileID: 8300000, guid: 4d9df1b96adab264c8f84a9168ed5c6b, type: 3}
+  - {fileID: 8300000, guid: 1e6f675ffbbabd441a31b37069647a6c, type: 3}
   - {fileID: 8300000, guid: 488dc2dbd8d12d044ae1a62414ac5950, type: 3}
   - {fileID: 8300000, guid: dc9d7b009f93f1f46b8a8958d023aca1, type: 3}
   - {fileID: 8300000, guid: 66fb4352078aaf64e90a0eb8d173d7b9, type: 3}
@@ -32,12 +33,19 @@ MonoBehaviour:
   - {fileID: 8300000, guid: d89555ea8353d6a428462d5bb5e39b77, type: 3}
   - {fileID: 8300000, guid: f97b77cd52305c8488a25839a5a9ec87, type: 3}
   - {fileID: 8300000, guid: 47d4582eea7b72540a94b351450292d6, type: 3}
+  - {fileID: 8300000, guid: 3246ab764ce9deb41ab089f714999311, type: 3}
   menuMove: {fileID: 8300000, guid: f81f55d27c305a14bbed3f4c07877fce, type: 3}
   menuSelect: {fileID: 8300000, guid: 7b412cd8c0b9cf846b957ba4d69592ab, type: 3}
   menuBack: {fileID: 8300000, guid: c577f354cd732894ba3f45f55927bcf3, type: 3}
+  menuOpen: {fileID: 0}
+  menuClose: {fileID: 0}
   storeMove: {fileID: 8300000, guid: a50eb66abf680dc4a8808b6f9db2a0d0, type: 3}
   storeSelect: {fileID: 8300000, guid: f633b248d7ecec54aa73e225dd5b1401, type: 3}
   storeDenied: {fileID: 0}
+  storeOpen: {fileID: 0}
+  storeClose: {fileID: 0}
+  rampOpen: {fileID: 0}
+  rampClose: {fileID: 0}
   turboCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
   turboCrafted: {fileID: 8300000, guid: b5a5414855fb088418da1b06091ad2d8, type: 3}
   jetCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
@@ -68,6 +76,8 @@ MonoBehaviour:
   portalDespawn: {fileID: 0}
   boostGateSpawn: {fileID: 8300000, guid: f1e18f5db1a870e4280daeeb52856e2e, type: 3}
   boostGateBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
+  windowsEnter: {fileID: 8300000, guid: 715e88a89fdaa8845b65e26718100cb2, type: 3}
+  windowsExit: {fileID: 8300000, guid: 715e88a89fdaa8845b65e26718100cb2, type: 3}
   victoryBanner: {fileID: 0}
   speedBarrierBreak: {fileID: 8300000, guid: 8976a3c01be38bb45b9298f7b61f7514, type: 3}
   speedBarrierBreakVolume: 0.5

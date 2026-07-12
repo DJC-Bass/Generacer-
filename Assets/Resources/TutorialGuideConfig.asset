@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d1f4a9c2e6b48035a1c9e7b3d6f0284, type: 3}
+  m_Name: TutorialGuideConfig
+  m_EditorClassIdentifier: 
+  sceneName: Tutorial
+  messageDuration: 6
+  messages:
+  - Welcome Generacer. If you're reading this, that mean's you've been selected to
+    participate in our race war. Here's a short guide to get you set up with the
+    basics..
+  - We believe in trial by fire, Right trigger drives and the Left Trigger reverses.
+    Use the left control stick to steer and press X to brake (optional).
+  - Right trigger + X(Brake) to Drift. You can also Drift to pick up speed.
+  - 'You can drift in the air with Left Control Stick, fastfall with X and also rotate
+    the car up and down with the Right Control Stick. '
+  - Press B to Turbo and A to Jump(Jet)
+  - Turbo and Jet are free here, but you will need to purchase and craft them on
+    the field.
+  - 'When you begin the race, you''ll need to reach the end of the Track first to
+    win an SD Card. '
+  - 'Each SD Card grants a special ability you can activate/deactivate with Up on
+    the Dpad (We don''t have any here because you haven''t won one yet). Some of
+    them are pricey to use I hear. '
+  - 'If you have more than one SD Card, you can switch between them with left or
+    right on the DPad. '
+  - 'To prove you''re the best, you or your team will need to win 3 SDs to defeat
+    the enemy bots also racing for SD Cards. '
+  - 'The Bots have already won an SD Card I hear, so they only need 2 more to defeat
+    you. I don''t know what will happen if they collect all 3, so don''t lose! '
+  - 'Only one team can win it all, and we hope it''s you. Good luck Generacer! '
+  messageFontSize: 40
+  messageColor: {r: 1, g: 1, b: 1, a: 1}
+  panelColor: {r: 0, g: 0, b: 0, a: 0.89411765}
+  hintFontSize: 24
+  hintColor: {r: 1, g: 1, b: 1, a: 0.6}
+  topOffset: 120
+  panelSize: {x: 1500, y: 200}

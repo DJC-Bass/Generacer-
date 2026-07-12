@@ -20,6 +20,10 @@ As of the last read of `Assets/Resources/AudioLibrary.asset`:
 - `storeDenied` — 2D buzzer when a store purchase is rejected (can't afford / at max owned) (added after this handoff)
 - `loopBoost` — 3D one-shot at the car when the Loop Speed Multiplier engages entering a loop (added after this handoff)
 - `speedBarrierBreak`, `speedBarrierLeave` — 3D one-shots (ride the car, bypass the broken-barrier low-pass muffle) when the player crosses 750 mph / drops back below 700 mph (added after this handoff)
+- `tutorialMusic` — looping 2D theme for the Tutorial scene (added after this handoff)
+- `menuOpen`, `menuClose` — 2D one-shots when a full-screen menu (Start menu / Inventory) opens & closes (added after this handoff)
+- `storeOpen`, `storeClose`, `rampOpen`, `rampClose` — 2D one-shots when the Store / Upgrade-Ramp menus open & close (each its own pair) (added after this handoff)
+- `windowsEnter`, `windowsExit` — 3D one-shots when the PlayerCar enters/exits the Windows prefab's trigger (via `WindowsAudio` on the box collider) (added after this handoff)
 
 Everything else is assigned. **Two slots currently reuse a placeholder clip** and may want distinct sounds:
 - `turboCraftLoop` and `jetCraftLoop` share the same clip.

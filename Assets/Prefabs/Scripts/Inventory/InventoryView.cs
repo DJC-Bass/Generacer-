@@ -58,6 +58,7 @@ public class InventoryView : MonoBehaviour
         root.SetActive(true);
         isOpen = true;
         MenuState.AnyOpen = true;
+        AudioManager.PlayMenuOpen();
     }
 
     void Close()
@@ -65,6 +66,7 @@ public class InventoryView : MonoBehaviour
         if (root != null) root.SetActive(false);
         isOpen = false;
         MenuState.AnyOpen = false;
+        AudioManager.PlayMenuClose();
     }
 
     void Refresh()

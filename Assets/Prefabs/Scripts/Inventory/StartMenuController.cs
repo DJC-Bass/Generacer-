@@ -28,6 +28,11 @@ public class StartMenuController : MonoBehaviour
     [Tooltip("Scene QUIT returns to.")]
     public string mainMenuSceneName = "MainMenu";
 
+    [Tooltip("Scenes beyond the gameplay set (HubWorld / TrackScene / endings) where Start can open " +
+             "this menu — e.g. the Tutorial, which deliberately has no HUDs or game loop but still " +
+             "wants the menu so the player can quit out.")]
+    public string[] extraScenes = { "Tutorial" };
+
     private StartMenuConfig cfg;
 
     private GameObject root;
@@ -38,6 +43,8 @@ public class StartMenuController : MonoBehaviour
 
     private Button audioBtn, controlsBtn, settingsBtn;
     private GameObject audioPanel, controlsPanel, settingsPanel;
+    private Button tutorialToggleBtn;                // SETTINGS: flips the Tutorial guide on/off
+    private TextMeshProUGUI tutorialToggleLabel;
     private GameObject currentSub;             // null = on the main list
     private GameObject subReturnButton;        // main button to re-focus when backing out of a sub
 
@@ -62,11 +69,12 @@ public class StartMenuController : MonoBehaviour
         var gp = Gamepad.current;
         if (gp == null) return;
 
-        // Start toggles the menu. Only open while in a gameplay scene and no other menu is up.
+        // Start toggles the menu. Only open while in a gameplay scene (or a listed extra scene,
+        // like the Tutorial) and no other menu is up.
         if (gp.startButton.wasPressedThisFrame)
         {
             if (isOpen) Close();
-            else if (!MenuState.AnyOpen && GameplayHud.VisibleInScene(SceneManager.GetActiveScene().name)) Open();
+            else if (!MenuState.AnyOpen && MenuAvailableInScene(SceneManager.GetActiveScene().name)) Open();
             return;
         }
 
@@ -97,6 +105,18 @@ public class StartMenuController : MonoBehaviour
         MenuNavigation.PlayMoveSfxOnSelectionChange(ref lastSelectedForSfx);
     }
 
+    /// <summary>The menu opens in every gameplay scene (the shared HUD rule) plus any scene listed in
+    /// <see cref="extraScenes"/> — kept separate so adding the Tutorial here doesn't also switch on
+    /// the HUDs and car swapper, which reuse the HUD rule.</summary>
+    bool MenuAvailableInScene(string sceneName)
+    {
+        if (GameplayHud.VisibleInScene(sceneName)) return true;
+        if (extraScenes != null)
+            foreach (var s in extraScenes)
+                if (s == sceneName) return true;
+        return false;
+    }
+
     void Open()
     {
         EnsureUI();
@@ -105,6 +125,7 @@ public class StartMenuController : MonoBehaviour
         MenuState.AnyOpen = true;   // stop A/B from also jumping/turbo-ing the car (game still runs)
         subReturnButton = null;
         ShowMain();
+        AudioManager.PlayMenuOpen();
     }
 
     void Close()
@@ -113,6 +134,7 @@ public class StartMenuController : MonoBehaviour
         isOpen = false;
         currentSub = null;
         MenuState.AnyOpen = false;
+        AudioManager.PlayMenuClose();
     }
 
     // -------------------------------------------------------
@@ -137,7 +159,8 @@ public class StartMenuController : MonoBehaviour
 
     /// <summary>Opens a sub-screen (AUDIO/CONTROLS/SETTINGS). B returns to the list and re-focuses
     /// the button that opened it. Sub-screens are placeholders for now — fill them in later.</summary>
-    void OpenSub(GameObject panel, string title, GameObject returnButton)
+    void OpenSub(GameObject panel, string title, GameObject returnButton,
+                 GameObject focus = null, string hint = "B: Back")
     {
         currentSub = panel;
         subReturnButton = returnButton;
@@ -148,10 +171,11 @@ public class StartMenuController : MonoBehaviour
         if (settingsPanel != null) settingsPanel.SetActive(panel == settingsPanel);
 
         if (titleText != null) titleText.text = title;
-        if (hintText != null) hintText.text = "B: Back";
+        if (hintText != null) hintText.text = hint;
 
-        // Placeholder panels have nothing to navigate; B (handled in Update) returns to the list.
-        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+        // Focus the panel's first control — null for placeholder panels, which have nothing to
+        // navigate; either way B (handled in Update) returns to the list.
+        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(focus);
     }
 
     // -------------------------------------------------------
@@ -161,7 +185,26 @@ public class StartMenuController : MonoBehaviour
     void OnResume() => Close();
     void OnAudio() => OpenSub(audioPanel, "AUDIO", audioBtn != null ? audioBtn.gameObject : null);
     void OnControls() => OpenSub(controlsPanel, "CONTROLS", controlsBtn != null ? controlsBtn.gameObject : null);
-    void OnSettings() => OpenSub(settingsPanel, "SETTINGS", settingsBtn != null ? settingsBtn.gameObject : null);
+
+    void OnSettings()
+    {
+        RefreshTutorialToggleLabel();   // reflect the current preference before showing the toggle
+        OpenSub(settingsPanel, "SETTINGS", settingsBtn != null ? settingsBtn.gameObject : null,
+                tutorialToggleBtn != null ? tutorialToggleBtn.gameObject : null,
+                "A: Toggle     B: Back");
+    }
+
+    void OnToggleTutorialGuide()
+    {
+        TutorialSettings.GuideEnabled = !TutorialSettings.GuideEnabled;
+        RefreshTutorialToggleLabel();
+    }
+
+    void RefreshTutorialToggleLabel()
+    {
+        if (tutorialToggleLabel != null)
+            tutorialToggleLabel.text = "Tutorial Tips: " + (TutorialSettings.GuideEnabled ? "ON" : "OFF");
+    }
 
     void OnQuit()
     {
@@ -221,7 +264,7 @@ public class StartMenuController : MonoBehaviour
 
         audioPanel = BuildSubPanel(root.transform, "Audio settings coming soon.");
         controlsPanel = BuildSubPanel(root.transform, "Controls settings coming soon.");
-        settingsPanel = BuildSubPanel(root.transform, "Settings coming soon.");
+        settingsPanel = BuildSettingsPanel(root.transform);
 
         hintText = NewText(root.transform, "Hint", cfg.hintFontSize, TextAlignmentOptions.Center);
         hintText.color = cfg.hintColor;
@@ -256,6 +299,33 @@ public class StartMenuController : MonoBehaviour
 
         // Vertical wrap navigation: Up at the top goes to the bottom, Down at the bottom to the top.
         MenuNavigation.WireVerticalWrap(new[] { resume, audioBtn, controlsBtn, settingsBtn, quit });
+    }
+
+    /// <summary>The SETTINGS sub-screen: a single toggle for the Tutorial scene's on-screen tips
+    /// (A flips it). Built like the main list so gamepad focus + A/B work; more toggles can be added
+    /// to the same column later.</summary>
+    GameObject BuildSettingsPanel(Transform parent)
+    {
+        var go = NewUI("SettingsPanel", parent);
+        SetCentered(go.GetComponent<RectTransform>(), new Vector2(cfg.buttonSize.x, 100f),
+                    new Vector2(0f, cfg.buttonColumnY));
+
+        var vlg = go.AddComponent<VerticalLayoutGroup>();
+        vlg.spacing = cfg.buttonSpacing;
+        vlg.childAlignment = TextAnchor.MiddleCenter;
+        vlg.childControlWidth = true; vlg.childControlHeight = true;
+        vlg.childForceExpandWidth = false; vlg.childForceExpandHeight = false;
+
+        var fitter = go.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        tutorialToggleBtn = CreateButton("TutorialToggle", go.transform, OnToggleTutorialGuide);
+        tutorialToggleLabel = tutorialToggleBtn.GetComponentInChildren<TextMeshProUGUI>();
+        RefreshTutorialToggleLabel();   // sets the real "Tutorial Tips: ON/OFF" text (panel is hidden here)
+
+        go.SetActive(false);
+        return go;
     }
 
     GameObject BuildSubPanel(Transform parent, string placeholder)

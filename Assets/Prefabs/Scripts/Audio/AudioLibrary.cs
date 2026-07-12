@@ -14,6 +14,8 @@ public class AudioLibrary : ScriptableObject
     public AudioClip mainMenuMusic;
     [Tooltip("Looping song for the Car Selection scene (its own track, separate from the Main Menu).")]
     public AudioClip carSelectionMusic;
+    [Tooltip("Looping song for the Tutorial scene.")]
+    public AudioClip tutorialMusic;
     [Tooltip("Looping song for the HUB world.")]
     public AudioClip hubMusic;
     [Tooltip("Looping song that REPLACES the hub theme while the game-over Drone ending is active.")]
@@ -35,6 +37,10 @@ public class AudioLibrary : ScriptableObject
     public AudioClip menuSelect;
     [Tooltip("Played when backing out of a selection or sub-screen (B / Cancel).")]
     public AudioClip menuBack;
+    [Tooltip("Played when a full-screen menu OPENS (Start menu, Inventory). Shared across those menus.")]
+    public AudioClip menuOpen;
+    [Tooltip("Played when a full-screen menu CLOSES (Start menu, Inventory). Shared across those menus.")]
+    public AudioClip menuClose;
 
     [Header("Store SFX (separate from the main-menu buttons)")]
     [Tooltip("Played when the highlighted store row changes (navigating up/down).")]
@@ -44,8 +50,16 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("Played when a store purchase is REJECTED — the player can't afford it or already " +
              "owns the maximum allowed of that item.")]
     public AudioClip storeDenied;
+    [Tooltip("Played when the Store menu opens (car drives into the store).")]
+    public AudioClip storeOpen;
+    [Tooltip("Played when the Store menu closes (B, or the car drives out).")]
+    public AudioClip storeClose;
 
     [Header("Upgrade Ramp SFX")]
+    [Tooltip("Played when the Upgrade Ramp menu opens (car drives onto the ramp).")]
+    public AudioClip rampOpen;
+    [Tooltip("Played when the Upgrade Ramp menu closes (B, or the car drives off).")]
+    public AudioClip rampClose;
     [Tooltip("Looping sound while a Turbo is being crafted on the ramp — plays with the progress bar " +
              "and cuts when it stops (release / cancel / close).")]
     public AudioClip turboCraftLoop;
@@ -112,6 +126,12 @@ public class AudioLibrary : ScriptableObject
     public AudioClip boostGateSpawn;
     [Tooltip("Played (3D, at the gate) when the player car drives through the gate and receives the boost.")]
     public AudioClip boostGateBoost;
+
+    [Header("Windows SFX")]
+    [Tooltip("One-shot (3D) when the player car ENTERS the Windows trigger volume.")]
+    public AudioClip windowsEnter;
+    [Tooltip("One-shot (3D) when the player car EXITS the Windows trigger volume.")]
+    public AudioClip windowsExit;
 
     [Header("Player Victory SFX")]
     [Tooltip("One-shot (2D — screen UI) played when the BOTS DEFEATED banner begins fading in.")]

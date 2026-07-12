@@ -23,6 +23,9 @@ public class StoreItemDef
     public string grantItem = "";
     [Tooltip("How many of the granted item one purchase gives. e.g. 5 for a pack.")]
     public int grantAmount = 1;
+    [Tooltip("Shown in the store's info line while this row is highlighted. Keep it short — a " +
+             "sentence or two describing what the item does.")]
+    [TextArea] public string description = "";
 
     /// <summary>The item name actually added to the inventory on purchase.</summary>
     public string GrantedName => string.IsNullOrEmpty(grantItem) ? itemName : grantItem;
@@ -51,12 +54,17 @@ public class StoreController : MonoBehaviour
     [Header("Items For Sale (listed top to bottom)")]
     public List<StoreItemDef> items = new List<StoreItemDef>
     {
-        new StoreItemDef { itemName = "Turbo Canister", price = 0, maxOwned = 8 },
-        new StoreItemDef { itemName = "Jet Pack",       price = 0, maxOwned = 4 },
-        new StoreItemDef { itemName = "Turbo Juice",    price = 0, maxOwned = 0 },
+        new StoreItemDef { itemName = "Turbo Canister", price = 0, maxOwned = 8,
+                           description = "A Turbo charge. Activate it on the track for a burst of speed." },
+        new StoreItemDef { itemName = "Jet Pack",       price = 0, maxOwned = 4,
+                           description = "A Jet charge. Press Jump to launch your car into the air." },
+        new StoreItemDef { itemName = "Turbo Juice",    price = 0, maxOwned = 0,
+                           description = "Extra Turbo fuel to keep the boosts coming." },
         new StoreItemDef { itemName = "Jet Fuel Pack",  price = 0, maxOwned = 0,
-                           grantItem = "Jet Fuel", grantAmount = 5 },
-        new StoreItemDef { itemName = "LRA",            price = 0, maxOwned = 0 },
+                           grantItem = "Jet Fuel", grantAmount = 5,
+                           description = "A pack of 5 Jet Fuel." },
+        new StoreItemDef { itemName = "LRA",            price = 0, maxOwned = 0,
+                           description = "Abort a race safely, keeping your inventory (hold L + R + A on the track)." },
     };
 
     [Header("Economy")]
@@ -88,6 +96,14 @@ public class StoreController : MonoBehaviour
     private bool isOpen;
     private int selected;
     private float feedbackUntil;
+    // The info line (bottom of the panel) normally shows the highlighted item's description; a
+    // purchase result takes it over transiently, then it reverts to the (possibly newly-selected)
+    // item's description.
+    private int shownDescIndex = -1;      // which item's description is currently drawn (-1 = none yet)
+    private bool infoShowingMessage;      // true while a transient purchase message owns the info line
+    private readonly Color infoDescriptionColor = new Color(0.85f, 0.86f, 0.92f);
+    private readonly Color infoSuccessColor = new Color(0.6f, 1f, 0.6f);    // "Bought X"
+    private readonly Color infoFailColor = new Color(1f, 0.45f, 0.4f);      // "Not enough credits" / "Max owned"
     // Set when the player closes with B while still inside, so the menu doesn't
     // immediately auto-reopen. Cleared only when the car fully leaves the trigger.
     private bool suppressedUntilExit;
@@ -166,6 +182,10 @@ public class StoreController : MonoBehaviour
         // Safety: if the car rolled out without an exit event, close.
         if (!PlayerInside) { Close(); return; }
 
+        // Keep the info line current (item description, or a purchase message until it expires).
+        // Runs before the gamepad check so the description still shows when idle / no pad connected.
+        UpdateInfoText();
+
         var gp = Gamepad.current;
         if (gp == null) return;
 
@@ -181,10 +201,37 @@ public class StoreController : MonoBehaviour
         // A buys the highlighted row.
         if (gp.buttonSouth.wasPressedThisFrame)
             Purchase();
+    }
 
-        // Clear transient feedback text.
-        if (feedbackText != null && Time.unscaledTime > feedbackUntil)
-            feedbackText.text = "";
+    /// <summary>Drives the bottom info line: a transient purchase message owns it until it expires,
+    /// otherwise it shows the highlighted item's description. Only rewrites when the shown item
+    /// changes (or a message just cleared), so it isn't rebuilding the text every frame — and when a
+    /// message clears it picks up whatever item is selected NOW (even if navigated during the message).</summary>
+    void UpdateInfoText()
+    {
+        if (feedbackText == null) return;
+
+        if (Time.unscaledTime <= feedbackUntil)
+        {
+            infoShowingMessage = true;   // message is showing; leave it as ShowFeedback set it
+            return;
+        }
+
+        if (infoShowingMessage || shownDescIndex != selected)
+        {
+            infoShowingMessage = false;
+            shownDescIndex = selected;
+            feedbackText.color = infoDescriptionColor;
+            feedbackText.text = CurrentDescription();
+        }
+    }
+
+    /// <summary>Description of the currently highlighted item (empty if none / out of range).</summary>
+    string CurrentDescription()
+    {
+        if (items == null || items.Count == 0) return "";
+        int i = Mathf.Clamp(selected, 0, items.Count - 1);
+        return items[i] != null && items[i].description != null ? items[i].description : "";
     }
 
     void Move(int dir)
@@ -207,26 +254,28 @@ public class StoreController : MonoBehaviour
         if (ok)
         {
             AudioManager.PlayStoreSelect();          // confirm chime only on a successful buy
-            ShowFeedback($"Bought {def.itemName}");
+            ShowFeedback($"Bought {def.itemName}", infoSuccessColor);
         }
         else
         {
             AudioManager.PlayStoreDenied();          // rejected: can't afford, or already at max
             int owned = inv.GetCount(def.GrantedName);
             if (def.maxOwned > 0 && owned + amount > def.maxOwned)
-                ShowFeedback("Max owned");
+                ShowFeedback("Max owned", infoFailColor);
             else
-                ShowFeedback("Not enough credits");
+                ShowFeedback("Not enough credits", infoFailColor);
         }
 
         RefreshRows();
     }
 
-    void ShowFeedback(string msg)
+    void ShowFeedback(string msg, Color color)
     {
         if (feedbackText == null) return;
+        feedbackText.color = color;
         feedbackText.text = msg;
         feedbackUntil = Time.unscaledTime + 1.5f;
+        infoShowingMessage = true;   // UpdateInfoText reverts to the description once this expires
     }
 
     // -------------------------------------------------------
@@ -237,10 +286,19 @@ public class StoreController : MonoBehaviour
     {
         EnsureUI();
         selected = Mathf.Clamp(selected, 0, Mathf.Max(0, items.Count - 1));
+
+        // Start clean: no stale purchase message from a previous visit, and force the description to
+        // draw for the current selection.
+        feedbackUntil = 0f;
+        infoShowingMessage = false;
+        shownDescIndex = -1;
+
         RefreshRows();
+        UpdateInfoText();
         root.SetActive(true);
         isOpen = true;
         MenuState.AnyOpen = true;
+        AudioManager.PlayStoreOpen();
     }
 
     void Close()
@@ -248,6 +306,7 @@ public class StoreController : MonoBehaviour
         if (root != null) root.SetActive(false);
         isOpen = false;
         MenuState.AnyOpen = false;
+        AudioManager.PlayStoreClose();
     }
 
     // If the hub scene unloads (e.g. entering the track portal) while the menu is
@@ -304,7 +363,7 @@ public class StoreController : MonoBehaviour
         const float panelWidth = 760f;
         const float rowHeight = 64f;
         const float headerHeight = 130f;
-        const float footerHeight = 90f;
+        const float footerHeight = 150f;   // taller: the info line can run to ~2 lines of description
         float panelHeight = headerHeight + items.Count * rowHeight + footerHeight;
 
         root = new GameObject("StoreCanvas");
@@ -361,13 +420,18 @@ public class StoreController : MonoBehaviour
             rowPrices.Add(priceTxt);
         }
 
-        // Feedback line (above footer)
-        feedbackText = NewText(panel.transform, "Feedback", 28, TextAlignmentOptions.Bottom);
-        feedbackText.color = new Color(0.6f, 1f, 0.6f);
+        // Info line (above the footer): shows the highlighted item's description, or a transient
+        // purchase message. Word-wrap + auto-size so a longer description fits without clipping.
+        feedbackText = NewText(panel.transform, "Info", 28, TextAlignmentOptions.Center);
+        feedbackText.color = infoDescriptionColor;
+        feedbackText.enableWordWrapping = true;
+        feedbackText.enableAutoSizing = true;
+        feedbackText.fontSizeMin = 18f;
+        feedbackText.fontSizeMax = 28f;
         var frt = feedbackText.rectTransform;
         frt.anchorMin = frt.anchorMax = frt.pivot = new Vector2(0.5f, 0f);
-        frt.sizeDelta = new Vector2(panelWidth - 60f, 40f);
-        frt.anchoredPosition = new Vector2(0f, 56f);
+        frt.sizeDelta = new Vector2(panelWidth - 60f, 72f);
+        frt.anchoredPosition = new Vector2(0f, 60f);
 
         // Hint footer
         var hint = NewText(panel.transform, "Hint", 26, TextAlignmentOptions.Bottom);
