@@ -50,6 +50,9 @@ public class ReturnPortalTrigger : MonoBehaviour
 
     void ReturnToHub()
     {
+        // Arm the "portal exit" sound to play once the destination scene loads (hub or special ending).
+        AudioManager.ArmPortalExit();
+
         // Reward the player for completing the track BEFORE the manager ends the round.
         AwardCompletionCredits();
 

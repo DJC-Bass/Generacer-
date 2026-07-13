@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -35,6 +36,11 @@ public class AudioManager : MonoBehaviour
     private bool interiorActive;            // player currently inside an interior zone
     private float interiorBlend;            // 0 = scene music only, 1 = interior music only
     private float musicBaseVolume = 0.6f;   // intended music level; the crossfade splits it between the two sources
+
+    // Armed by a portal just before it loads its destination scene; consumed once on arrival to play
+    // the 3D "portal exit" sound at the player's spawn point. Static so the portal can set it without
+    // touching the instance, and so it survives the scene load.
+    private static bool portalExitPending;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
@@ -86,7 +92,42 @@ public class AudioManager : MonoBehaviour
     // starting scene's music policy once here. PlayMusic is idempotent, so a double-call is harmless.
     void Start() => ApplyMusicForScene(SceneManager.GetActiveScene().name);
 
-    void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyMusicForScene(scene.name);
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        ApplyMusicForScene(scene.name);
+
+        // Portals only lead to gameplay scenes; the arriving player car plays the "portal exit" sound
+        // off itself (PortalExitAudio) when it spawns. If we reach a NON-gameplay scene (a menu) with
+        // the flag still armed — e.g. a portal led to a car-less ending — clear it so a later car
+        // spawn can't play a stale portal-exit.
+        if (portalExitPending && !GameplayHud.VisibleInScene(scene.name))
+            portalExitPending = false;
+    }
+
+    /// <summary>Arms the one-shot 3D "portal exit" sound. Call from a portal right before it loads its
+    /// destination scene; the arriving player car (PortalExitAudio) consumes it on spawn.</summary>
+    public static void ArmPortalExit() => portalExitPending = true;
+
+    /// <summary>If the player just arrived via a portal, plays the Portal Exit sound off the given
+    /// emitter (the player car — like the speed-barrier stingers) and clears the pending flag. Called
+    /// by PortalExitAudio on the car prefab when it spawns into a scene.</summary>
+    public static void TryPlayPortalExit(Transform emitter)
+    {
+        if (!portalExitPending) return;
+        portalExitPending = false;
+        PlayPortalExit(emitter);
+    }
+
+    /// <summary>Plays the Portal Exit sound off the given emitter UNCONDITIONALLY (no pending-flag
+    /// check). Used by the Drone-ending swarm, where each drone spawning at the portal is itself a
+    /// portal exit.</summary>
+    public static void PlayPortalExit(Transform emitter)
+    {
+        if (Instance == null || emitter == null) return;
+        var lib = Instance.Library;
+        if (lib == null || lib.portalExit == null) return;
+        Instance.PlaySfxFollow(lib.portalExit, emitter, lib.portalExitAudio3D, false, lib.portalExitVolume);
+    }
 
     // Crossfades the scene music and the interior override every frame. Both sources share
     // musicBaseVolume; interiorBlend eases toward 1 while inside an interior zone and back to 0 outside.

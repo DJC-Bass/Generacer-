@@ -26,6 +26,9 @@ public class HubSceneController : MonoBehaviour
     public GameObject droneCarPrefab;
     [Tooltip("Drones spawned per second during the Drone ending.")]
     public float droneEndingSpawnRate = 5f;
+    [Tooltip("Random variance on the spawn interval — each gap is the base interval ± this fraction, " +
+             "so drones don't pour out in a perfectly even rhythm. 0 = no jitter, 0.5 = ±50%.")]
+    [Range(0f, 1f)] public float droneEndingSpawnRateJitter = 0.3f;
     [Tooltip("Total drones spawned over the Drone ending (the swarm cap).")]
     public int droneEndingMaxDrones = 30;
     [Tooltip("Random horizontal scatter around the portal so spawned drones don't stack exactly (units).")]
@@ -162,11 +165,15 @@ public class HubSceneController : MonoBehaviour
             yield break;
         }
 
-        var wait = new WaitForSeconds(1f / Mathf.Max(0.1f, droneEndingSpawnRate));
+        float baseInterval = 1f / Mathf.Max(0.1f, droneEndingSpawnRate);
         for (int i = 0; i < droneEndingMaxDrones; i++)
         {
             SpawnChasingDrone();
-            yield return wait;
+
+            // Jitter the gap so the swarm doesn't pour out in a perfectly even rhythm.
+            float jitter = baseInterval * droneEndingSpawnRateJitter;
+            float wait = Mathf.Max(0f, baseInterval + Random.Range(-jitter, jitter));
+            yield return new WaitForSeconds(wait);
         }
     }
 
@@ -180,6 +187,9 @@ public class HubSceneController : MonoBehaviour
 
         int layer = LayerMask.NameToLayer(droneLayerName);
         if (layer >= 0) SetLayerRecursively(drone, layer);
+
+        // Each drone pours out of the portal — play the Portal Exit sound off it as it spawns.
+        AudioManager.PlayPortalExit(drone.transform);
 
         var dc = drone.GetComponent<DroneCar>();
         if (dc != null) dc.BeginChase();

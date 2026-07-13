@@ -74,8 +74,17 @@ MonoBehaviour:
   sdDeactivate: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
   portalSpawn: {fileID: 8300000, guid: ff7151e3a28596a41823d4821044db5d, type: 3}
   portalActiveLoop: {fileID: 8300000, guid: 38f994c7e40032e438d4148ba8f01be3, type: 3}
-  portalCollision: {fileID: 8300000, guid: 22e8f9eeff8b36e439b0891ff4ff4428, type: 3}
+  portalCollision: {fileID: 8300000, guid: fc99b4f8371f42445925592f12dfa877, type: 3}
   portalDespawn: {fileID: 0}
+  portalExit: {fileID: 8300000, guid: 12bf71c444dcf564b926be9a0b5f45b5, type: 3}
+  portalExitVolume: 0.5
+  portalExitAudio3D:
+    spatialBlend: 1
+    volume: 1
+    minDistance: 500
+    maxDistance: 1000
+    rolloffMode: 1
+    dopplerLevel: 0
   boostGateSpawn: {fileID: 8300000, guid: 59fa3e66e270fea4cbf8accca5c2758d, type: 3}
   boostGateBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   windowsEnter: {fileID: 8300000, guid: 715e88a89fdaa8845b65e26718100cb2, type: 3}

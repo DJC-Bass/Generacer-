@@ -125,6 +125,15 @@ public class AudioLibrary : ScriptableObject
     public AudioClip portalCollision;
     [Tooltip("Played (3D) when a portal despawns (e.g. it times out) — NOT when the player travels through it.")]
     public AudioClip portalDespawn;
+    [Tooltip("One-shot (3D, at the player's arrival point) played at the START of the next scene after " +
+             "the player travels through ANY portal — the 'exiting the portal' sound.")]
+    public AudioClip portalExit;
+    [Range(0f, 1f)] [Tooltip("Master volume for the Portal Exit sound. Scales on top of the global SFX " +
+             "level AND the 3D block's own volume below — leave that at 1 and use this as the main knob.")]
+    public float portalExitVolume = 1f;
+    [Tooltip("3D playback tuning for the Portal Exit sound — spatial blend, volume, min/max distance, " +
+             "rolloff, doppler.")]
+    public Spatial3DSettings portalExitAudio3D = new Spatial3DSettings();
 
     [Header("Boost Gate SFX")]
     [Tooltip("Played (3D, at the gate) when a Boost Gate spawns in the hub.")]

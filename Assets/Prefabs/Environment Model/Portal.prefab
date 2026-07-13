@@ -257,7 +257,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PortalAudio
   spatial:
     spatialBlend: 1
-    volume: 0.9
+    volume: 0.5
     minDistance: 1000
     maxDistance: 2000
     rolloffMode: 1

@@ -71,6 +71,9 @@ public class PortalTrigger : MonoBehaviour
         // Brief pause so the player feels the portal "activate"
         yield return new WaitForSeconds(activationDelay);
 
+        // Arm the "portal exit" sound to play once the destination scene loads (either branch below).
+        AudioManager.ArmPortalExit();
+
         // Secret ending: reaching this hub portal DURING the game-over Drone ending escapes to a
         // special scene (by name) instead of loading the normal track. Falls through to the normal
         // track load if that scene isn't in Build Settings, so a misconfig can't strand the player.

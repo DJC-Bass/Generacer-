@@ -1164,6 +1164,7 @@ GameObject:
   - component: {fileID: 3071063960551978548}
   - component: {fileID: 272028573550546906}
   - component: {fileID: 4322009895405194616}
+  - component: {fileID: 3685982250269731129}
   m_Layer: 11
   m_Name: 'S-Sen7[Black_White]'
   m_TagString: Player
@@ -1350,6 +1351,18 @@ MonoBehaviour:
   responsiveness: 6
   spatialBlend: 1
   maxDistance: 60
+--- !u!114 &3685982250269731129
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9203637246216865349}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e7b2c4a9d1f3486085c2b4d6e8f0a137, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PortalExitAudio
 --- !u!1001 &7762281340862831149
 PrefabInstance:
   m_ObjectHideFlags: 0
