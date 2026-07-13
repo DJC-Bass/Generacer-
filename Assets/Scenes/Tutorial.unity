@@ -568,7 +568,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: fanCount
-      value: 100
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: maxScale
@@ -692,7 +692,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: fanCount
-      value: 100
+      value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: maxScale
@@ -1210,7 +1210,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: fanCount
-      value: 100
+      value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: maxScale
@@ -1384,7 +1384,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: fanCount
-      value: 100
+      value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 2271192585968625419, guid: 4b8eb17d93211d2429b5cf9c874ffe41, type: 3}
       propertyPath: maxScale

@@ -586,7 +586,7 @@ GameObject:
   - component: {fileID: 402971569}
   - component: {fileID: 402971568}
   - component: {fileID: 402971567}
-  m_Layer: 0
+  m_Layer: 15
   m_Name: Speedcheck (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1925,7 +1925,7 @@ GameObject:
   - component: {fileID: 1142921959}
   - component: {fileID: 1142921958}
   - component: {fileID: 1142921960}
-  m_Layer: 0
+  m_Layer: 15
   m_Name: Speedcheck
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4575,6 +4575,18 @@ PrefabInstance:
     - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
       propertyPath: rideHeight
       value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      propertyPath: jetItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      propertyPath: turboItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
+      propertyPath: groundMask.m_Bits
+      value: 32567
       objectReference: {fileID: 0}
     - target: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
       propertyPath: m_Name

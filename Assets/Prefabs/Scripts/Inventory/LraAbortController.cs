@@ -48,11 +48,19 @@ public class LraAbortController : MonoBehaviour
     private float holdTimer;
     private GameObject barRoot;
     private RectTransform fillRect;
+    private AudioSource lraLoopSource;   // looping "activating" sound while the L+R+A combo is held
 
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(this); return; }
         Instance = this;
+
+        // 2D looping "charge" sound for the hold — the progress bar it accompanies is screen UI.
+        lraLoopSource = gameObject.AddComponent<AudioSource>();
+        lraLoopSource.loop = true;
+        lraLoopSource.playOnAwake = false;
+        lraLoopSource.spatialBlend = 0f;
+
         BuildUI();
         HideBar();
     }
@@ -66,6 +74,7 @@ public class LraAbortController : MonoBehaviour
         {
             holdTimer += Time.deltaTime;
             ShowBar(holdTimer / holdDuration);
+            StartLoop();
 
             if (holdTimer >= holdDuration)
                 CompleteAbort();
@@ -75,7 +84,31 @@ public class LraAbortController : MonoBehaviour
             // Releasing any part of the combo resets the hold from scratch.
             holdTimer = 0f;
             HideBar();
+            StopLoop();
         }
+    }
+
+    void StartLoop()
+    {
+        if (lraLoopSource == null) return;
+
+        // Fetch the clip lazily — AudioManager may bootstrap after us.
+        if (lraLoopSource.clip == null)
+        {
+            var lib = AudioManager.Instance != null ? AudioManager.Instance.Library : null;
+            if (lib != null) lraLoopSource.clip = lib.lraActivateLoop;
+        }
+
+        if (lraLoopSource.clip != null && !lraLoopSource.isPlaying)
+        {
+            lraLoopSource.volume = AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 0.9f;
+            lraLoopSource.Play();
+        }
+    }
+
+    void StopLoop()
+    {
+        if (lraLoopSource != null && lraLoopSource.isPlaying) lraLoopSource.Stop();
     }
 
     bool IsInTrack()
@@ -103,12 +136,17 @@ public class LraAbortController : MonoBehaviour
     {
         holdTimer = 0f;
         HideBar();
+        StopLoop();
 
         // Spend the LRA. If it somehow vanished mid-hold, bail without leaving.
         var inv = PlayerInventory.Instance;
         if (inv == null || !inv.Consume(lraItemName, 1)) return;
 
         Debug.Log("[LRA] Race aborted — returning to hub with inventory intact");
+
+        // Play the Portal Exit sound off the player car when it lands back in the hub, same as a real
+        // portal return (the car's PortalExitAudio consumes this on spawn).
+        AudioManager.ArmPortalExit();
 
         // End the round with NO reward and NO inventory reset, then load the hub.
         // (Kill floor / timeout would call ResetToStarting here; the LRA abort does not.)

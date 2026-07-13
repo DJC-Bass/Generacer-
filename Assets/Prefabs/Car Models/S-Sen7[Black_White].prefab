@@ -1268,7 +1268,7 @@ MonoBehaviour:
   downhillThreshold: 0.01
   groundMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 32567
   suspensionRayLength: 2
   rideHeight: 0.75
   springStrength: 1000
@@ -1449,7 +1449,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d1f4b8a6c3e5479028b1c4d6e8f0a253, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::JetFlames
-  flameDuration: 1
+  flameDuration: 0.75
   flames: []
 --- !u!1001 &7841142131120551481
 PrefabInstance:

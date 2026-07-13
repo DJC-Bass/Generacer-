@@ -116,6 +116,11 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("One-shot (3D, at the car) when an SD ability is deactivated.")]
     public AudioClip sdDeactivate;
 
+    [Header("LRA SFX")]
+    [Tooltip("Looping 2D sound while the player is holding the L+R+A combo to activate the LRA abort " +
+             "(plays with the progress bar; cuts when the combo is released or the abort completes).")]
+    public AudioClip lraActivateLoop;
+
     [Header("Portal SFX (uniform across all portals)")]
     [Tooltip("Played (3D) when a portal spawns.")]
     public AudioClip portalSpawn;
