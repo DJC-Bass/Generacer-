@@ -246,6 +246,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 4315276287867226939, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4315276287867226939, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
+      propertyPath: hubSceneName
+      value: HubWorld
+      objectReference: {fileID: 0}
+    - target: {fileID: 4315276287867226939, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
+      propertyPath: hubSceneIndex
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6828949726020491892, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
       propertyPath: m_Name
       value: KillFloor
@@ -709,6 +721,7 @@ MonoBehaviour:
   speedBarrierMph: 750
   speedBarrierReleaseMph: 725
   speedBarrierFOVBoost: 45
+  speedBarrierGroundedGrace: 1
   speedBarrierMuffle: 1
   barrierMuffleCutoff: 400
 --- !u!1660057539 &9223372036854775807
