@@ -258,8 +258,8 @@ MonoBehaviour:
   spatial:
     spatialBlend: 1
     volume: 0.9
-    minDistance: 100
-    maxDistance: 200
+    minDistance: 1000
+    maxDistance: 2000
     rolloffMode: 1
     dopplerLevel: 0
   collisionCooldown: 0.1

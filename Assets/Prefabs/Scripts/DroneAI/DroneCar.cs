@@ -490,6 +490,7 @@ public class DroneCar : MonoBehaviour
         if (PlayerInventory.Instance == null) return;
 
         PlayerInventory.Instance.AddCredits(creditReward);
+        AudioManager.PlayKnockoffBounty();   // 2D reward stinger
         Debug.Log($"[DroneCar] Player knocked this car into the kill floor — " +
                   $"awarded {creditReward} credits");
     }

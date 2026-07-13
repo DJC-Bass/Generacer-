@@ -224,13 +224,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8e0a2c4f6183a5c7e9f0b2d4a6c8e0f2, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   spatial:
     spatialBlend: 1
     volume: 0.9
-    minDistance: 8
-    maxDistance: 150
+    minDistance: 1000
+    maxDistance: 2000
     rolloffMode: 1
     dopplerLevel: 0
   collisionCooldown: 0.1

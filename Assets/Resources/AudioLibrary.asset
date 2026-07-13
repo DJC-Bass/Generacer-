@@ -34,18 +34,20 @@ MonoBehaviour:
   - {fileID: 8300000, guid: f97b77cd52305c8488a25839a5a9ec87, type: 3}
   - {fileID: 8300000, guid: 47d4582eea7b72540a94b351450292d6, type: 3}
   - {fileID: 8300000, guid: 3246ab764ce9deb41ab089f714999311, type: 3}
+  windowsInteriorMusic: {fileID: 8300000, guid: 385b9954ae6ef5246a9f73bbdd39300f, type: 3}
+  interiorMusicCrossfadeSeconds: 0.15
   menuMove: {fileID: 8300000, guid: f81f55d27c305a14bbed3f4c07877fce, type: 3}
   menuSelect: {fileID: 8300000, guid: 7b412cd8c0b9cf846b957ba4d69592ab, type: 3}
   menuBack: {fileID: 8300000, guid: c577f354cd732894ba3f45f55927bcf3, type: 3}
-  menuOpen: {fileID: 0}
+  menuOpen: {fileID: 8300000, guid: 7b412cd8c0b9cf846b957ba4d69592ab, type: 3}
   menuClose: {fileID: 0}
-  storeMove: {fileID: 8300000, guid: a50eb66abf680dc4a8808b6f9db2a0d0, type: 3}
-  storeSelect: {fileID: 8300000, guid: f633b248d7ecec54aa73e225dd5b1401, type: 3}
-  storeDenied: {fileID: 0}
-  storeOpen: {fileID: 0}
-  storeClose: {fileID: 0}
-  rampOpen: {fileID: 0}
-  rampClose: {fileID: 0}
+  storeMove: {fileID: 8300000, guid: 548102452e038644b99832eff07904ac, type: 3}
+  storeSelect: {fileID: 8300000, guid: 212792a1fe7b8e846bb5d3b2dc647036, type: 3}
+  storeDenied: {fileID: 8300000, guid: b058dd3c43aa97d4a862f1f818258399, type: 3}
+  storeOpen: {fileID: 8300000, guid: c7231e11e6ebfd34685ffa6f2443eb11, type: 3}
+  storeClose: {fileID: 8300000, guid: f3895fd17aca8aa4091aca2488f89584, type: 3}
+  rampOpen: {fileID: 8300000, guid: 49b2bbaad1f1c134684b5562a00a8d32, type: 3}
+  rampClose: {fileID: 8300000, guid: ea4e6be557ec5844bb7c0617853f6cb9, type: 3}
   turboCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
   turboCrafted: {fileID: 8300000, guid: b5a5414855fb088418da1b06091ad2d8, type: 3}
   jetCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
@@ -70,14 +72,15 @@ MonoBehaviour:
   sdActivate: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
   sdActiveLoop: {fileID: 0}
   sdDeactivate: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
-  portalSpawn: {fileID: 0}
+  portalSpawn: {fileID: 8300000, guid: ff7151e3a28596a41823d4821044db5d, type: 3}
   portalActiveLoop: {fileID: 8300000, guid: 38f994c7e40032e438d4148ba8f01be3, type: 3}
-  portalCollision: {fileID: 0}
+  portalCollision: {fileID: 8300000, guid: 22e8f9eeff8b36e439b0891ff4ff4428, type: 3}
   portalDespawn: {fileID: 0}
-  boostGateSpawn: {fileID: 8300000, guid: f1e18f5db1a870e4280daeeb52856e2e, type: 3}
+  boostGateSpawn: {fileID: 8300000, guid: 59fa3e66e270fea4cbf8accca5c2758d, type: 3}
   boostGateBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   windowsEnter: {fileID: 8300000, guid: 715e88a89fdaa8845b65e26718100cb2, type: 3}
   windowsExit: {fileID: 8300000, guid: 715e88a89fdaa8845b65e26718100cb2, type: 3}
+  knockoffBounty: {fileID: 8300000, guid: a0ca5d192ca2e2d40a4f27c42215f660, type: 3}
   victoryBanner: {fileID: 0}
   speedBarrierBreak: {fileID: 8300000, guid: 8976a3c01be38bb45b9298f7b61f7514, type: 3}
   speedBarrierBreakVolume: 0.5

@@ -29,6 +29,11 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("TrackScene song pool — one is picked at random each time you enter the track (never the " +
              "same one twice in a row), so races don't get a stale single theme. Add as many as you like.")]
     public AudioClip[] trackMusic;
+    [Tooltip("Looping interior track that crossfades OVER the scene music while the player is inside the " +
+             "Windows building (via WindowsAudio), ducking the scene theme until they leave.")]
+    public AudioClip windowsInteriorMusic;
+    [Tooltip("Seconds for the scene <-> interior music crossfade. Lower = snappier swap (0 = instant).")]
+    public float interiorMusicCrossfadeSeconds = 0.3f;
 
     [Header("Menu SFX")]
     [Tooltip("Played when the highlighted menu item changes (navigating up/down the list).")]
@@ -132,6 +137,11 @@ public class AudioLibrary : ScriptableObject
     public AudioClip windowsEnter;
     [Tooltip("One-shot (3D) when the player car EXITS the Windows trigger volume.")]
     public AudioClip windowsExit;
+
+    [Header("Reward SFX")]
+    [Tooltip("One-shot (2D) played when the player earns credits by knocking a Drone / Challenger car " +
+             "into the kill floor.")]
+    public AudioClip knockoffBounty;
 
     [Header("Player Victory SFX")]
     [Tooltip("One-shot (2D — screen UI) played when the BOTS DEFEATED banner begins fading in.")]

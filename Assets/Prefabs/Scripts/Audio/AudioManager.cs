@@ -27,6 +27,15 @@ public class AudioManager : MonoBehaviour
     private AudioClip currentMusic;
     private AudioClip lastTrackMusic;   // last TrackScene song, so a random re-entry avoids repeating it
 
+    // Interior music layer: a 2nd looping music source that crossfades OVER the scene music while the
+    // player is inside an interior zone (e.g. the Windows building), ducking the scene theme to silence
+    // until they leave. Both play at once; interiorBlend just picks which is audible, so the scene theme
+    // keeps running continuously behind the interior track.
+    private AudioSource interiorSource;
+    private bool interiorActive;            // player currently inside an interior zone
+    private float interiorBlend;            // 0 = scene music only, 1 = interior music only
+    private float musicBaseVolume = 0.6f;   // intended music level; the crossfade splits it between the two sources
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
     {
@@ -48,11 +57,20 @@ public class AudioManager : MonoBehaviour
                              "Create one (Assets > Create > Generacer > Audio Library) inside a Resources " +
                              "folder and assign your clips.");
 
+        musicBaseVolume = Library != null ? Library.musicVolume : 0.6f;
+
         musicSource = gameObject.AddComponent<AudioSource>();
         musicSource.playOnAwake = false;
         musicSource.loop = true;
         musicSource.spatialBlend = 0f;                 // 2D — full volume regardless of listener position
-        musicSource.volume = Library != null ? Library.musicVolume : 0.6f;
+        musicSource.volume = musicBaseVolume;
+
+        // Second music source for interior override tracks (silent until an interior zone is entered).
+        interiorSource = gameObject.AddComponent<AudioSource>();
+        interiorSource.playOnAwake = false;
+        interiorSource.loop = true;
+        interiorSource.spatialBlend = 0f;              // 2D
+        interiorSource.volume = 0f;
 
         sfxSource = gameObject.AddComponent<AudioSource>();
         sfxSource.playOnAwake = false;
@@ -70,8 +88,25 @@ public class AudioManager : MonoBehaviour
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyMusicForScene(scene.name);
 
+    // Crossfades the scene music and the interior override every frame. Both sources share
+    // musicBaseVolume; interiorBlend eases toward 1 while inside an interior zone and back to 0 outside.
+    void Update()
+    {
+        float target = interiorActive ? 1f : 0f;
+        if (interiorBlend != target)
+        {
+            float fade = Library != null ? Library.interiorMusicCrossfadeSeconds : 0.3f;
+            float step = fade > 0.001f ? Time.deltaTime / fade : 1f;
+            interiorBlend = Mathf.MoveTowards(interiorBlend, target, step);
+        }
+
+        if (musicSource != null)    musicSource.volume    = musicBaseVolume * (1f - interiorBlend);
+        if (interiorSource != null) interiorSource.volume = musicBaseVolume * interiorBlend;
+    }
+
     void ApplyMusicForScene(string sceneName)
     {
+        ResetInterior();                       // a new scene clears any interior override from the last one
         PlayMusic(MusicForScene(sceneName));   // PlayMusic(null) stops the music
     }
 
@@ -152,6 +187,49 @@ public class AudioManager : MonoBehaviour
     {
         currentMusic = null;
         if (musicSource != null) musicSource.Stop();
+    }
+
+    // ---------------- Interior override music ----------------
+
+    /// <summary>Ducks the scene music and crossfades in a looping interior track (e.g. inside the
+    /// Windows building). The scene theme keeps playing (silently) behind it, so exiting resumes it
+    /// seamlessly. No-op for a null clip. Call <see cref="StopInteriorMusic"/> to return to the scene
+    /// theme.</summary>
+    public void PlayInteriorMusic(AudioClip clip)
+    {
+        if (clip == null || interiorSource == null) return;
+
+        // Start (or swap to) the interior clip. Once playing it keeps looping — even while silent
+        // outside — so re-entering the zone picks the track back up smoothly instead of restarting it.
+        if (interiorSource.clip != clip)
+        {
+            interiorSource.clip = clip;
+            interiorSource.Play();
+        }
+        else if (!interiorSource.isPlaying)
+        {
+            interiorSource.Play();
+        }
+        interiorActive = true;   // Update() crossfades scene -> interior
+    }
+
+    /// <summary>Crossfades back from the interior track to the scene music (leaving the interior source
+    /// looping silently so a quick re-entry resumes it).</summary>
+    public void StopInteriorMusic() => interiorActive = false;
+
+    /// <summary>Immediately clears any interior override — used on scene change so the new scene starts
+    /// on its own music with the interior source stopped and the scene theme un-ducked.</summary>
+    void ResetInterior()
+    {
+        interiorActive = false;
+        interiorBlend = 0f;
+        if (interiorSource != null)
+        {
+            interiorSource.Stop();
+            interiorSource.clip = null;
+            interiorSource.volume = 0f;
+        }
+        if (musicSource != null) musicSource.volume = musicBaseVolume;
     }
 
     // ---------------- SFX ----------------
@@ -292,9 +370,18 @@ public class AudioManager : MonoBehaviour
     public static void PlayWindowsEnter(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.windowsEnter : null, position, settings);
     public static void PlayWindowsExit(Vector3 position, Spatial3DSettings settings = null)  => PlayLibrarySfxAt(Lib != null ? Lib.windowsExit  : null, position, settings);
 
+    // Windows interior background music: ducks the scene theme and crossfades in the interior loop
+    // while the player is inside the building, restoring the scene theme on exit.
+    public static void EnterWindowsInterior() { if (Instance != null && Lib != null) Instance.PlayInteriorMusic(Lib.windowsInteriorMusic); }
+    public static void ExitWindowsInterior()  { if (Instance != null) Instance.StopInteriorMusic(); }
+
     // Player-victory banner stinger (2D — screen UI, not a world event). Fired the moment the
     // BOTS DEFEATED text begins its fade-in.
     public static void PlayVictoryBanner() => PlayLibrarySfx(Lib != null ? Lib.victoryBanner : null);
+
+    // Knock-off bounty (2D) — the player earned credits by knocking a Drone / Challenger car into
+    // the kill floor.
+    public static void PlayKnockoffBounty() => PlayLibrarySfx(Lib != null ? Lib.knockoffBounty : null);
 
     static AudioLibrary Lib => Instance != null ? Instance.Library : null;
     static void PlayLibrarySfx(AudioClip clip) { if (Instance != null) Instance.PlaySfx(clip); }
@@ -315,8 +402,10 @@ public class AudioManager : MonoBehaviour
 
     // ---------------- Volume (for the future Audio submenu) ----------------
 
-    public void SetMusicVolume(float v) { if (musicSource != null) musicSource.volume = Mathf.Clamp01(v); }
-    public void SetSfxVolume(float v)   { if (sfxSource   != null) sfxSource.volume   = Mathf.Clamp01(v); }
-    public float MusicVolume => musicSource != null ? musicSource.volume : 0f;
-    public float SfxVolume   => sfxSource   != null ? sfxSource.volume   : 0f;
+    // Music volume is the shared base level; Update() splits it between the scene + interior sources
+    // via the crossfade, so set the base here rather than the source volume directly.
+    public void SetMusicVolume(float v) { musicBaseVolume = Mathf.Clamp01(v); }
+    public void SetSfxVolume(float v)   { if (sfxSource != null) sfxSource.volume = Mathf.Clamp01(v); }
+    public float MusicVolume => musicBaseVolume;
+    public float SfxVolume   => sfxSource != null ? sfxSource.volume : 0f;
 }

@@ -24,6 +24,8 @@ As of the last read of `Assets/Resources/AudioLibrary.asset`:
 - `menuOpen`, `menuClose` — 2D one-shots when a full-screen menu (Start menu / Inventory) opens & closes (added after this handoff)
 - `storeOpen`, `storeClose`, `rampOpen`, `rampClose` — 2D one-shots when the Store / Upgrade-Ramp menus open & close (each its own pair) (added after this handoff)
 - `windowsEnter`, `windowsExit` — 3D one-shots when the PlayerCar enters/exits the Windows prefab's trigger (via `WindowsAudio` on the box collider) (added after this handoff)
+- `windowsInteriorMusic` — looping interior theme that crossfades over (ducks) the scene music while inside the Windows box collider; AudioManager has a 2nd `interiorSource` + `PlayInteriorMusic`/`StopInteriorMusic` + per-frame crossfade in `Update` (added after this handoff)
+- `knockoffBounty` — 2D one-shot when the player earns credits by knocking a Drone/Challenger car into the kill floor (fired in `DroneCar.AwardKnockoffBounty`) (added after this handoff)
 
 Everything else is assigned. **Two slots currently reuse a placeholder clip** and may want distinct sounds:
 - `turboCraftLoop` and `jetCraftLoop` share the same clip.

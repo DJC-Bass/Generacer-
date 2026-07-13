@@ -35,17 +35,35 @@ public class WindowsAudio : MonoBehaviour
     {
         if (!IsPlayer(other)) return;
 
-        // First player collider to enter → play the enter one-shot.
+        // First player collider to enter → play the enter one-shot and swap to the interior music.
         if (inside.Count == 0)
+        {
             AudioManager.PlayWindowsEnter(transform.position, audio3D);
+            AudioManager.EnterWindowsInterior();   // duck the scene theme, crossfade in the interior loop
+        }
         inside.Add(other);
     }
 
     void OnTriggerExit(Collider other)
     {
-        // Only react to colliders we actually counted; when the last one leaves, play the exit one-shot.
+        // Only react to colliders we counted; when the last one leaves, play the exit one-shot and
+        // crossfade back to the scene theme.
         if (inside.Remove(other) && inside.Count == 0)
+        {
             AudioManager.PlayWindowsExit(transform.position, audio3D);
+            AudioManager.ExitWindowsInterior();
+        }
+    }
+
+    void OnDisable()
+    {
+        // Torn down / disabled while the player was inside: restore the scene theme so the interior
+        // override doesn't stay stuck on. (No exit one-shot here — this isn't the player driving out.)
+        if (inside.Count > 0)
+        {
+            inside.Clear();
+            AudioManager.ExitWindowsInterior();
+        }
     }
 
     bool IsPlayer(Collider other)

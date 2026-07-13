@@ -321,6 +321,10 @@ public class CarController : MonoBehaviour
     /// grounded grace window.</summary>
     public float AirborneTime => airborneTimer;
 
+    /// <summary>Fired the moment the car successfully fires its Jet (a jump that spent a Jet and
+    /// launched). Accessories such as JetFlames subscribe to flare on jump.</summary>
+    public event System.Action OnJumped;
+
     private const float MS_TO_MPH = 2.23694f;
     private const float MPH_TO_MS = 1f / MS_TO_MPH;
 
@@ -848,6 +852,7 @@ public class CarController : MonoBehaviour
 
         rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
         AudioManager.PlayJump(transform.position);
+        OnJumped?.Invoke();   // let accessories (JetFlames) react to the jump
 
         // Shorten the suspension ray for a moment so the hover spring lets go and the jump
         // velocity can carry the car off the ground before the ray re-catches it.
