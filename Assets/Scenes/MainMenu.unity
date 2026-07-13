@@ -268,7 +268,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   backgroundSprite: {fileID: 0}
   backgroundColor: {r: 0.21960786, g: 0.21960786, b: 0.21960786, a: 0}
-  gameTitle: GENERACER
+  gameTitle: GENERACERS
   titleFontSize: 120
   titleColor: {r: 1, g: 1, b: 1, a: 1}
   buttonFontSize: 20

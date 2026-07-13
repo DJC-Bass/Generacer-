@@ -58,6 +58,9 @@ public class TrackGenerator : MonoBehaviour
 
     [Header("Assets")]
     public Material roadMaterial;
+    // Per-generation instance of the road material with a randomised Base Map hue, so each track comes
+    // out a different colour without ever modifying the shared RoadMaterial asset.
+    private Material runtimeRoadMaterial;
     public GameObject carPrefab;
     public GameObject endPortalPrefab;
 
@@ -204,6 +207,9 @@ public class TrackGenerator : MonoBehaviour
     {
         allEdges.Clear();
         leafEdges.Clear();
+
+        // Build this track's road material (a randomised-hue instance) before any road edge is made.
+        PrepareRoadMaterial();
 
         // Roll the convergence altitude swing once per generation so every leaf's
         // return path shares the same vertical character, but successive runs
@@ -1096,10 +1102,45 @@ public class TrackGenerator : MonoBehaviour
 
     Material GetRoadMaterial()
     {
-        if (roadMaterial != null) return roadMaterial;
+        // GenerateTrack prepares the randomised instance up front; this is just a guard.
+        if (runtimeRoadMaterial == null) PrepareRoadMaterial();
+        return runtimeRoadMaterial;
+    }
+
+    /// <summary>Builds this generation's road material as an INSTANCE of the assigned RoadMaterial (so
+    /// the shared asset on disk is never touched), with a randomised Base Map HUE — saturation and
+    /// value (and every other material value) left as they are — so each track comes out a different
+    /// colour. Uses an independent RNG so the colour doesn't perturb the seeded track-geometry
+    /// generation.</summary>
+    void PrepareRoadMaterial()
+    {
+        if (runtimeRoadMaterial != null) Destroy(runtimeRoadMaterial);   // drop a prior generation's instance
+        runtimeRoadMaterial = roadMaterial != null ? new Material(roadMaterial) : BuildFallbackRoadMaterial();
+
+        // URP/Lit's "Base Map" tint (Surface Inputs) is the "_BaseColor" property.
+        const string prop = "_BaseColor";
+        if (runtimeRoadMaterial.HasProperty(prop))
+        {
+            Color c = runtimeRoadMaterial.GetColor(prop);
+            Color.RGBToHSV(c, out _, out float s, out float v);            // keep saturation + value
+            float hue = (float)new System.Random().NextDouble();          // 0..1 == the full 0..360 hue wheel
+            Color randomized = Color.HSVToRGB(hue, s, v);
+            randomized.a = c.a;                                            // leave alpha untouched
+            runtimeRoadMaterial.SetColor(prop, randomized);
+        }
+    }
+
+    Material BuildFallbackRoadMaterial()
+    {
         Material m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         m.mainTexture = ArrowTextureGenerator.Generate();
         return m;
+    }
+
+    void OnDestroy()
+    {
+        // The runtime instance isn't owned by any GameObject, so free it when the generator is torn down.
+        if (runtimeRoadMaterial != null) Destroy(runtimeRoadMaterial);
     }
 
     // -------------------------------------------------------
