@@ -1,93 +1,214 @@
 # Generacer — Session Handoff
 
-## Goal
-Build out the **complete audio system** for the Generacer arcade racing game (Unity 6): music per scene, UI/menu SFX, per-vehicle engine sound, and 3D positional SFX for every gameplay event (drift, turbo/jump/landing, obstacles, portals, crafting, SD abilities). This session also finished a few **gameplay** features first (player-victory banner, two secret endings, a "return to menu" collider) before the audio work, which became the bulk of the session.
+Arcade racing game, **Unity 6, URP**. Persistent-singleton architecture: systems self-bootstrap via
+`RuntimeInitializeOnLoadMethod` onto a DontDestroyOnLoad `PlayerSystems` object (inventory, HUDs, menus,
+tutorial guide, event-system guard) or their own object (`AudioManager`, `GameLoopManager`,
+`SkyboxHueRandomizer`). Most UI is **code-built** (no scene canvases). Scene flow:
+`MainMenu → CarSelection → Bootstrap → HubWorld ⇄ TrackScene`, plus `Tutorial`, `GeneracersEnding`,
+`ClipperEnding`.
 
-Audio design rule adopted mid-session: **only menu SFX and music are 2D; everything world-driven is 3D** (so remote players hear each other once multiplayer lands).
+---
 
-## Current State — code complete, a few editor tasks left
-All audio is **wired in code and compiles**. What remains is Unity-editor side: assigning the last few clips and attaching one component to two prefabs. The system is a persistent `AudioManager` singleton that reads every clip from one `AudioLibrary` ScriptableObject at `Assets/Resources/AudioLibrary.asset`.
+## NEXT TASK (this is why a fresh agent is here)
+**Wire the Main Menu "SETTINGS" button into a real settings screen** with **Audio**, **Video/Graphics**,
+and **Control** settings.
 
-### AudioLibrary clip slots STILL EMPTY (`{fileID: 0}`) — need clips assigned
-As of the last read of `Assets/Resources/AudioLibrary.asset`:
-- `playerVictoryMusic` — hub theme during the "BOTS DEFEATED" win
-- `carLanding` — car touches down after airtime
-- `lightningWarning` — warning-column telegraph
-- `sdDeactivate` — SD ability turned off
-- `portalSpawn`, `portalCollision`, `portalDespawn` — (portalActiveLoop IS assigned)
-- `boostGateSpawn`, `boostGateBoost` — hub Boost Gate appearing / player driving through it (added after this handoff)
-- `victoryBanner` — 2D stinger as the BOTS DEFEATED banner starts fading in (added after this handoff)
-- `storeDenied` — 2D buzzer when a store purchase is rejected (can't afford / at max owned) (added after this handoff)
-- `loopBoost` — 3D one-shot at the car when the Loop Speed Multiplier engages entering a loop (added after this handoff)
-- `speedBarrierBreak`, `speedBarrierLeave` — 3D one-shots (ride the car, bypass the broken-barrier low-pass muffle) when the player crosses 750 mph / drops back below 700 mph (added after this handoff)
-- `tutorialMusic` — looping 2D theme for the Tutorial scene (added after this handoff)
-- `menuOpen`, `menuClose` — 2D one-shots when a full-screen menu (Start menu / Inventory) opens & closes (added after this handoff)
-- `storeOpen`, `storeClose`, `rampOpen`, `rampClose` — 2D one-shots when the Store / Upgrade-Ramp menus open & close (each its own pair) (added after this handoff)
-- `windowsEnter`, `windowsExit` — 3D one-shots when the PlayerCar enters/exits the Windows prefab's trigger (via `WindowsAudio` on the box collider) (added after this handoff)
-- `windowsInteriorMusic` — looping interior theme that crossfades over (ducks) the scene music while inside the Windows box collider; AudioManager has a 2nd `interiorSource` + `PlayInteriorMusic`/`StopInteriorMusic` + per-frame crossfade in `Update` (added after this handoff)
-- `knockoffBounty` — 2D one-shot when the player earns credits by knocking a Drone/Challenger car into the kill floor (fired in `DroneCar.AwardKnockoffBounty`) (added after this handoff)
-- `lraActivateLoop` — looping 2D "charge" sound while holding L+R+A to activate the LRA abort (managed by `LraAbortController`); the LRA abort also now arms the portal-exit sound on the hub return (added after this handoff)
-- `portalExit` — 3D one-shot (has its own `portalExitVolume` + `portalExitAudio3D` Spatial3DSettings in the library) played off the player car when it spawns into a scene reached via a portal. Portals call `AudioManager.ArmPortalExit()` before loading; the `PortalExitAudio` component on the player-car prefab consumes the flag in its `Start` via `AudioManager.TryPlayPortalExit(transform)` (rides the car, like the speed-barrier stingers). AudioManager clears a stale flag if a non-gameplay/menu scene loads. Also `AudioManager.PlayPortalExit(transform)` (unconditional, no flag) is called per drone in `HubSceneController.SpawnChasingDrone` so each Drone-ending swarm drone plays it as it pours out of the portal. **Editor: add `PortalExitAudio` to each selectable player-car prefab.** (added after this handoff)
+- **Entry point:** `Assets/Prefabs/Scripts/UI/MainMenuController.cs` → `OnSettings()` (~line 248) is
+  currently just `Debug.Log("[MainMenu] Settings — not implemented yet.")`. The "SETTINGS" button is
+  created at ~line 110 via `CreateButton("SETTINGS", menu, OnSettings)`.
+- **Reuse the pattern I built this session:** `StartMenuController` (in `Inventory/`) has a **working
+  SETTINGS sub-panel** — see `BuildSettingsPanel`, `OpenSub(panel, title, returnButton, focus, hint)`,
+  `OnToggleTutorialGuide`, `RefreshTutorialToggleLabel`. It shows how to build a gamepad-navigable
+  sub-screen (A selects, B backs out, focus set via `EventSystem.SetSelectedGameObject`). MainMenu
+  should get sub-screens the same way (a column of buttons → AUDIO / VIDEO / CONTROLS, each opening a
+  panel; B returns).
+- **Audio settings** — hooks already exist: `AudioManager.SetMusicVolume(0..1)` / `SetSfxVolume(0..1)`
+  and `MusicVolume` / `SfxVolume` getters (volume is `musicBaseVolume`-backed; the interior-music
+  crossfade splits it). Back sliders with these. Persist with PlayerPrefs.
+- **Persistence pattern** — copy `UI/TutorialSettings.cs` (a tiny static PlayerPrefs wrapper). Make a
+  `GameSettings` static for music/sfx volume, resolution, fullscreen, quality, vsync; **apply it at
+  bootstrap** (a `RuntimeInitializeOnLoadMethod`) so choices persist and take effect in every scene.
+  Note AudioManager currently seeds volumes from the `AudioLibrary` asset (`musicVolume`/`sfxVolume`) in
+  `Awake` — decide that PlayerPrefs overrides that and call the setters on boot.
+- **Video/Graphics** — `Screen.resolutions`, `Screen.SetResolution`, `Screen.fullScreenMode`,
+  `QualitySettings.SetQualityLevel`, `QualitySettings.vSyncCount`.
+- **Controls** — start with a **read-only** bindings list (the game uses the Input System
+  `GeneracerControls`). Live rebinding (`InputActionRebindingExtensions.PerformInteractiveRebinding`) is
+  a bigger follow-up; scope it separately.
+- **Do NOT create another EventSystem** — `EventSystemGuard` (bootstrapped) enforces exactly one and
+  strips extras on each scene load. MainMenuController's own `EnsureEventSystem` is now a safe no-op.
 
-Everything else is assigned. **Two slots currently reuse a placeholder clip** and may want distinct sounds:
-- `turboCraftLoop` and `jetCraftLoop` share the same clip.
-- `projectileHitEnvironment` and `projectileHitPlayer` share the same clip.
+---
 
-> ⚠️ **Use `.ogg` or `.wav` for all music and looping SFX, never `.mp3`.** MP3s keep encoder-padding silence that makes loops gap ("won't loop"). This bit us once (see below).
+## Design rules (keep these — final architectural decisions)
+- **Audio 2D vs 3D:** only menu SFX + music are 2D; every world/gameplay sound is 3D (so remote players
+  hear each other once multiplayer lands).
+- **Per-listener effects for local-only:** the speed-barrier low-pass muffle is an `AudioLowPassFilter`
+  on the **AudioListener** (not a mixer, not per-source) so only the local player who broke the barrier
+  is muffled. Sounds that must punch through it set `AudioSource.bypassListenerEffects = true`.
+- **Recolor a material INSTANCE, never the shared asset** — both the random road hue (TrackGenerator) and
+  the random skybox hue (SkyboxHueRandomizer) `new Material(...)` and free the instance later, so the
+  `.mat`/skybox assets on disk keep their authored colors.
+- **Loops** are each owned by their component (engine, boulder-fly, portal-active, drift, SD-active,
+  craft, LRA-charge, windows-interior) — its own `AudioSource`, `dopplerLevel = 0`.
+- **Use `.ogg`/`.wav` for all music + looping SFX, never `.mp3`** (MP3 encoder padding gaps the loop).
 
-## Files created this session
-Audio system:
-- `Assets/Prefabs/Scripts/Audio/AudioManager.cs` — persistent singleton (self-bootstrapped `BeforeSceneLoad`); music source + 2D sfx source; per-scene music via `MusicForScene`; `PlaySfx`, `PlaySfxAt` (3D temp source), and all the static `Play*` helpers; volume setters.
-- `Assets/Prefabs/Scripts/Audio/AudioLibrary.cs` — ScriptableObject holding every clip slot + `musicVolume`/`sfxVolume`.
-- `Assets/Resources/AudioLibrary.asset` — the single instance the manager loads (hand-authored, GUID `4a6b8c0d…` script ref).
-- `Assets/Prefabs/Scripts/Audio/Spatial3DSettings.cs` — reusable, Inspector-exposed 3D settings (`spatialBlend`, volume, min/max distance, rolloff, doppler) + `ApplyTo(source, sfxScale)`.
-- `Assets/Prefabs/Scripts/Audio/PortalAudio.cs` — portal spawn/active-loop/collision/despawn (despawn keyed off `gameObject.scene.isLoaded` in `OnDestroy` to distinguish timeout vs. player-travel).
-- `Assets/Prefabs/Scripts/Car Scripts/CarEngineAudio.cs` — per-vehicle engine loop, pitch/volume by Rigidbody speed.
-- `Assets/Prefabs/Scripts/Obstacle Script/Boulder Scripts/BoulderAudio.cs` — boulder spawn one-shot, looping "on fire" flight, impact one-shot.
-- `Assets/Prefabs/Scripts/MainMenuReturnTrigger.cs` — collider that tears down the run and loads the Main Menu (earlier in session).
+---
 
-Each new `.cs` has a hand-written `.meta` with a fixed GUID.
+## Current state
+Everything below is **code-complete and compiles**. The prior session built the audio-system
+foundation (`AudioManager` + `AudioLibrary` ScriptableObject at `Assets/Resources/AudioLibrary.asset`,
+`Spatial3DSettings`, `PortalAudio`, `CarEngineAudio`, `BoulderAudio`, per-scene music, endings). **This
+session** extended audio and added visual FX + gameplay systems + fixed two editor-freeze bugs (below).
 
-## Files modified this session (scripts)
-- `Audio/AudioManager.cs`, `Audio/AudioLibrary.cs` — grew continuously as slots/helpers were added.
-- `Car Scripts/CarController.cs` — drift-screech loop (raw-steer 1:1, speed-scaled, grounded-only, doppler-off, smoothing pass), turbo/jump one-shots (now 3D positional), car-landing on airborne→grounded edge, `ShortenSuspensionRayForPopUp()`.
-- `Car Scripts/CarEngineAudio.cs` — default `spatialBlend` 0 → 1 (engines are 3D).
-- `Inventory/SDAbilityController.cs` — SD activate/active-loop/deactivate audio (loop on a car-following `SDAbilityLoopAudio` object); also `NotifySDAbilityUsed` from earlier flawless-ending work.
-- `Inventory/StartMenuController.cs`, `UI/MainMenuController.cs`, `UI/CarSelectionController.cs`, `UI/MenuNavigation.cs`, `Hub World/StoreController.cs` — menu move/select/back + store SFX; `MenuNavigation.PlayMoveSfxOnSelectionChange`; `CarSelectionController.MakeInert` now also stops AudioSources.
-- `Hub World/UpgradeRampController.cs` — turbo/jet craft loop (one source, clip swapped per bar) + craft-complete one-shots; turbo loop restarts per craft.
-- `DroneAI/DroneCar.cs`, `DroneAI/DroneProjectile.cs` — drone shoot at muzzle; projectile env/player hit; `DroneProjectile.audio3D` (Spatial3DSettings); suspension-shorten on player hit.
-- `Obstacle Script/Lightning Scripts/LightningStrike.cs`, `LightningSpawner.cs` — warning/strike audio; `LightningSpawner.lightningAudio` (Spatial3DSettings) propagated to each strike; suspension-shorten on player hit.
-- `GameLoopScripts/GameLoopManager.cs`, `GameLoopScripts/HubSceneController.cs`, `ReturnPortalTriggerr.cs`, `PortalTrigger.cs`, `Inventory/GameplayHud.cs` — earlier gameplay: player-victory (`PlayerWinActive`), flawless `GeneracersEnding` (`UsedAnySDThisRun`/`SpecialEndingEarned`), `ClipperEnding` (portal during Drone ending), plus drone-ending & player-victory hub music (`RefreshSceneMusic`).
+### AudioLibrary slots STILL EMPTY (`{fileID: 0}`) — assign clips (OGG/WAV)
+As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carLanding`,
+`lightningWarning`, `sdActiveLoop`, `portalSpawn`, `portalDespawn`, `victoryBanner`.
+(The user has been assigning clips live; several slots intentionally reuse a **placeholder** clip and may
+want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`==`projectileHitPlayer`;
+`loopBoost`/`boostGateBoost` reuse `turboBoost`; `menuOpen` reuses `menuSelect`; `windowsEnter`==
+`windowsExit`; `speedBarrierBreak`==`speedBarrierLeave`.)
 
-## Prefabs / assets edited by hand-writing YAML (verify these bound in the editor)
-- `Car Models/DroneCar/DroneCar.prefab`, `Car Models/Challenger Cars/ChallengerCar.prefab` — added **CarEngineAudio** (3D, spatialBlend 1).
-- `Car Models/S-Sen7[Black_White].prefab`, `Car Models/Deora II Test Car [Programmed].prefab` — flipped CarEngineAudio `spatialBlend` 0 → 1.
-- `Obstacles/LavaBoulder.prefab` — added **BoulderAudio**.
-- `Environment Model/Portal.prefab`, `ReturnPortal.prefab`, `MainMenuPortal.prefab` — added **PortalAudio** (on the trigger-collider child).
-- `ProjectSettings/EditorBuildSettings.asset` — added `GeneracersEnding` and `ClipperEnding` scenes.
+---
 
-## Bugs hit & fixed / gotchas (the "failed attempts")
-1. **MainMenuTheme wouldn't loop** — the assigned clip was an **MP3** (encoder padding → silent gap on the loop seam). Not a code bug. Fix: use OGG/WAV. Applies to every loop/music slot.
-2. **Drift pitch descended-then-ascended while holding full lock** — the 3D drift AudioSource had **`dopplerLevel` at its default (1)**, so the car's motion relative to the listener bent the pitch. Fix: `dopplerLevel = 0` (all my other 3D sources already did this; the drift one was missed).
-3. **Drift pitch sagged when moving the stick** — it read `smoothedSteer` (lagged average). Fix: read **raw `steerInput`**.
-4. **Making engine/drift 3D didn't affect the player cars at first** — changing a C# public-field *default* does **not** update already-serialized prefab instances. Had to hand-edit `spatialBlend: 1` into S-Sen7 and Deora II prefabs.
-5. **Bootstrap ordering** — `AudioManager` and the `PlayerSystems` bootstrap are separate `RuntimeInitializeOnLoadMethod`s with **no guaranteed order**; don't read `AudioManager.Instance` from another bootstrapped component's `Awake`. SD loop source is created **lazily** on first activation for this reason.
-6. **`�` encoding artifact** exists in `BoulderObstacle.cs`, `DroneProjectile.cs`, `LightningStrike.cs` (em-dashes). Anchor any future edits on clean ASCII lines.
-7. Drift smoothing was **removed for 1:1 then re-added** as a tunable (`driftScreechResponsiveness`) once the doppler fix made 1:1 usable — net result: it's back and tunable.
-8. Early in the session, edits occasionally **reverted between turns** — re-read a file before editing it.
+## What this session added / changed
 
-## Exact next steps
-1. **Assign the 7 empty AudioLibrary slots** (import OGG/WAV first): `playerVictoryMusic`, `carLanding`, `lightningWarning`, `sdDeactivate`, `portalSpawn`, `portalCollision`, `portalDespawn`. Open `Assets/Resources/AudioLibrary.asset` in the Inspector.
-2. **Give distinct clips** to `turboCraftLoop` vs `jetCraftLoop`, and `projectileHitEnvironment` vs `projectileHitPlayer` (currently each pair shares one placeholder), if you want them to differ.
-3. **Add `CarEngineAudio`** to the **D404** and **Clipper** player-car prefabs (they don't have it yet — only S-Sen7, Deora II, DroneCar, ChallengerCar do). It now defaults to 3D, so just Add Component + assign that car's engine clip.
-4. **Verify hand-edited prefabs** show their component (not "missing script"): LavaBoulder→BoulderAudio; Portal/ReturnPortal/MainMenuPortal→PortalAudio; DroneCar/ChallengerCar→CarEngineAudio. GUIDs match the `.meta`s, so they should bind.
-5. **Check the HubWorld/TrackScene placed fallback cars** are 3D (prefab-inherited spatialBlend) — only matters when play-testing without picking a car in Car Selection.
-6. **Playtest each category** in the actual scenes: menu/store nav, per-car engine + drift, turbo/jump/landing, lightning/boulder/drone-projectile 3D, portals, upgrade-ramp crafting, SD activate/loop/deactivate, and the per-scene music (incl. drone-ending & victory hub swaps, random TrackScene pool).
+### New scripts (each has a hand-written `.meta` with a fixed GUID)
+- `Audio/WindowsAudio.cs` — on the Windows prefab's box collider (trigger). 3D enter/exit one-shots
+  (`windowsEnter`/`windowsExit`), fires once per multi-collider car via an inside-collider `HashSet`, and
+  drives the **interior-music crossfade** (ducks scene music to the interior track while inside).
+- `Car Scripts/PortalExitAudio.cs` — on each **selectable player-car prefab**. `Start()` calls
+  `AudioManager.TryPlayPortalExit(transform)`; plays `portalExit` off the car if it spawned into a
+  scene reached via a portal.
+- `Car Scripts/JetFlames.cs` — on the JetFlames accessory (child of the car). Subscribes to
+  `CarController.OnJumped`, switches its child flame visuals on for ~1s per jump.
+- `Hub World/SpeedCheck.cs` — speed-gated barrier: collider is solid unless the player car is faster than
+  `minSpeedMph` (default 400), then flips `isTrigger` so a fast car passes. Tracks player speed each
+  FixedUpdate.
+- `GameLoopScripts/RoundDirectionalLightToggle.cs` — 33% chance per TrackScene load to disable the
+  directional light for a "blackout" round. No-op without a `GameLoopManager`.
+- `UI/TutorialGuide.cs` + `UI/TutorialGuideConfig.cs` + `Resources/TutorialGuideConfig.asset` — Tutorial
+  scene on-screen guide: top-center messages, ~3s auto-advance, D-pad ◄ ► to browse, **loops** (wraps
+  both ways). Hides + pauses its timer while any menu is open or when turned off in Settings.
+- `UI/TutorialSettings.cs` — PlayerPrefs wrapper for the tutorial-guide on/off toggle. **Template for the
+  new GameSettings.**
+- `UI/EventSystemGuard.cs` — bootstrapped; guarantees exactly one EventSystem (freeze fix, see below).
+- `SkyboxHueRandomizer.cs` — bootstrapped; when a scene's skybox is the `SimpleSkybox` (Skybox/Procedural),
+  randomizes `_SkyTint` and `_GroundColor` to **independent** random hues (S/V preserved) on an instance,
+  each scene load.
 
-### Deferred (non-audio)
-- The **Player Victory sequence** still ends at the "BOTS DEFEATED" banner fading in a portal-less hub — a fuller win presentation was flagged earlier as "next thing to define" and has no design yet.
+### Modified systems
+- `CameraFollow.cs` — (1) turbo FOV-kick hook `TriggerTurboFOVKick()` for the BoostGate; (2) sustained
+  **speed-barrier FOV kick** with hysteresis (engage `speedBarrierMph`=750, release
+  `speedBarrierReleaseMph`=700); (3) **per-listener low-pass muffle** during the barrier (crossfades with
+  the FOV smoothing, log-space cutoff), only on the camera holding the active AudioListener; (4) fires
+  `speedBarrierBreak`/`speedBarrierLeave` stingers on the barrier edge (bypass the muffle); (5)
+  grounded-grace gate (`speedBarrierGroundedGrace`, default 1s) — force-exits the barrier when airborne,
+  which also avoids the kill-floor audio pop.
+- `CarController.cs` — turbo **tire trails** (rear `TrailRenderer`s; emit on real turbo **or**
+  `TriggerTurboTrail()` from BoostGate **or** `IsLoopGravityCut`; `turboTrail*` fields incl.
+  `turboTrailHeightOffset`); `AirborneTime` property; `loopBoost` one-shot on the loop-flag rising edge;
+  `OnJumped` event (for JetFlames).
+- `AudioManager.cs` — **interior-music crossfade layer** (2nd `interiorSource`, `PlayInteriorMusic` /
+  `StopInteriorMusic`, per-frame crossfade in `Update`, `interiorMusicCrossfadeSeconds` from library);
+  **portal-exit** system (`ArmPortalExit` static flag / `TryPlayPortalExit(transform)` flag-consuming /
+  `PlayPortalExit(transform)` unconditional; stale flag cleared when a non-gameplay scene loads);
+  `PlaySfxFollow(clip, follow, settings, bypassListenerEffects, volumeScale)` (rides a transform);
+  volume refactor to `musicBaseVolume`; many new static `Play*` helpers.
+- `AudioLibrary.cs` — ~20 new slots + `portalExitVolume` + `portalExitAudio3D` (Spatial3DSettings) +
+  `interiorMusicCrossfadeSeconds` + `speedBarrier*Volume`.
+- `BoostGate.cs` — spawn/boost 3D audio, FOV kick, turbo trail on drive-through.
+- `StoreController.cs` — `storeDenied` on failed buy; **item descriptions** in the info line (purchase
+  message takes over then reverts; success=green, fail=red); store open/close audio.
+- `UpgradeRampController.cs` — ramp open/close audio.
+- `StartMenuController.cs` — real SETTINGS panel (Tutorial-tips toggle) **← reuse for MainMenu**; Start-menu
+  open/close audio; `extraScenes` so Start opens in the Tutorial scene.
+- `InventoryView.cs` — menu open/close audio.
+- `DroneCar.cs` — `knockoffBounty` 2D one-shot in `AwardKnockoffBounty`.
+- `LraAbortController.cs` — looping `lraActivateLoop` while holding L+R+A; arms portal-exit on the hub
+  return.
+- `HubSceneController.cs` — drone-ending swarm plays `portalExit` per spawned drone; `droneEndingSpawnRateJitter`.
+- `TrackGenerator.cs` — random **road-material hue** per generation (`_BaseColor` on an instance).
+- `PlayerInventory.cs` — bootstrap now also adds `EventSystemGuard` (first) + `TutorialGuide`.
+
+---
+
+## Bugs hit & fixed this session (the "failed attempts")
+1. **Editor freeze on TrackScene exit** — `LightningStrike.SpawnBolt` built a **convex `MeshCollider`
+   from a 9000-unit zigzag ribbon mesh**; PhysX cooked a degenerate hull every strike (10k+ "triangles
+   > 500 units" warnings) and hung the editor during scene-switch physics teardown (worse with many
+   boulders/hulls near the car). **Fix:** replaced with a primitive vertical `CapsuleCollider`. Diagnosed
+   from `%LOCALAPPDATA%\Unity\Editor\Editor-prev.log`.
+2. **Editor freeze / input hang from duplicate EventSystems** — `StartMenuController` created a
+   DontDestroyOnLoad EventSystem that then coexisted with the menu scenes' own → "There are 2 event
+   systems" spam every frame + two `InputSystemUIInputModule`s fighting. **Fix:** `EventSystemGuard`
+   (bootstrapped first) keeps one EventSystem and strips extras on each scene load.
+3. **Portal-exit regression** — first attempt had AudioManager poll for `"Player"` and attach via
+   `PlaySfxFollow` to whatever it found; in the hub it grabbed the **placed** car right before
+   `PlayerCarSwapper` destroyed it, so the parented sound died. **Fix:** moved playback to the
+   `PortalExitAudio` component ON the car prefab (plays off the real, persistent car on its `Start`).
+4. **`GameLoopManager.Awake` called `LoadScene` before the singleton guard** (latent landmine) — moved
+   behind the guard so a duplicate manager can't bounce scenes.
+5. **Diagnosis method:** on a freeze, read `Editor.log` / `Editor-prev.log` **before** killing Unity —
+   the repeated spam / last real lines reveal the cause (a native hang dump ≠ the cause).
+
+### Carried-over gotchas (still true)
+- Changing a C# **field default** does NOT update already-serialized prefab instances — hand-edit the
+  prefab or reset the component.
+- **Bootstrap ordering** across `RuntimeInitializeOnLoadMethod`s is unguaranteed — don't read
+  `AudioManager.Instance` from another bootstrapped component's `Awake`; fetch lazily (LRA loop &
+  SD loop do this).
+- `�` encoding artifacts exist in `BoulderObstacle.cs`, `DroneProjectile.cs`, `LightningStrike.cs`
+  (em-dashes) — anchor edits on clean ASCII lines.
+- `AudioLibrary.asset` is hand-authored YAML; a new `AudioLibrary.cs` slot needs a matching key in the
+  `.asset` (Unity fills defaults on import, but add it explicitly to be safe). The user edits it live —
+  **re-read it before editing**.
+
+---
+
+## Exact next steps for a fresh agent
+1. **Build the Main Menu Settings screen** (the task above): wire `MainMenuController.OnSettings()` to a
+   sub-menu (AUDIO / VIDEO / CONTROLS) modeled on `StartMenuController`'s SETTINGS panel; back Audio with
+   the existing `AudioManager` volume setters; add a `GameSettings` PlayerPrefs static (copy
+   `TutorialSettings`) applied at bootstrap; Video via `Screen`/`QualitySettings`; Controls read-only for
+   now. Rely on `EventSystemGuard`; don't spawn EventSystems.
+2. **Assign the 8 empty AudioLibrary slots** and, if desired, give distinct clips to the placeholder-shared
+   pairs listed above.
+3. **Verify component wiring in the editor** (GUIDs match the `.meta`s, so they should bind — confirm no
+   "missing script"): `PortalExitAudio` on every selectable player-car prefab; `JetFlames` on the
+   JetFlames accessory (child visuals toggle, root stays active); `SpeedCheck` on the SpeedCheck object
+   (BoxCollider, Is Trigger unchecked — the script forces it); `WindowsAudio` on the Windows prefab;
+   `RoundDirectionalLightToggle` in the TrackScene.
+4. **Saturation caveat for the hue randomizers:** the road `RoadMaterial` Base Map color and the
+   `SimpleSkybox` Sky Tint / Ground colors must have **non-zero Saturation** or the random hue won't
+   show (a 0-sat color has no hue to shift). Ground color especially defaults to near-gray.
+5. **Playtest the freeze fixes:** leave the TrackScene every way (end portal, LRA abort, kill floor,
+   quit-to-menu) with many boulders/drones active; confirm gamepad menu nav works in every scene
+   (MainMenu, CarSelection, Store, Inventory, Start menu, Tutorial).
+
+### Deferred
+- **Player Victory sequence** still ends at the "BOTS DEFEATED" banner in a portal-less hub — a fuller win
+  presentation has no design yet.
+- **Input rebinding** UI (live control remapping) — start Controls as read-only; rebinding is its own task.
+
+---
 
 ## Architecture quick-reference
-- **`AudioManager`** (persistent): `PlayMusic/StopMusic/RefreshSceneMusic`, per-scene `MusicForScene` (menu/hub/endings/random-TrackScene, with hub swapping to drone-ending / player-victory tracks); `PlaySfx` (2D), `PlaySfxAt(clip, pos, Spatial3DSettings?)` (3D temp source); static `Play*` helpers for every event; `SfxVolume`/`MusicVolume` + setters (for a future Audio menu).
-- **`Spatial3DSettings`** is the shared, tweakable 3D block used by BoulderAudio, LightningSpawner→LightningStrike, DroneProjectile, PortalAudio (and mirrored by CarEngineAudio / CarController's own fields).
-- **Loops** are managed by their owning component (engine, boulder-fly, portal-active, drift, SD-active, craft) — each its own AudioSource with `dopplerLevel = 0`.
+- **`AudioManager`** (persistent, self-bootstrapped): scene music via `MusicForScene`
+  (menu/hub/tutorial/endings/random-TrackScene pool, hub swaps to drone-ending / player-victory tracks);
+  `PlayMusic`/`StopMusic`/`RefreshSceneMusic`; a 2nd **interior-music** source that crossfades over scene
+  music (`PlayInteriorMusic`/`StopInteriorMusic`); `PlaySfx` (2D), `PlaySfxAt(clip, pos, Spatial3DSettings?)`
+  (3D temp source), `PlaySfxFollow(clip, follow, ...)` (3D riding a transform, optional
+  `bypassListenerEffects`/`volumeScale`); portal-exit flag API; static `Play*` helpers for every event;
+  `musicBaseVolume`/sfx volume + setters (**these are your Audio-settings hooks**).
+- **`AudioLibrary`** ScriptableObject (`Resources/AudioLibrary.asset`, script GUID `4a6b8c0d…`): every
+  clip slot + `musicVolume`/`sfxVolume` + `interiorMusicCrossfadeSeconds` + `portalExit`
+  volume/Spatial3DSettings + `speedBarrier*Volume`.
+- **`Spatial3DSettings`**: shared tweakable 3D block (spatialBlend, volume, min/max distance, rolloff,
+  doppler) used by Boulder/Lightning/DroneProjectile/Portal/Windows/BoostGate audio and the portal-exit.
+- **Menus/UI**: code-built, persistent (`StartMenuController`, `InventoryView`, HUDs, `TutorialGuide`);
+  `MenuState.AnyOpen` suppresses driving input while a menu is up; `EventSystemGuard` keeps exactly one
+  EventSystem. `MainMenuController`/`CarSelectionController` are per-scene code-built menus.
+- **Player car**: spawned per gameplay scene by `PlayerCarSwapper` (from `SelectedCarStore`) or the
+  `TrackGenerator`'s delayed spawn; components read live state off `CarController` (`SpeedMph`,
+  `IsTurboActive`, `IsLoopGravityCut`, `IsAirborne`, `AirborneTime`, `OnJumped`).
