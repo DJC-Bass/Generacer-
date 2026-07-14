@@ -1,8 +1,11 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Activates the equipped SD's ability on D-pad Up (toggle). Each SD has its own effect:
+/// Activates the equipped SD's ability on the rebindable "SD" control (default D-pad Up, toggle) — the
+/// binding lives in the GeneracerControls "Driving" map and is remappable from the Main Menu CONTROLS
+/// screen. Each SD has its own effect:
 ///   • Fire SD      — multiplies the player car's MASS (default 100x), so it barrels straight
 ///                    through obstacles like a battering ram instead of being knocked around.
 ///   • Wind SD      — the car collides ONLY with the "Track" and "Default" layers (Default is
@@ -81,18 +84,42 @@ public class SDAbilityController : MonoBehaviour
     // 3D looping "SD active" sound on its own object, moved to the car while an ability is active.
     private AudioSource sdLoopSource;
 
+    // Input: the "SD" action from the Driving map (default D-pad Up), read here so it's rebindable.
+    // This controller is a persistent singleton created before the menu, so it re-syncs the player's
+    // rebinds on every scene load (a fresh gameplay car does this once, on creation).
+    private GeneracerControls controls;
+
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(this); return; }
         Instance = this;
+
+        controls = new GeneracerControls();
+        InputRebinding.ApplyOverridesTo(controls.asset);   // honour saved rebinds
+        controls.Driving.Enable();
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        InputRebinding.OverridesChanged += ReapplyOverrides;   // pick up an in-game rebind immediately
     }
+
+    void OnDestroy()
+    {
+        if (Instance != this) return;
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        InputRebinding.OverridesChanged -= ReapplyOverrides;
+        controls?.Driving.Disable();
+    }
+
+    // Re-apply the latest saved rebinds when a new scene loads OR the moment they change (an in-game
+    // rebind), so a rebind/reset made in either menu takes effect right away (this controller outlives
+    // the menu).
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ReapplyOverrides();
+    void ReapplyOverrides() { if (controls != null) InputRebinding.ApplyOverridesTo(controls.asset); }
 
     void Update()
     {
         EnsureRecorder();   // keep a rewind recorder on the car so history is ready before use
 
-        var gp = Gamepad.current;
-        if (gp != null && gp.dpad.up.wasPressedThisFrame && !MenuState.AnyOpen)
+        if (controls != null && controls.Driving.SD.triggered && !MenuState.AnyOpen)
         {
             if (IsActive) Deactivate();
             else TryActivate();

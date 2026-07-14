@@ -10,33 +10,101 @@ tutorial guide, event-system guard) or their own object (`AudioManager`, `GameLo
 ---
 
 ## NEXT TASK (this is why a fresh agent is here)
-**Wire the Main Menu "SETTINGS" button into a real settings screen** with **Audio**, **Video/Graphics**,
-and **Control** settings.
+**Settings are COMPLETE in BOTH menus — no settings work is outstanding.** The Main Menu has AUDIO / VIDEO /
+CONTROLS, and the in-game Start Menu now mirrors them (AUDIO + CONTROLS sub-screens, and VIDEO living in the
+SETTINGS sub-screen next to the Tutorial-tips toggle). Suggested follow-ups (pick per the user): build ONLINE
+MULTIPLAYER; assign the still-empty AudioLibrary slots (below); optionally **retrofit `MainMenuController` onto
+the shared `SettingsUI` + `RebindController`** (it still has its own inline `CreateSlider` /
+`CreateOptionSelector` / rebind — the Start Menu already uses the shared versions, so this is a dedupe cleanup).
 
-- **Entry point:** `Assets/Prefabs/Scripts/UI/MainMenuController.cs` → `OnSettings()` (~line 248) is
-  currently just `Debug.Log("[MainMenu] Settings — not implemented yet.")`. The "SETTINGS" button is
-  created at ~line 110 via `CreateButton("SETTINGS", menu, OnSettings)`.
-- **Reuse the pattern I built this session:** `StartMenuController` (in `Inventory/`) has a **working
-  SETTINGS sub-panel** — see `BuildSettingsPanel`, `OpenSub(panel, title, returnButton, focus, hint)`,
-  `OnToggleTutorialGuide`, `RefreshTutorialToggleLabel`. It shows how to build a gamepad-navigable
-  sub-screen (A selects, B backs out, focus set via `EventSystem.SetSelectedGameObject`). MainMenu
-  should get sub-screens the same way (a column of buttons → AUDIO / VIDEO / CONTROLS, each opening a
-  panel; B returns).
-- **Audio settings** — hooks already exist: `AudioManager.SetMusicVolume(0..1)` / `SetSfxVolume(0..1)`
-  and `MusicVolume` / `SfxVolume` getters (volume is `musicBaseVolume`-backed; the interior-music
-  crossfade splits it). Back sliders with these. Persist with PlayerPrefs.
-- **Persistence pattern** — copy `UI/TutorialSettings.cs` (a tiny static PlayerPrefs wrapper). Make a
-  `GameSettings` static for music/sfx volume, resolution, fullscreen, quality, vsync; **apply it at
-  bootstrap** (a `RuntimeInitializeOnLoadMethod`) so choices persist and take effect in every scene.
-  Note AudioManager currently seeds volumes from the `AudioLibrary` asset (`musicVolume`/`sfxVolume`) in
-  `Awake` — decide that PlayerPrefs overrides that and call the setters on boot.
-- **Video/Graphics** — `Screen.resolutions`, `Screen.SetResolution`, `Screen.fullScreenMode`,
-  `QualitySettings.SetQualityLevel`, `QualitySettings.vSyncCount`.
-- **Controls** — start with a **read-only** bindings list (the game uses the Input System
-  `GeneracerControls`). Live rebinding (`InputActionRebindingExtensions.PerformInteractiveRebinding`) is
-  a bigger follow-up; scope it separately.
-- **Do NOT create another EventSystem** — `EventSystemGuard` (bootstrapped) enforces exactly one and
-  strips extras on each scene load. MainMenuController's own `EnsureEventSystem` is now a safe no-op.
+## Settings in the in-game Start Menu (mirrors the Main Menu)
+`StartMenuController` (persistent, on PlayerSystems) builds its AUDIO / CONTROLS / SETTINGS sub-screens from
+two shared helpers so they match the Main Menu's behaviour:
+- **`UI/SettingsUI.cs`** (static) — themed widget builders shared by both menus: `VolumeSlider`, `OptionCycler`
+  (an `OptionSelector`), `ResolutionOptions`, `FullscreenModes/Labels/FullscreenIndexOf`, `WireVerticalWrap`
+  (Selectable overload), `FriendlyActionName`, `PartLabel`, `NewText`. Pass a `SettingsUI.Theme` (colours) so
+  each menu keeps its palette (Start Menu = `StartMenuConfig` blues).
+- **`UI/RebindController.cs`** (MonoBehaviour) — the shared interactive-rebind flow (Begin / Finish / Cooldown /
+  ResetAll / `IsRebinding`), with nav-suppression + Start/Esc cancel. Lives on the Start Menu's canvas (only
+  ticks while the menu is open). The host checks `IsRebinding` to suppress its own input during a rebind.
+- **Rebind conflict detection.** After a completed rebind, `InputRebinding.IsBindingInConflict(action, bindingIndex,
+  out name)` checks whether the chosen control is already used by another binding in the `Driving` map (skips the
+  binding itself + composite parents, compares `effectivePath`). On a clash the rebind is **rejected**:
+  `InputRebinding.RevertBinding` restores the pre-rebind override (captured in Begin/StartRebind), the row flashes
+  "in use" for ~1.1s, and `AudioManager.PlayStoreDenied()` buzzes. BOTH menus use this (the Main Menu keeps its
+  own inline rebind but calls the same two `InputRebinding` helpers), so behaviour matches.
+- **Start Menu specifics:** AUDIO = Music/SFX slider rows; CONTROLS = binding rows + RESET (compact rows,
+  vertically centred); SETTINGS = the Tutorial toggle followed by RESOLUTION / DISPLAY MODE / QUALITY / V-SYNC
+  option rows (`BuildSettingsPanel`). `Update`/`LateUpdate` early-out while `rebind.IsRebinding`.
+- **In-game rebinds apply immediately:** `InputRebinding` now raises a static `OverridesChanged` event on
+  Save/Reset; `CarController`, `CameraSwitcher` and `SDAbilityController` subscribe and re-apply overrides on the
+  spot (previously an in-game rebind only took effect on the next scene load).
+
+## Settings screen (complete)
+Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuController.OnSettings()` opens a
+**category chooser** (AUDIO / VIDEO & GRAPHICS / CONTROLS); B/Escape steps back one level. Key methods:
+`ShowCategories` / `ShowAudio` / `ShowVideo` / `ShowControls` (panel switching via `SetSettingsPanels`),
+`GoBack` + `BackPressed` (gamepad B / Esc), `FocusFirst` (selection + move-SFX priming),
+`BuildSettingsScreens` → `BuildCategoryColumn` / `BuildAudioPanel` / `BuildVideoPanel` / `BuildControlsPanel`.
+
+- **AUDIO.** `BuildAudioPanel` has **MUSIC + SFX** sliders (code-built Unity `Slider`s, 0..1) with a live
+  `NN%` readout. Up/Down wraps between the two; Left/Right adjusts the focused one. Changes call
+  `AudioManager.SetMusicVolume/SetSfxVolume` (live) **and** persist via `UI/GameSettings.cs`. Helpers:
+  `CreateSlider` / `BuildAudioRow` / `WireSliderPair`.
+- **VIDEO/Graphics.** `BuildVideoPanel` has **RESOLUTION / DISPLAY MODE / QUALITY / V-SYNC** rows, each a
+  **`UI/OptionSelector.cs`** — a `Selectable` subclass whose `OnMove` cycles a fixed option list on
+  Left/Right (like `Slider` does for its value) while Up/Down navigate. Sources: `Screen.resolutions`
+  (deduped by w×h), `FullScreenMode` (Fullscreen/Borderless/Windowed), `QualitySettings.names`,
+  `QualitySettings.vSyncCount`. Handlers apply live AND persist. Nav: `WireVerticalSelectors`.
+- **CONTROLS (rebinding + reset).** `BuildControlsPanel` lists one row per rebindable binding of the
+  `Driving` map (composite parts shown as e.g. "Throttle (+)"; `FriendlyActionName` prettifies a couple,
+  e.g. SD→"SD Card", RearView→"Rear View"), each row a Button that A → interactive rebind
+  (`InputAction.PerformInteractiveRebinding`), plus a **RESET TO DEFAULTS** button. Rebinds are persisted
+  as binding-override JSON by **`UI/InputRebinding.cs`** and re-applied by every consumer —
+  `CarController.OnEnable` and `CameraSwitcher.OnEnable` call `InputRebinding.ApplyOverridesTo(controls.asset)`
+  right after `new GeneracerControls()` (each consumer builds its OWN asset from JSON, so this is how a
+  menu rebind reaches gameplay; it works because gameplay scenes load after the menu). Reset =
+  `RemoveAllBindingOverrides` + clear the pref. During a rebind, `EventSystem.sendNavigationEvents` is
+  turned off (and a 0.2s cooldown after) so the captured press doesn't leak into the menu; cancel via
+  gamepad **Start** (excluded from binding, handled in `Update`) or **Esc** (`WithCancelingThrough`).
+- **SD ability is now a rebindable action.** Added an **"SD"** button action (default `<Gamepad>/dpad/up`)
+  to the `Driving` map — in BOTH `GeneracerControls.inputactions` AND the generated `GeneracerControls.cs`
+  (embedded JSON + `m_Driving_SD` field + `FindAction` + `@SD` accessor; if Unity regenerates the wrapper
+  from the asset it stays correct — no class implements `IDrivingActions`). `SDAbilityController` no longer
+  reads `Gamepad.dpad.up` directly; it owns a `GeneracerControls`, enables `Driving`, reads
+  `controls.Driving.SD.triggered`, and — because it's a persistent singleton created BEFORE the menu —
+  re-applies overrides on every `sceneLoaded` (so a menu rebind/reset reaches it). `InputRebinding.ApplyOverridesTo`
+  was made idempotent (empty JSON → `RemoveAllBindingOverrides`) so re-syncing and reset both work on a
+  long-lived instance. **Pattern for adding another rebindable action later:** add it to the `.inputactions`
+  + the `.cs` embedded JSON/accessors, read it via `controls.Driving.<Name>`, and it auto-appears in the
+  CONTROLS list.
+- **Airborne self-leveling is now MANUAL (hold Self-Level, default Y/buttonNorth).** Added a `SelfLevel`
+  button action to the `Driving` map (both `.inputactions` + generated `.cs`, same pattern as SD; shows as
+  "Self-Level" in both Controls screens). `CarController` changes: `airDriftGracePeriod` renamed
+  `airAbilitiesGracePeriod` (`[FormerlySerializedAs]` keeps tuned values); after that grace, **manual pitch
+  is available immediately** (`ApplyManualAirPitch` — pitch input steers, otherwise rotation is pure
+  physics; the old constant roll auto-level is gone) and **self-leveling only runs while Y is held**
+  (`UpdateManualSelfLevel` + `selfLevelHeld`/`selfLevelArmed`): a fresh press arms the hold, releasing
+  mid-level stops it (press again to continue), and reaching fully level (`IsFullyLevel`, ~0° epsilon —
+  distinct from the looser `airDriftLevelThreshold` that still gates air drift) consumes the hold so a NEW
+  press is needed once tilted again. Leveling takes priority over manual pitch for the frames it runs.
+- **Persistence.** `UI/GameSettings.cs` (static PlayerPrefs, mirrors `TutorialSettings`):
+  `MusicVolume`/`SfxVolume`, `ResolutionWidth/Height` (+`SetResolution`), `FullScreenModeValue`,
+  `QualityLevel`, `VSync`, each with a `Has*` flag. `AudioManager.Awake` applies audio volumes on boot
+  over the AudioLibrary defaults; `GameSettings.ApplyVideoSettings()`
+  (`[RuntimeInitializeOnLoadMethod(BeforeSceneLoad)]`) applies quality→vsync→resolution/fullscreen. Control
+  rebinds live in their own pref via `InputRebinding`.
+- **Do NOT create another EventSystem** — `EventSystemGuard` (bootstrapped) enforces exactly one.
+  MainMenuController's own `EnsureEventSystem` is a safe no-op.
+- **Gotchas:** (1) Code-built `Slider` needs `fillRect`/`handleRect`/`targetGraphic` + the standard
+  child hierarchy (see `CreateSlider`); set `slider.value` BEFORE `AddListener`. (2) An
+  `OptionSelector`/`Slider` consumes Left/Right only when `selectOnLeft/Right == null` (explicit nav).
+  (3) Resolution/fullscreen are largely **no-ops in the editor** — test in a build; quality/vsync show
+  live. (4) `QualitySettings.SetQualityLevel` can reset vSync per level, so `OnQualityChanged` re-applies
+  the saved VSync. (5) Rebinding: the cancel control must be **excluded from binding** (Start) or set via
+  `WithCancelingThrough` (Esc), else the cancel press would itself be bound. (6) Rebinds only reach a
+  consumer that calls `InputRebinding.ApplyOverridesTo` after creating its `GeneracerControls` — if a new
+  input consumer is added later, it must do the same.
 
 ---
 

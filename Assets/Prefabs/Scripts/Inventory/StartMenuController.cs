@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
@@ -13,7 +14,12 @@ using UnityEngine.InputSystem.UI;
 /// change, so the car, AI and round timer keep running behind it). Toggled with the gamepad Start
 /// button while in a gameplay scene (HubWorld / TrackScene). Lists RESUME, AUDIO, CONTROLS,
 /// SETTINGS, QUIT top-to-bottom; A selects, B backs out, Start closes. RESUME closes, QUIT returns
-/// to the main menu. AUDIO/CONTROLS/SETTINGS open placeholder sub-screens that B backs out of.
+/// to the main menu.
+///
+/// The AUDIO / CONTROLS / SETTINGS sub-screens mirror the Main Menu's settings, built from the shared
+/// <see cref="SettingsUI"/> widgets + <see cref="RebindController"/>: AUDIO = Music/SFX volume sliders,
+/// CONTROLS = per-binding rebinding + reset, SETTINGS = the Tutorial-tips toggle alongside the
+/// Video/Graphics options (resolution / display mode / quality / vsync).
 ///
 /// Persistent + bootstrapped on the PlayerSystems object, and reuses <see cref="MenuState"/> so
 /// while it's open the gamepad's A/B presses don't also drive the car. Look/layout come from a
@@ -40,6 +46,7 @@ public class StartMenuController : MonoBehaviour
     private TextMeshProUGUI titleText;
     private TextMeshProUGUI hintText;
     private GameObject firstButton;            // RESUME — focused on open
+    private GameObject currentFirst;           // the current screen's first control (nav rescue target)
 
     private Button audioBtn, controlsBtn, settingsBtn;
     private GameObject audioPanel, controlsPanel, settingsPanel;
@@ -47,6 +54,20 @@ public class StartMenuController : MonoBehaviour
     private TextMeshProUGUI tutorialToggleLabel;
     private GameObject currentSub;             // null = on the main list
     private GameObject subReturnButton;        // main button to re-focus when backing out of a sub
+
+    // AUDIO
+    private Slider musicSlider, sfxSlider;
+    private TextMeshProUGUI musicValueText, sfxValueText;
+    private GameObject audioFirst;
+
+    // VIDEO (lives in the SETTINGS panel next to the Tutorial toggle)
+    private OptionSelector resSel, dispSel, qualSel, vsyncSel;
+    private List<Vector2Int> resolutionOptions;
+
+    // CONTROLS (rebinding)
+    private GeneracerControls controlsForRebind;
+    private RebindController rebind;
+    private GameObject controlsFirst;
 
     private bool isOpen;
     private bool built;
@@ -60,6 +81,7 @@ public class StartMenuController : MonoBehaviour
 
     void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
     void OnDisable() => SceneManager.sceneLoaded -= OnSceneLoaded;
+    void OnDestroy() { if (Instance == this) controlsForRebind?.Dispose(); }
 
     // Never carry the menu across a scene load (e.g. QUIT, or returning to the hub).
     void OnSceneLoaded(Scene scene, LoadSceneMode mode) { if (isOpen) Close(); }
@@ -68,6 +90,10 @@ public class StartMenuController : MonoBehaviour
     {
         var gp = Gamepad.current;
         if (gp == null) return;
+
+        // While a rebind is listening, RebindController owns input (Start/Esc cancel) — leave the menu
+        // alone so the captured press doesn't also toggle/close it.
+        if (rebind != null && rebind.IsRebinding) return;
 
         // Start toggles the menu. Only open while in a gameplay scene (or a listed extra scene,
         // like the Tutorial) and no other menu is up.
@@ -89,19 +115,14 @@ public class StartMenuController : MonoBehaviour
 
     void LateUpdate()
     {
-        // Only the main list is navigable; reset the SFX tracker elsewhere so opening the menu or
-        // returning from a sub-screen doesn't fire a stray "move" sound.
-        if (!isOpen || currentSub != null)
-        {
-            lastSelectedForSfx = null;
-            return;
-        }
+        // Nothing to steer when closed, or while a rebind is capturing input.
+        if (!isOpen || (rebind != null && rebind.IsRebinding)) { lastSelectedForSfx = null; return; }
 
         // Rescue navigation from a null selection (e.g. a mouse click cleared it) so pressing Up/Down
-        // re-highlights the top item instead of soft-locking.
-        MenuNavigation.EnsureSelectionOnNavigate(firstButton);
+        // re-highlights this screen's first control instead of soft-locking.
+        MenuNavigation.EnsureSelectionOnNavigate(currentFirst);
 
-        // Play the "move" SFX whenever the highlighted item changes (list navigation).
+        // Play the "move" SFX whenever the highlighted item changes (list or sub-screen navigation).
         MenuNavigation.PlayMoveSfxOnSelectionChange(ref lastSelectedForSfx);
     }
 
@@ -154,13 +175,13 @@ public class StartMenuController : MonoBehaviour
 
         var focus = subReturnButton != null ? subReturnButton : firstButton;
         subReturnButton = null;
+        currentFirst = firstButton;
         if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(focus);
     }
 
-    /// <summary>Opens a sub-screen (AUDIO/CONTROLS/SETTINGS). B returns to the list and re-focuses
-    /// the button that opened it. Sub-screens are placeholders for now — fill them in later.</summary>
-    void OpenSub(GameObject panel, string title, GameObject returnButton,
-                 GameObject focus = null, string hint = "B: Back")
+    /// <summary>Opens a sub-screen (AUDIO/CONTROLS/SETTINGS). B returns to the list and re-focuses the
+    /// button that opened it.</summary>
+    void OpenSub(GameObject panel, string title, GameObject returnButton, GameObject focus, string hint)
     {
         currentSub = panel;
         subReturnButton = returnButton;
@@ -173,8 +194,7 @@ public class StartMenuController : MonoBehaviour
         if (titleText != null) titleText.text = title;
         if (hintText != null) hintText.text = hint;
 
-        // Focus the panel's first control — null for placeholder panels, which have nothing to
-        // navigate; either way B (handled in Update) returns to the list.
+        currentFirst = focus;
         if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(focus);
     }
 
@@ -183,15 +203,58 @@ public class StartMenuController : MonoBehaviour
     // -------------------------------------------------------
 
     void OnResume() => Close();
-    void OnAudio() => OpenSub(audioPanel, "AUDIO", audioBtn != null ? audioBtn.gameObject : null);
-    void OnControls() => OpenSub(controlsPanel, "CONTROLS", controlsBtn != null ? controlsBtn.gameObject : null);
+
+    void OnAudio()
+    {
+        RefreshAudioValues();   // re-sync to the live volumes (may have changed since this was built)
+        OpenSub(audioPanel, "AUDIO", audioBtn != null ? audioBtn.gameObject : null,
+                audioFirst, "Left/Right: Adjust     B: Back");
+    }
+
+    void OnControls()
+    {
+        RefreshControlsLabels();   // re-sync to the current bindings (e.g. rebound from the main menu)
+        OpenSub(controlsPanel, "CONTROLS", controlsBtn != null ? controlsBtn.gameObject : null,
+                controlsFirst, "A: Rebind     B: Back     Start/Esc: cancel a rebind");
+    }
 
     void OnSettings()
     {
         RefreshTutorialToggleLabel();   // reflect the current preference before showing the toggle
+        RefreshVideoValues();           // re-sync the video options to the live screen/quality state
         OpenSub(settingsPanel, "SETTINGS", settingsBtn != null ? settingsBtn.gameObject : null,
                 tutorialToggleBtn != null ? tutorialToggleBtn.gameObject : null,
-                "A: Toggle     B: Back");
+                "A: Toggle     Left/Right: Change     B: Back");
+    }
+
+    // Sub-screens are built once (persistent menu); re-sync their widgets to the live state on each open
+    // so a change made elsewhere (e.g. the Main Menu) isn't shown stale.
+    void RefreshAudioValues()
+    {
+        if (musicSlider != null) { musicSlider.SetValueWithoutNotify(InitialMusic()); UpdateMusicValueText(musicSlider.value); }
+        if (sfxSlider   != null) { sfxSlider.SetValueWithoutNotify(InitialSfx());     UpdateSfxValueText(sfxSlider.value); }
+    }
+
+    void RefreshVideoValues()
+    {
+        if (resSel != null && resolutionOptions != null)
+        {
+            int targetW = GameSettings.HasResolution ? GameSettings.ResolutionWidth  : Screen.width;
+            int targetH = GameSettings.HasResolution ? GameSettings.ResolutionHeight : Screen.height;
+            int idx = 0;
+            for (int i = 0; i < resolutionOptions.Count; i++)
+                if (resolutionOptions[i].x == targetW && resolutionOptions[i].y == targetH) { idx = i; break; }
+            resSel.SetIndexSilent(idx);
+        }
+        if (dispSel  != null) dispSel.SetIndexSilent(SettingsUI.FullscreenIndexOf(Screen.fullScreenMode));
+        if (qualSel  != null) qualSel.SetIndexSilent(QualitySettings.GetQualityLevel());
+        if (vsyncSel != null) vsyncSel.SetIndexSilent(QualitySettings.vSyncCount > 0 ? 1 : 0);
+    }
+
+    void RefreshControlsLabels()
+    {
+        if (controlsForRebind != null) InputRebinding.ApplyOverridesTo(controlsForRebind.asset);
+        if (rebind != null) rebind.RefreshLabels();
     }
 
     void OnToggleTutorialGuide()
@@ -262,13 +325,13 @@ public class StartMenuController : MonoBehaviour
 
         BuildMainPanel(root.transform);
 
-        audioPanel = BuildSubPanel(root.transform, "Audio settings coming soon.");
-        controlsPanel = BuildSubPanel(root.transform, "Controls settings coming soon.");
+        audioPanel = BuildAudioPanel(root.transform);
+        controlsPanel = BuildControlsPanel(root.transform);
         settingsPanel = BuildSettingsPanel(root.transform);
 
         hintText = NewText(root.transform, "Hint", cfg.hintFontSize, TextAlignmentOptions.Center);
         hintText.color = cfg.hintColor;
-        SetCentered(hintText.rectTransform, new Vector2(900f, 50f), new Vector2(0f, cfg.hintY));
+        SetCentered(hintText.rectTransform, new Vector2(1100f, 50f), new Vector2(0f, cfg.hintY));
 
         root.SetActive(false);
     }
@@ -276,18 +339,7 @@ public class StartMenuController : MonoBehaviour
     void BuildMainPanel(Transform parent)
     {
         mainPanel = NewUI("MainPanel", parent);
-        SetCentered(mainPanel.GetComponent<RectTransform>(), new Vector2(cfg.buttonSize.x, 100f),
-                    new Vector2(0f, cfg.buttonColumnY));
-
-        var vlg = mainPanel.AddComponent<VerticalLayoutGroup>();
-        vlg.spacing = cfg.buttonSpacing;
-        vlg.childAlignment = TextAnchor.MiddleCenter;
-        vlg.childControlWidth = true; vlg.childControlHeight = true;
-        vlg.childForceExpandWidth = false; vlg.childForceExpandHeight = false;
-
-        var fitter = mainPanel.AddComponent<ContentSizeFitter>();
-        fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        SetupColumn(mainPanel, cfg.buttonColumnY, cfg.buttonSpacing);
 
         var resume = CreateButton("RESUME", mainPanel.transform, OnResume);
         audioBtn = CreateButton("AUDIO", mainPanel.transform, OnAudio);
@@ -301,17 +353,280 @@ public class StartMenuController : MonoBehaviour
         MenuNavigation.WireVerticalWrap(new[] { resume, audioBtn, controlsBtn, settingsBtn, quit });
     }
 
-    /// <summary>The SETTINGS sub-screen: a single toggle for the Tutorial scene's on-screen tips
-    /// (A flips it). Built like the main list so gamepad focus + A/B work; more toggles can be added
-    /// to the same column later.</summary>
+    // -------------------------------------------------------
+    //  AUDIO sub-screen (Music + SFX volume)
+    // -------------------------------------------------------
+
+    GameObject BuildAudioPanel(Transform parent)
+    {
+        var go = NewUI("AudioPanel", parent);
+        SetupColumn(go, cfg.buttonColumnY, cfg.buttonSpacing);
+
+        musicSlider = BuildSliderRow(go.transform, "MUSIC", InitialMusic(), OnMusicChanged, out musicValueText);
+        sfxSlider   = BuildSliderRow(go.transform, "SFX",   InitialSfx(),   OnSfxChanged,   out sfxValueText);
+
+        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider });
+
+        UpdateMusicValueText(musicSlider.value);
+        UpdateSfxValueText(sfxSlider.value);
+
+        audioFirst = musicSlider.gameObject;
+        go.SetActive(false);
+        return go;
+    }
+
+    Slider BuildSliderRow(Transform col, string label, float initial,
+                          UnityEngine.Events.UnityAction<float> onChanged, out TextMeshProUGUI valueText)
+    {
+        var row = NewUI(label + "Row", col);
+        float w = cfg.buttonSize.x + 200f;
+        var le = row.AddComponent<LayoutElement>();
+        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 54f; le.minHeight = 54f;
+
+        var lbl = SettingsUI.NewText(row.transform, "Label", cfg.buttonFontSize * 0.8f, TextAlignmentOptions.MidlineLeft);
+        lbl.text = label; lbl.color = cfg.buttonTextColor;
+        Stretch(lbl.rectTransform, new Vector2(0f, 0f), new Vector2(0.28f, 1f), new Vector2(10f, 0f), Vector2.zero);
+
+        var slider = SettingsUI.VolumeSlider(row.transform, Theme(), initial, onChanged);
+        Stretch(slider.GetComponent<RectTransform>(), new Vector2(0.30f, 0.25f), new Vector2(0.80f, 0.75f), Vector2.zero, Vector2.zero);
+
+        var val = SettingsUI.NewText(row.transform, "Value", cfg.buttonFontSize * 0.8f, TextAlignmentOptions.MidlineRight);
+        val.color = cfg.buttonTextColor;
+        Stretch(val.rectTransform, new Vector2(0.82f, 0f), new Vector2(1f, 1f), Vector2.zero, new Vector2(-10f, 0f));
+
+        valueText = val;
+        return slider;
+    }
+
+    void OnMusicChanged(float v)
+    {
+        if (AudioManager.Instance != null) AudioManager.Instance.SetMusicVolume(v);
+        GameSettings.MusicVolume = v;
+        UpdateMusicValueText(v);
+    }
+
+    void OnSfxChanged(float v)
+    {
+        if (AudioManager.Instance != null) AudioManager.Instance.SetSfxVolume(v);
+        GameSettings.SfxVolume = v;
+        UpdateSfxValueText(v);
+        AudioManager.PlayMenuMove();   // tick at the NEW level so the slider previews SFX loudness
+    }
+
+    void UpdateMusicValueText(float v) { if (musicValueText != null) musicValueText.text = Mathf.RoundToInt(v * 100f) + "%"; }
+    void UpdateSfxValueText(float v)   { if (sfxValueText   != null) sfxValueText.text   = Mathf.RoundToInt(v * 100f) + "%"; }
+
+    static float InitialMusic() => AudioManager.Instance != null ? AudioManager.Instance.MusicVolume : GameSettings.MusicVolume;
+    static float InitialSfx()   => AudioManager.Instance != null ? AudioManager.Instance.SfxVolume   : GameSettings.SfxVolume;
+
+    // -------------------------------------------------------
+    //  CONTROLS sub-screen (rebinding + reset)
+    // -------------------------------------------------------
+
+    GameObject BuildControlsPanel(Transform parent)
+    {
+        controlsForRebind = new GeneracerControls();
+        InputRebinding.ApplyOverridesTo(controlsForRebind.asset);   // start from the player's saved rebinds
+        var map = controlsForRebind.Driving.Get();
+
+        rebind = root.AddComponent<RebindController>();   // on the canvas, so it only ticks while the menu is open
+        rebind.Init(controlsForRebind);
+        rebind.ClearRows();
+
+        var go = NewUI("ControlsPanel", parent);
+        SetupColumn(go, cfg.buttonColumnY, 5f);
+
+        var buttons = new List<Button>();
+        foreach (var action in map.actions)
+        {
+            for (int i = 0; i < action.bindings.Count; i++)
+            {
+                var b = action.bindings[i];
+                if (b.isComposite) continue;
+
+                var capturedAction = action; int bindingIndex = i;
+                string rowName = SettingsUI.FriendlyActionName(action.name)
+                                 + (b.isPartOfComposite ? " (" + SettingsUI.PartLabel(b.name) + ")" : "");
+
+                var row = BuildBindingRow(go.transform, rowName, out TextMeshProUGUI valueLabel);
+                valueLabel.text = capturedAction.GetBindingDisplayString(bindingIndex);
+                row.onClick.AddListener(() => rebind.Begin(capturedAction, bindingIndex, valueLabel));
+                rebind.RegisterRow(capturedAction, bindingIndex, valueLabel);
+                buttons.Add(row);
+            }
+        }
+
+        var reset = BuildRowButton(go.transform, "RESET TO DEFAULTS", () => rebind.ResetAll());
+        buttons.Add(reset);
+
+        MenuNavigation.WireVerticalWrap(buttons);
+        controlsFirst = buttons.Count > 0 ? buttons[0].gameObject : null;
+
+        go.SetActive(false);
+        return go;
+    }
+
+    Button BuildBindingRow(Transform col, string rowName, out TextMeshProUGUI valueLabel)
+    {
+        var go = new GameObject(rowName + " Row", typeof(RectTransform), typeof(Image), typeof(Button));
+        go.transform.SetParent(col, false);
+        go.GetComponent<Image>().color = Color.white;
+
+        float w = cfg.buttonSize.x + 170f;
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 42f; le.minHeight = 42f;
+
+        var btn = go.GetComponent<Button>();
+        ApplyColors(btn);
+        btn.onClick.AddListener(AudioManager.PlayMenuSelect);
+
+        var nameLabel = SettingsUI.NewText(go.transform, "Name", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.MidlineLeft);
+        nameLabel.text = rowName; nameLabel.color = cfg.buttonTextColor;
+        Stretch(nameLabel.rectTransform, Vector2.zero, Vector2.one, new Vector2(18f, 0f), new Vector2(-18f, 0f));
+
+        valueLabel = SettingsUI.NewText(go.transform, "Value", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.MidlineRight);
+        valueLabel.color = Color.white; valueLabel.fontStyle = FontStyles.Bold;
+        Stretch(valueLabel.rectTransform, Vector2.zero, Vector2.one, new Vector2(18f, 0f), new Vector2(-18f, 0f));
+
+        return btn;
+    }
+
+    Button BuildRowButton(Transform col, string label, UnityEngine.Events.UnityAction onClick)
+    {
+        var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
+        go.transform.SetParent(col, false);
+        go.GetComponent<Image>().color = Color.white;
+
+        float w = cfg.buttonSize.x + 170f;
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 42f; le.minHeight = 42f;
+
+        var btn = go.GetComponent<Button>();
+        ApplyColors(btn);
+        btn.onClick.AddListener(onClick);
+        btn.onClick.AddListener(AudioManager.PlayMenuSelect);
+
+        var lbl = SettingsUI.NewText(go.transform, "Label", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.Center);
+        lbl.text = label; lbl.color = cfg.buttonTextColor;
+        Stretch(lbl.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+
+        return btn;
+    }
+
+    // -------------------------------------------------------
+    //  SETTINGS sub-screen: Tutorial-tips toggle + Video/Graphics
+    // -------------------------------------------------------
+
     GameObject BuildSettingsPanel(Transform parent)
     {
         var go = NewUI("SettingsPanel", parent);
-        SetCentered(go.GetComponent<RectTransform>(), new Vector2(cfg.buttonSize.x, 100f),
-                    new Vector2(0f, cfg.buttonColumnY));
+        SetupColumn(go, cfg.buttonColumnY, 8f);
+
+        tutorialToggleBtn = CreateButton("TutorialToggle", go.transform, OnToggleTutorialGuide);
+        tutorialToggleLabel = tutorialToggleBtn.GetComponentInChildren<TextMeshProUGUI>();
+        RefreshTutorialToggleLabel();   // sets the real "Tutorial Tips: ON/OFF" text (panel is hidden here)
+
+        // Video / Graphics options share this panel with the Tutorial toggle.
+        var resLabels = SettingsUI.ResolutionOptions(out resolutionOptions, out int resStart);
+        resSel  = BuildOptionRow(go.transform, "RESOLUTION",   resLabels, resStart, OnResolutionChanged);
+        dispSel = BuildOptionRow(go.transform, "DISPLAY MODE", new List<string>(SettingsUI.FullscreenLabels),
+                                 SettingsUI.FullscreenIndexOf(Screen.fullScreenMode), OnFullscreenChanged);
+        var qLabels = new List<string>(QualitySettings.names);
+        int qStart = Mathf.Clamp(QualitySettings.GetQualityLevel(), 0, Mathf.Max(0, qLabels.Count - 1));
+        qualSel = BuildOptionRow(go.transform, "QUALITY", qLabels, qStart, OnQualityChanged);
+        vsyncSel = BuildOptionRow(go.transform, "V-SYNC", new List<string> { "Off", "On" },
+                                  QualitySettings.vSyncCount > 0 ? 1 : 0, OnVSyncChanged);
+
+        SettingsUI.WireVerticalWrap(new Selectable[] { tutorialToggleBtn, resSel, dispSel, qualSel, vsyncSel });
+
+        go.SetActive(false);
+        return go;
+    }
+
+    OptionSelector BuildOptionRow(Transform col, string label, IList<string> options, int start, System.Action<int> onChanged)
+    {
+        var row = NewUI(label + "Row", col);
+        float w = cfg.buttonSize.x + 170f;
+        var le = row.AddComponent<LayoutElement>();
+        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 46f; le.minHeight = 46f;
+
+        var lbl = SettingsUI.NewText(row.transform, "Label", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.MidlineLeft);
+        lbl.text = label; lbl.color = cfg.buttonTextColor;
+        Stretch(lbl.rectTransform, new Vector2(0f, 0f), new Vector2(0.45f, 1f), new Vector2(18f, 0f), Vector2.zero);
+
+        var sel = SettingsUI.OptionCycler(row.transform, Theme(), cfg.buttonFontSize * 0.66f, options, start, onChanged);
+        Stretch(sel.GetComponent<RectTransform>(), new Vector2(0.47f, 0.12f), new Vector2(1f, 0.88f), Vector2.zero, new Vector2(-8f, 0f));
+
+        return sel;
+    }
+
+    void OnResolutionChanged(int index)
+    {
+        if (resolutionOptions == null || index < 0 || index >= resolutionOptions.Count) return;
+        var r = resolutionOptions[index];
+        GameSettings.SetResolution(r.x, r.y);
+        Screen.SetResolution(r.x, r.y, SelectedFullscreenMode());
+    }
+
+    void OnFullscreenChanged(int index)
+    {
+        var mode = SettingsUI.FullscreenModes[Mathf.Clamp(index, 0, SettingsUI.FullscreenModes.Length - 1)];
+        GameSettings.FullScreenModeValue = (int)mode;
+        Screen.fullScreenMode = mode;
+    }
+
+    void OnQualityChanged(int index)
+    {
+        GameSettings.QualityLevel = index;
+        QualitySettings.SetQualityLevel(index, true);
+        if (GameSettings.HasVSync) QualitySettings.vSyncCount = GameSettings.VSync;
+        if (vsyncSel != null) vsyncSel.SetIndexSilent(QualitySettings.vSyncCount > 0 ? 1 : 0);
+    }
+
+    void OnVSyncChanged(int index)
+    {
+        GameSettings.VSync = index;
+        QualitySettings.vSyncCount = index;
+    }
+
+    FullScreenMode SelectedFullscreenMode()
+    {
+        int i = dispSel != null ? dispSel.Index : SettingsUI.FullscreenIndexOf(Screen.fullScreenMode);
+        return SettingsUI.FullscreenModes[Mathf.Clamp(i, 0, SettingsUI.FullscreenModes.Length - 1)];
+    }
+
+    // -------------------------------------------------------
+    //  Shared builders / helpers
+    // -------------------------------------------------------
+
+    SettingsUI.Theme Theme() => new SettingsUI.Theme
+    {
+        normal = cfg.buttonNormalColor,
+        highlighted = cfg.buttonHighlightedColor,
+        selected = cfg.buttonSelectedColor,
+        pressed = cfg.buttonPressedColor,
+        text = cfg.buttonTextColor,
+        fade = 0.1f,
+    };
+
+    void ApplyColors(Selectable s)
+    {
+        var cb = s.colors;
+        cb.normalColor = cfg.buttonNormalColor;
+        cb.highlightedColor = cfg.buttonHighlightedColor;
+        cb.selectedColor = cfg.buttonSelectedColor;
+        cb.pressedColor = cfg.buttonPressedColor;
+        cb.colorMultiplier = 1f; cb.fadeDuration = 0.1f;
+        s.colors = cb;
+    }
+
+    // Centres a code-built panel and gives it a vertical layout that grows to fit its rows.
+    void SetupColumn(GameObject go, float y, float spacing)
+    {
+        SetCentered(go.GetComponent<RectTransform>(), new Vector2(cfg.buttonSize.x, 100f), new Vector2(0f, y));
 
         var vlg = go.AddComponent<VerticalLayoutGroup>();
-        vlg.spacing = cfg.buttonSpacing;
+        vlg.spacing = spacing;
         vlg.childAlignment = TextAnchor.MiddleCenter;
         vlg.childControlWidth = true; vlg.childControlHeight = true;
         vlg.childForceExpandWidth = false; vlg.childForceExpandHeight = false;
@@ -319,29 +634,12 @@ public class StartMenuController : MonoBehaviour
         var fitter = go.AddComponent<ContentSizeFitter>();
         fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        tutorialToggleBtn = CreateButton("TutorialToggle", go.transform, OnToggleTutorialGuide);
-        tutorialToggleLabel = tutorialToggleBtn.GetComponentInChildren<TextMeshProUGUI>();
-        RefreshTutorialToggleLabel();   // sets the real "Tutorial Tips: ON/OFF" text (panel is hidden here)
-
-        go.SetActive(false);
-        return go;
     }
 
-    GameObject BuildSubPanel(Transform parent, string placeholder)
+    static void Stretch(RectTransform rt, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax)
     {
-        var go = NewUI("SubPanel", parent);
-        SetCentered(go.GetComponent<RectTransform>(), new Vector2(900f, 300f), new Vector2(0f, cfg.buttonColumnY));
-
-        var tmp = NewText(go.transform, "Placeholder", cfg.buttonFontSize, TextAlignmentOptions.Center);
-        tmp.text = placeholder;
-        tmp.color = cfg.buttonTextColor;
-        var trt = tmp.rectTransform;
-        trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one;
-        trt.offsetMin = Vector2.zero; trt.offsetMax = Vector2.zero;
-
-        go.SetActive(false);
-        return go;
+        rt.anchorMin = anchorMin; rt.anchorMax = anchorMax;
+        rt.offsetMin = offsetMin; rt.offsetMax = offsetMax;
     }
 
     Button CreateButton(string label, Transform parent, UnityEngine.Events.UnityAction onClick)
@@ -355,13 +653,7 @@ public class StartMenuController : MonoBehaviour
         le.minWidth = cfg.buttonSize.x; le.minHeight = cfg.buttonSize.y;
 
         var btn = go.GetComponent<Button>();
-        var cb = btn.colors;
-        cb.normalColor = cfg.buttonNormalColor;
-        cb.highlightedColor = cfg.buttonHighlightedColor;
-        cb.selectedColor = cfg.buttonSelectedColor;
-        cb.pressedColor = cfg.buttonPressedColor;
-        cb.colorMultiplier = 1f; cb.fadeDuration = 0.1f;
-        btn.colors = cb;
+        ApplyColors(btn);
         btn.onClick.AddListener(onClick);
         btn.onClick.AddListener(AudioManager.PlayMenuSelect);   // "select" SFX on click / Submit (A)
 

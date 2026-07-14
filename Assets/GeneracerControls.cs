@@ -154,6 +154,24 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""SD"",
+                    ""type"": ""Button"",
+                    ""id"": ""e5f6a7b8-3333-4444-5555-666677778888"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""SelfLevel"",
+                    ""type"": ""Button"",
+                    ""id"": ""a7b8c9d0-5555-6666-7777-888899990000"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -255,6 +273,28 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
                     ""action"": ""RearView"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""f6a7b8c9-4444-5555-6666-777788889999"",
+                    ""path"": ""<Gamepad>/dpad/up"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""SD"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""b8c9d0e1-6666-7777-8888-99990000aaaa"",
+                    ""path"": ""<Gamepad>/buttonNorth"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""SelfLevel"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         }
@@ -270,6 +310,8 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         m_Driving_Turbo = m_Driving.FindAction("Turbo", throwIfNotFound: true);
         m_Driving_Jump = m_Driving.FindAction("Jump", throwIfNotFound: true);
         m_Driving_RearView = m_Driving.FindAction("RearView", throwIfNotFound: true);
+        m_Driving_SD = m_Driving.FindAction("SD", throwIfNotFound: true);
+        m_Driving_SelfLevel = m_Driving.FindAction("SelfLevel", throwIfNotFound: true);
     }
 
     ~@GeneracerControls()
@@ -357,6 +399,8 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
     private readonly InputAction m_Driving_Turbo;
     private readonly InputAction m_Driving_Jump;
     private readonly InputAction m_Driving_RearView;
+    private readonly InputAction m_Driving_SD;
+    private readonly InputAction m_Driving_SelfLevel;
     /// <summary>
     /// Provides access to input actions defined in input action map "Driving".
     /// </summary>
@@ -396,6 +440,14 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Driving/RearView".
         /// </summary>
         public InputAction @RearView => m_Wrapper.m_Driving_RearView;
+        /// <summary>
+        /// Provides access to the underlying input action "Driving/SD".
+        /// </summary>
+        public InputAction @SD => m_Wrapper.m_Driving_SD;
+        /// <summary>
+        /// Provides access to the underlying input action "Driving/SelfLevel".
+        /// </summary>
+        public InputAction @SelfLevel => m_Wrapper.m_Driving_SelfLevel;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -443,6 +495,12 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
             @RearView.started += instance.OnRearView;
             @RearView.performed += instance.OnRearView;
             @RearView.canceled += instance.OnRearView;
+            @SD.started += instance.OnSD;
+            @SD.performed += instance.OnSD;
+            @SD.canceled += instance.OnSD;
+            @SelfLevel.started += instance.OnSelfLevel;
+            @SelfLevel.performed += instance.OnSelfLevel;
+            @SelfLevel.canceled += instance.OnSelfLevel;
         }
 
         /// <summary>
@@ -475,6 +533,12 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
             @RearView.started -= instance.OnRearView;
             @RearView.performed -= instance.OnRearView;
             @RearView.canceled -= instance.OnRearView;
+            @SD.started -= instance.OnSD;
+            @SD.performed -= instance.OnSD;
+            @SD.canceled -= instance.OnSD;
+            @SelfLevel.started -= instance.OnSelfLevel;
+            @SelfLevel.performed -= instance.OnSelfLevel;
+            @SelfLevel.canceled -= instance.OnSelfLevel;
         }
 
         /// <summary>
@@ -564,5 +628,19 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnRearView(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "SD" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnSD(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "SelfLevel" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnSelfLevel(InputAction.CallbackContext context);
     }
 }

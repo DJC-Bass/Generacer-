@@ -75,7 +75,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<TurboJetHUD>();
         go.AddComponent<LraAbortController>();   // L+R+A hold-to-abort + its progress bar
         go.AddComponent<SDCardHUD>();            // equipped-SD readout + D-pad switching
-        go.AddComponent<SDAbilityController>();  // D-pad up: toggle the equipped SD's ability
+        go.AddComponent<SDAbilityController>();  // rebindable "SD" control (default D-pad up): toggle the equipped SD
         go.AddComponent<PlayerCarSwapper>();     // swaps in the Car-Selection choice each gameplay scene
         go.AddComponent<StartMenuController>();   // Start button: in-game menu (Resume/Audio/Controls/Settings/Quit)
         go.AddComponent<TutorialGuide>();         // Tutorial scene's top-screen instruction messages

@@ -83,6 +83,11 @@ public class AudioManager : MonoBehaviour
         sfxSource.loop = false;
         sfxSource.spatialBlend = 0f;                   // 2D
         sfxSource.volume = Library != null ? Library.sfxVolume : 0.9f;
+
+        // Apply any persisted player volume overrides (Main Menu > Settings > Audio) on top of the
+        // AudioLibrary's authored defaults, so the player's last choice carries across sessions.
+        if (GameSettings.HasMusicVolume) SetMusicVolume(GameSettings.MusicVolume);
+        if (GameSettings.HasSfxVolume)   SetSfxVolume(GameSettings.SfxVolume);
     }
 
     void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;

@@ -20,11 +20,22 @@ public class CameraSwitcher : MonoBehaviour
 
     void OnEnable()
     {
-        if (controls == null) controls = new GeneracerControls();
+        if (controls == null)
+        {
+            controls = new GeneracerControls();
+            InputRebinding.ApplyOverridesTo(controls.asset);   // honour the player's saved control rebinds
+        }
         controls.Driving.Enable();
+        InputRebinding.OverridesChanged += ReapplyOverrides;   // pick up an in-game rebind immediately
     }
 
-    void OnDisable() => controls?.Driving.Disable();
+    void OnDisable()
+    {
+        InputRebinding.OverridesChanged -= ReapplyOverrides;
+        controls?.Driving.Disable();
+    }
+
+    void ReapplyOverrides() { if (controls != null) InputRebinding.ApplyOverridesTo(controls.asset); }
 
     void Start()
     {
