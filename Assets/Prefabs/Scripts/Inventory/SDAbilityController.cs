@@ -75,6 +75,7 @@ public class SDAbilityController : MonoBehaviour
     private GameObject carGO;
     private Collider[] carColliders;
     private Rigidbody carRb;
+    private SDAbilityVFX carVFX;               // per-SD particle effects on the car (optional)
 
     // Rewind recorder. Kept on the player car continuously (independent of activation) so there's
     // always recent history to rewind into the moment Lightning SD is toggled on.
@@ -183,6 +184,7 @@ public class SDAbilityController : MonoBehaviour
     {
         if (!IsActive) return;
         ApplyEffect(false);                     // restore the current car (collisions / mass)
+        if (carVFX != null) carVFX.Hide();      // stop this SD's particle effect
 
         // SD audio: deactivation one-shot at the car + stop the "while active" loop.
         if (carGO != null) AudioManager.PlaySdDeactivate(carGO.transform.position);
@@ -196,6 +198,7 @@ public class SDAbilityController : MonoBehaviour
         carGO = null;
         carColliders = null;
         carRb = null;
+        carVFX = null;
         Debug.Log("[SDAbility] Deactivated");
     }
 
@@ -310,9 +313,14 @@ public class SDAbilityController : MonoBehaviour
         carGO = GameObject.FindWithTag(playerTag);
         carColliders = carGO != null ? carGO.GetComponentsInChildren<Collider>(true) : null;
         carRb = carGO != null ? carGO.GetComponent<Rigidbody>() : null;
+        carVFX = carGO != null ? carGO.GetComponentInChildren<SDAbilityVFX>(true) : null;
         baselineMass = -1f;                     // fresh car — recapture its mass when applied
 
-        if (IsActive) ApplyEffect(true);
+        if (IsActive)
+        {
+            ApplyEffect(true);
+            if (carVFX != null) carVFX.Show(ActiveSD);   // play this SD's particle effect (a fresh car re-shows it)
+        }
     }
 
     /// <summary>Turns the active SD's effect on or off on the current car.</summary>

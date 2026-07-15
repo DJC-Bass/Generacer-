@@ -276,7 +276,11 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
    "missing script"): `PortalExitAudio` on every selectable player-car prefab; `JetFlames` on the
    JetFlames accessory (child visuals toggle, root stays active); `SpeedCheck` on the SpeedCheck object
    (BoxCollider, Is Trigger unchecked — the script forces it); `WindowsAudio` on the Windows prefab;
-   `RoundDirectionalLightToggle` in the TrackScene.
+   `RoundDirectionalLightToggle` in the TrackScene; **`SDAbilityVFX` on the PlayerCar root** — add it and
+   fill its `effects` list with one entry per SD (exact name "Fire SD"/"Wind SD"/"Lightning SD" + that SD's
+   particle system, all parented to the car root). `SDAbilityController` plays the matching system for the
+   duration of the ability and stops it (and all others) otherwise; the component is optional (null-safe)
+   so cars without it just have no SD VFX.
 4. **Saturation caveat for the hue randomizers:** the road `RoadMaterial` Base Map color and the
    `SimpleSkybox` Sky Tint / Ground colors must have **non-zero Saturation** or the random hue won't
    show (a 0-sat color has no hue to shift). Ground color especially defaults to near-gray.
