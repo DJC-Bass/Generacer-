@@ -102,9 +102,14 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
   only the sideways component can change (bounded by MoveTowards), plus a belt-and-braces horizontal-speed
   clamp (old horizontal speed + one drift step, never triggers with the orthonormal axes). Vertical speed
   untouched — drift never fights gravity. The interim `airDriftUnlocked` self-level-prerequisite latch was
-  REMOVED: air drift is available after the grace period again, still gated by `IsRollLevel`
-  (`airDriftLevelThreshold`, 5°) — so holding Self-Level (Y) is now an OPTIONAL re-orientation tool that
-  also happens to be how you regain drift after a tilted launch, not a requirement.
+  REMOVED. **Air drift AND the air-brake dive now work at ANY orientation** (rolled, sideways, inverted)
+  the moment the grace period expires: the 45° tilt guard was dropped from `ApplyAirDrift` (safe — the
+  orthonormal rebuild is lossless in every pose; drift only skips the odd frame where the nose is
+  near-vertical and "sideways to the heading" is undefined), and `ApplyAirBrakeGravity` is ungated.
+  `IsRollLevel()` and `airDriftLevelThreshold` were DELETED (prefabs' stale `airDriftLevelThreshold: 5`
+  YAML line is silently ignored by Unity). Air drift models a steady side-wind: a world-horizontal push
+  left/right of the heading (matches the screen even while inverted), vertical speed untouched. Self-Level
+  (Y) is now purely cosmetic re-orientation — no air ability depends on it.
 - **Persistence.** `UI/GameSettings.cs` (static PlayerPrefs, mirrors `TutorialSettings`):
   `MusicVolume`/`SfxVolume`, `ResolutionWidth/Height` (+`SetResolution`), `FullScreenModeValue`,
   `QualityLevel`, `VSync`, each with a `Has*` flag. `AudioManager.Awake` applies audio volumes on boot

@@ -155,7 +155,8 @@ public class CarController : MonoBehaviour
 
     [Header("Air Abilities")]
     [Tooltip("Seconds the car must be airborne before its air abilities (air drift, manual pitch, " +
-             "manual self-leveling) activate. Prevents them triggering on high-speed crests and bumps.")]
+             "air-brake dive, manual self-leveling) activate. Prevents them triggering on high-speed " +
+             "crests and bumps.")]
     [FormerlySerializedAs("airDriftGracePeriod")]
     public float airAbilitiesGracePeriod = 0.4f;
 
@@ -163,9 +164,8 @@ public class CarController : MonoBehaviour
     [Tooltip("How fast the player can manually pitch the car in midair (degrees/second), " +
          "available after the air-abilities grace period.")]
     public float manualPitchSpeed = 120f;
-    [Tooltip("Extra gravity multiplier while braking midair. 1 = normal, 3 = triple. " +
-         "Only when the car is level (same condition as air drift). Lets you dive to " +
-         "lower track levels.")]
+    [Tooltip("Extra gravity multiplier while braking midair. 1 = normal, 3 = triple. Available " +
+         "after the air-abilities grace period at any orientation. Lets you dive to lower track levels.")]
     public float airBrakeGravityMultiplier = 3f;
 
     [Header("Gravity")]
@@ -184,14 +184,10 @@ public class CarController : MonoBehaviour
 
     [Header("Airborne Self-Leveling (manual — hold the Self-Level button)")]
     [Tooltip("How quickly the car's pitch and roll return to level while the Self-Level button " +
-             "(default Y) is HELD in the air (degrees/second). Releasing early stops the level " +
-             "mid-way; reaching fully level ends the hold (press again next time).")]
+             "(default Y) is HELD in the air (degrees/second). Purely a re-orientation aid — no air " +
+             "ability depends on it. Releasing early stops the level mid-way; reaching fully level " +
+             "ends the hold (press again next time).")]
     public float airLevelingSpeed = 90f;
-    [Tooltip("Roll tilt (degrees) below which air drift and the air-brake dive are allowed. Launch " +
-             "tilted past this and holding the Self-Level button (Y) is the way to re-orient and " +
-             "regain them mid-air.")]
-    public float airDriftLevelThreshold = 5f;
-
     [Header("Turbo Boost")]
     [Tooltip("Multiplier applied to top speed and acceleration during turbo.")]
     public float turboMultiplier = 2f;
@@ -519,11 +515,11 @@ public class CarController : MonoBehaviour
             if (!UpdateManualSelfLevel())
                 ApplyManualAirPitch();
 
-            if (IsRollLevel())
-            {
-                ApplyAirDrift();
-                ApplyAirBrakeGravity();
-            }
+            // Air abilities run at ANY orientation past the grace period (the drift math is lossless
+            // in every pose — even sideways or inverted): air drift slides the car like a steady
+            // side-wind, and braking dives. Holding Self-Level (Y) is purely cosmetic re-orientation.
+            ApplyAirDrift();
+            ApplyAirBrakeGravity();
 
             // Bleed horizontal momentum so the car can't fly across the level (gravity untouched).
             ApplyAirDrag();
@@ -992,19 +988,13 @@ public class CarController : MonoBehaviour
         rb.angularVelocity = Vector3.up * rb.angularVelocity.y;
     }
 
-    /// <summary>Fully level = pitch AND roll at 0 (tiny epsilon for float/euler round-trips). This is
-    /// the manual self-level's finish line — NOT the looser airDriftLevelThreshold used for air drift.</summary>
+    /// <summary>Fully level = pitch AND roll at 0 (tiny epsilon for float/euler round-trips) — the
+    /// manual self-level's finish line.</summary>
     bool IsFullyLevel()
     {
         float pitch = Mathf.Abs(NormalizeAngle(transform.eulerAngles.x));
         float roll = Mathf.Abs(NormalizeAngle(transform.eulerAngles.z));
         return pitch < 0.05f && roll < 0.05f;
-    }
-
-    bool IsRollLevel()
-    {
-        float roll = Mathf.Abs(NormalizeAngle(transform.eulerAngles.z));
-        return roll < airDriftLevelThreshold;
     }
 
     float NormalizeAngle(float angle)
@@ -1014,23 +1004,28 @@ public class CarController : MonoBehaviour
         return angle;
     }
 
+    /// <summary>
+    /// Air drift: a steady side-"wind" that slides the car left/right of its heading while airborne.
+    /// Works at ANY orientation — rolled, sideways, even inverted — because it manipulates only the
+    /// WORLD-horizontal velocity: steering maps to the world left/right of the heading (matching the
+    /// screen even while the car is upside down) and vertical speed is never touched, so the wind
+    /// never fights gravity. Only skipped for the odd frame where the nose points almost straight
+    /// up/down, where "sideways to the heading" is undefined.
+    /// </summary>
     void ApplyAirDrift()
     {
-        float tilt = Vector3.Angle(transform.up, Vector3.up);
-        if (tilt > 45f) return;
-
-        // Horizontal heading from the car's forward...
+        // Horizontal heading from the car's forward (degenerate only while the nose is near vertical).
         Vector3 forwardAxis = transform.forward; forwardAxis.y = 0f;
         if (forwardAxis.sqrMagnitude < 0.01f) return;
         forwardAxis.Normalize();
 
-        // ...and a drift axis built PERPENDICULAR to that heading by construction — never from the
-        // car's tilted right vector. Flattening forward AND right onto the horizontal plane leaves
-        // them non-perpendicular whenever pitch and roll combine (launching off an angled track), and
+        // Drift axis built PERPENDICULAR to that heading by construction — never from the car's
+        // tilted right vector. Flattening forward AND right onto the horizontal plane leaves them
+        // non-perpendicular whenever pitch and roll combine (launching off an angled track), and
         // splitting/rebuilding the velocity on skewed axes double-counts their overlap — injecting
         // free speed every physics step (the old runaway-speed bug). Crossing with world up gives an
-        // exactly-90° horizontal axis (car's right when level), making the rebuild below lossless:
-        // only the sideways component can change, and only by the bounded MoveTowards step.
+        // exactly-90° horizontal axis (car's right when level), making the rebuild below lossless at
+        // every orientation: only the sideways component can change, by the bounded MoveTowards step.
         Vector3 driftAxis = Vector3.Cross(Vector3.up, forwardAxis);
 
         Vector3 vel = rb.linearVelocity;
