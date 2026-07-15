@@ -120,6 +120,15 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
                     ""initialStateCheck"": true
                 },
                 {
+                    ""name"": ""Yaw"",
+                    ""type"": ""Value"",
+                    ""id"": ""c9d0e1f2-7777-8888-9999-0000aaaabbbb"",
+                    ""expectedControlType"": ""Axis"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true
+                },
+                {
                     ""name"": ""Brake"",
                     ""type"": ""Button"",
                     ""id"": ""34752b71-013e-46c7-8de6-274035254a84"",
@@ -194,6 +203,17 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Pitch"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""d0e1f2a3-8888-9999-aaaa-bbbbccccdddd"",
+                    ""path"": ""<Gamepad>/rightStick/x"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Yaw"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -306,6 +326,7 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         m_Driving_Throttle = m_Driving.FindAction("Throttle", throwIfNotFound: true);
         m_Driving_Steer = m_Driving.FindAction("Steer", throwIfNotFound: true);
         m_Driving_Pitch = m_Driving.FindAction("Pitch", throwIfNotFound: true);
+        m_Driving_Yaw = m_Driving.FindAction("Yaw", throwIfNotFound: true);
         m_Driving_Brake = m_Driving.FindAction("Brake", throwIfNotFound: true);
         m_Driving_Turbo = m_Driving.FindAction("Turbo", throwIfNotFound: true);
         m_Driving_Jump = m_Driving.FindAction("Jump", throwIfNotFound: true);
@@ -395,6 +416,7 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
     private readonly InputAction m_Driving_Throttle;
     private readonly InputAction m_Driving_Steer;
     private readonly InputAction m_Driving_Pitch;
+    private readonly InputAction m_Driving_Yaw;
     private readonly InputAction m_Driving_Brake;
     private readonly InputAction m_Driving_Turbo;
     private readonly InputAction m_Driving_Jump;
@@ -424,6 +446,10 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Driving/Pitch".
         /// </summary>
         public InputAction @Pitch => m_Wrapper.m_Driving_Pitch;
+        /// <summary>
+        /// Provides access to the underlying input action "Driving/Yaw".
+        /// </summary>
+        public InputAction @Yaw => m_Wrapper.m_Driving_Yaw;
         /// <summary>
         /// Provides access to the underlying input action "Driving/Brake".
         /// </summary>
@@ -483,6 +509,9 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
             @Pitch.started += instance.OnPitch;
             @Pitch.performed += instance.OnPitch;
             @Pitch.canceled += instance.OnPitch;
+            @Yaw.started += instance.OnYaw;
+            @Yaw.performed += instance.OnYaw;
+            @Yaw.canceled += instance.OnYaw;
             @Brake.started += instance.OnBrake;
             @Brake.performed += instance.OnBrake;
             @Brake.canceled += instance.OnBrake;
@@ -521,6 +550,9 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
             @Pitch.started -= instance.OnPitch;
             @Pitch.performed -= instance.OnPitch;
             @Pitch.canceled -= instance.OnPitch;
+            @Yaw.started -= instance.OnYaw;
+            @Yaw.performed -= instance.OnYaw;
+            @Yaw.canceled -= instance.OnYaw;
             @Brake.started -= instance.OnBrake;
             @Brake.performed -= instance.OnBrake;
             @Brake.canceled -= instance.OnBrake;
@@ -600,6 +632,13 @@ public partial class @GeneracerControls: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnPitch(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Yaw" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnYaw(InputAction.CallbackContext context);
         /// <summary>
         /// Method invoked when associated input action "Brake" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
         /// </summary>

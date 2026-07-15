@@ -160,10 +160,19 @@ public class CarController : MonoBehaviour
     [FormerlySerializedAs("airDriftGracePeriod")]
     public float airAbilitiesGracePeriod = 0.4f;
 
-    [Header("Manual Air Pitch")]
-    [Tooltip("How fast the player can manually pitch the car in midair (degrees/second), " +
-         "available after the air-abilities grace period.")]
+    [Header("Manual Air Rotation (right stick)")]
+    [Tooltip("How fast the player can manually pitch the car in midair — up/down on the right stick, " +
+         "rotating on the local X axis (degrees/second). Available after the air-abilities grace period.")]
     public float manualPitchSpeed = 120f;
+    [Tooltip("How fast the player can manually yaw the car in midair — left/right on the right stick, " +
+         "rotating on the local Y axis (degrees/second; left = negative, right = positive). Available " +
+         "after the air-abilities grace period.")]
+    public float manualYawSpeed = 120f;
+    [Tooltip("How fast the player can manually roll the car in midair — hold the reverse trigger " +
+         "(Throttle -, default LT — inert while airborne) and push the right stick left/right, rotating " +
+         "on the local Z axis (degrees/second; left = positive roll, right = negative). Available after " +
+         "the air-abilities grace period.")]
+    public float manualRollSpeed = 120f;
     [Tooltip("Extra gravity multiplier while braking midair. 1 = normal, 3 = triple. Available " +
          "after the air-abilities grace period at any orientation. Lets you dive to lower track levels.")]
     public float airBrakeGravityMultiplier = 3f;
@@ -274,6 +283,7 @@ public class CarController : MonoBehaviour
     private float steerInput;
     private float brakeInput;
     private float manualPitchInput;
+    private float manualYawInput;
     private float smoothedSteer;          // steer input after lerp smoothing
     private float currentGrip;            // grip value, lerped back to gripFactor after a drift
 
@@ -393,6 +403,7 @@ public class CarController : MonoBehaviour
         throttleInput = controls.Driving.Throttle.ReadValue<float>();   // RT - LT, -1..1
         steerInput = controls.Driving.Steer.ReadValue<float>();
         manualPitchInput = controls.Driving.Pitch.ReadValue<float>();
+        manualYawInput = controls.Driving.Yaw.ReadValue<float>();
         brakeInput = (!MenuState.AnyOpen && controls.Driving.Brake.IsPressed()) ? 1f : 0f;
 
         if (!MenuState.AnyOpen && controls.Driving.Turbo.triggered)
@@ -509,11 +520,12 @@ public class CarController : MonoBehaviour
         {
             // Airborne past the grace window — gravity rules; the player gets air control.
             // Self-leveling is MANUAL: it only runs while the Self-Level button is held (and the
-            // hold is armed). Manual pitch is available immediately; when leveling is active it
+            // hold is armed). Manual rotation (right stick: pitch up/down, yaw left/right, roll
+            // left/right while holding LT) is available immediately; when leveling is active it
             // takes priority so the two don't fight over the car's rotation. Neither active =
             // normal physics on the car's rotation.
             if (!UpdateManualSelfLevel())
-                ApplyManualAirPitch();
+                ApplyManualAirRotation();
 
             // Air abilities run at ANY orientation past the grace period (the drift math is lossless
             // in every pose — even sideways or inverted): air drift slides the car like a steady
@@ -949,7 +961,7 @@ public class CarController : MonoBehaviour
     /// physics resume; press again to continue). Reaching FULLY level consumes the hold, so keeping
     /// the button down does nothing further — a new press is needed once the car tilts again (a
     /// press made while already level is consumed the same way). Returns true if it levelled this
-    /// step (so manual pitch can yield for the frame).
+    /// step (so manual rotation can yield for the frame).
     /// </summary>
     bool UpdateManualSelfLevel()
     {
@@ -961,17 +973,39 @@ public class CarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Manual air pitch, available for the whole post-grace airtime. Steers pitch around the car's
-    /// local right axis and holds it steady (x/z angular velocity killed, yaw kept) while the input
-    /// is active; with no input the rotation is left to normal physics.
+    /// Manual air rotation on the right stick, available for the whole post-grace airtime — all
+    /// three LOCAL axes:
+    ///   • up/down         → PITCH around local X;
+    ///   • left/right      → YAW around local Y (left = negative, right = positive);
+    ///   • left/right + LT → ROLL around local Z (left = positive, right = negative) — holding
+    ///     the reverse trigger (Throttle −, default LT; inert while airborne) converts the
+    ///     stick's left/right from yaw to roll. RT remains pure throttle.
+    /// All are pure orientation changes via MoveRotation — linear velocity is never touched, so
+    /// they cannot add speed (air drift re-derives its horizontal basis from the new heading each
+    /// step and its rebuild stays lossless). While any input is active the x/z angular velocity is
+    /// killed (natural yaw spin kept) so the steered pose holds; with no input the rotation is
+    /// left to normal physics.
     /// </summary>
-    void ApplyManualAirPitch()
+    void ApplyManualAirRotation()
     {
-        if (Mathf.Abs(manualPitchInput) <= 0.05f) return;
+        bool pitching = Mathf.Abs(manualPitchInput) > 0.05f;
+        bool stickX   = Mathf.Abs(manualYawInput)   > 0.05f;
+        if (!pitching && !stickX) return;
+
+        // Throttle − (default LT — the reverse trigger, inert midair) held past a quarter-pull =
+        // the stick's left/right rolls instead of yawing. Reading the Throttle ACTION (not the raw
+        // trigger) keeps this rebind-friendly. RT stays pure throttle.
+        bool rollMode = throttleInput < -0.25f;
 
         IsManuallyPitching = true;
-        float pitchDelta = manualPitchInput * manualPitchSpeed * Time.fixedDeltaTime;
-        rb.MoveRotation(Quaternion.AngleAxis(pitchDelta, transform.right) * rb.rotation);
+        Quaternion rot = rb.rotation;
+        if (pitching)
+            rot = Quaternion.AngleAxis(manualPitchInput * manualPitchSpeed * Time.fixedDeltaTime, transform.right) * rot;
+        if (stickX && !rollMode)
+            rot = Quaternion.AngleAxis(manualYawInput * manualYawSpeed * Time.fixedDeltaTime, transform.up) * rot;
+        if (stickX && rollMode)   // stick left = roll LEFT = positive local Z (Unity: +Z lifts the car's right side)
+            rot = Quaternion.AngleAxis(-manualYawInput * manualRollSpeed * Time.fixedDeltaTime, transform.forward) * rot;
+        rb.MoveRotation(rot);
         rb.angularVelocity = Vector3.up * rb.angularVelocity.y;
     }
 

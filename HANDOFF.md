@@ -85,9 +85,17 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
 - **Airborne self-leveling is now MANUAL (hold Self-Level, default Y/buttonNorth).** Added a `SelfLevel`
   button action to the `Driving` map (both `.inputactions` + generated `.cs`, same pattern as SD; shows as
   "Self-Level" in both Controls screens). `CarController` changes: `airDriftGracePeriod` renamed
-  `airAbilitiesGracePeriod` (`[FormerlySerializedAs]` keeps tuned values); after that grace, **manual pitch
-  is available immediately** (`ApplyManualAirPitch` — pitch input steers, otherwise rotation is pure
-  physics; the old constant roll auto-level is gone) and **self-leveling only runs while Y is held**
+  `airAbilitiesGracePeriod` (`[FormerlySerializedAs]` keeps tuned values); after that grace, **manual
+  rotation on ALL THREE local axes is available immediately** (`ApplyManualAirRotation`): right stick
+  up/down = PITCH on local X (`Pitch` action); right stick left/right = YAW on local Y (the `Yaw` action,
+  `<Gamepad>/rightStick/x`, rebindable like SD/SelfLevel; left = negative, right = positive, speed
+  `manualYawSpeed`); right stick left/right **while holding Throttle− (default LT, the reverse trigger,
+  inert midair) past a quarter-pull** = ROLL on local Z (left = positive, right = negative, speed
+  `manualRollSpeed`; the modifier reads the Throttle ACTION's value — `throttleInput < -0.25f` — not the
+  raw trigger, so it follows a rebound throttle and needs no extra action/binding; RT stays pure throttle). All pure MoveRotation — linear velocity
+  untouched, so it can't add speed and drift stays lossless (it re-derives its basis from the new heading
+  every step). Otherwise rotation is pure physics; the old constant roll
+  auto-level is gone) and **self-leveling only runs while Y is held**
   (`UpdateManualSelfLevel` + `selfLevelHeld`/`selfLevelArmed`): a fresh press arms the hold, releasing
   mid-level stops it (press again to continue), and reaching fully level (`IsFullyLevel`, ~0° epsilon —
   distinct from the looser `airDriftLevelThreshold` that still gates air drift) consumes the hold so a NEW

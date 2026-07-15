@@ -33,6 +33,15 @@
                     "initialStateCheck": true
                 },
                 {
+                    "name": "Yaw",
+                    "type": "Value",
+                    "id": "c9d0e1f2-7777-8888-9999-0000aaaabbbb",
+                    "expectedControlType": "Axis",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                },
+                {
                     "name": "Brake",
                     "type": "Button",
                     "id": "34752b71-013e-46c7-8de6-274035254a84",
@@ -107,6 +116,17 @@
                     "processors": "",
                     "groups": "",
                     "action": "Pitch",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "d0e1f2a3-8888-9999-aaaa-bbbbccccdddd",
+                    "path": "<Gamepad>/rightStick/x",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Yaw",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },
