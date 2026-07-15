@@ -187,9 +187,9 @@ public class CarController : MonoBehaviour
              "(default Y) is HELD in the air (degrees/second). Releasing early stops the level " +
              "mid-way; reaching fully level ends the hold (press again next time).")]
     public float airLevelingSpeed = 90f;
-    [Tooltip("Roll tilt (degrees) below which air drift is allowed. Air drift is ADDITIONALLY locked " +
-             "each airtime until the player engages manual self-leveling at least once (hold the " +
-             "Self-Level button) — full rotation to level is not required to unlock it.")]
+    [Tooltip("Roll tilt (degrees) below which air drift and the air-brake dive are allowed. Launch " +
+             "tilted past this and holding the Self-Level button (Y) is the way to re-orient and " +
+             "regain them mid-air.")]
     public float airDriftLevelThreshold = 5f;
 
     [Header("Turbo Boost")]
@@ -289,8 +289,6 @@ public class CarController : MonoBehaviour
     private bool selfLevelHeld;            // Self-Level button (Y) is currently held
     private bool selfLevelArmed;           // the hold is live: set by a fresh press, cleared on release
                                            // or once the car reaches fully level (press again to re-arm)
-    private bool airDriftUnlocked;         // air drift stays locked each airtime until manual self-level is
-                                           // engaged at least once; reset on landing (grace-period reset)
     private bool isDrifting;
     private bool loopFlag;                // "in a loop" state for the camera (hysteresis)
 
@@ -509,10 +507,7 @@ public class CarController : MonoBehaviour
             ApplyDriveAndBrake();
             ApplyDownforce();
 
-            // Reset the air state for the next airtime: pitch flag, and re-lock air drift until the
-            // player engages self-level again (grounding is when the grace period resets).
-            IsManuallyPitching = false;
-            airDriftUnlocked = false;
+            IsManuallyPitching = false;   // reset the air state for the next airtime
         }
         else if (inRealAir)
         {
@@ -526,9 +521,7 @@ public class CarController : MonoBehaviour
 
             if (IsRollLevel())
             {
-                // Air drift stays LOCKED until the player has used manual self-level at least once
-                // this airtime (see UpdateManualSelfLevel). Air braking keeps its own roll-only gate.
-                if (airDriftUnlocked) ApplyAirDrift();
+                ApplyAirDrift();
                 ApplyAirBrakeGravity();
             }
 
@@ -965,11 +958,6 @@ public class CarController : MonoBehaviour
     bool UpdateManualSelfLevel()
     {
         if (!selfLevelArmed || !selfLevelHeld) return false;
-
-        // Engaging self-level (holding an armed press in the air) unlocks air drift for this airtime —
-        // the car needn't finish rotating to level, and this fires even if it's already level.
-        airDriftUnlocked = true;
-
         if (IsFullyLevel()) { selfLevelArmed = false; return false; }   // level — consume the hold
 
         ApplyAirLeveling();
@@ -1031,13 +1019,19 @@ public class CarController : MonoBehaviour
         float tilt = Vector3.Angle(transform.up, Vector3.up);
         if (tilt > 45f) return;
 
+        // Horizontal heading from the car's forward...
         Vector3 forwardAxis = transform.forward; forwardAxis.y = 0f;
         if (forwardAxis.sqrMagnitude < 0.01f) return;
         forwardAxis.Normalize();
 
-        Vector3 driftAxis = transform.right; driftAxis.y = 0f;
-        if (driftAxis.sqrMagnitude < 0.01f) return;
-        driftAxis.Normalize();
+        // ...and a drift axis built PERPENDICULAR to that heading by construction — never from the
+        // car's tilted right vector. Flattening forward AND right onto the horizontal plane leaves
+        // them non-perpendicular whenever pitch and roll combine (launching off an angled track), and
+        // splitting/rebuilding the velocity on skewed axes double-counts their overlap — injecting
+        // free speed every physics step (the old runaway-speed bug). Crossing with world up gives an
+        // exactly-90° horizontal axis (car's right when level), making the rebuild below lossless:
+        // only the sideways component can change, and only by the bounded MoveTowards step.
+        Vector3 driftAxis = Vector3.Cross(Vector3.up, forwardAxis);
 
         Vector3 vel = rb.linearVelocity;
         Vector3 horizontalVel = new Vector3(vel.x, 0f, vel.z);
@@ -1049,7 +1043,14 @@ public class CarController : MonoBehaviour
         float targetDrift = steerInput * airDriftSpeed;
         float newDrift = Mathf.MoveTowards(currentDrift, targetDrift, airDriftAcceleration * Time.fixedDeltaTime);
 
+        // Belt-and-braces: the drift step may only ever ADD its own per-step allowance to the
+        // horizontal speed. With the orthonormal axes above this never triggers; it guards the
+        // runaway class of bug for good. Vertical speed is untouched — drift never fights gravity.
         Vector3 newHorizontal = forwardAxis * forwardSpeed + driftAxis * newDrift;
+        float maxSpeed = horizontalVel.magnitude + airDriftAcceleration * Time.fixedDeltaTime;
+        if (newHorizontal.sqrMagnitude > maxSpeed * maxSpeed)
+            newHorizontal = newHorizontal.normalized * maxSpeed;
+
         rb.linearVelocity = new Vector3(newHorizontal.x, verticalSpeed, newHorizontal.z);
     }
 

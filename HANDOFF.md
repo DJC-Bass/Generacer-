@@ -92,11 +92,19 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
   mid-level stops it (press again to continue), and reaching fully level (`IsFullyLevel`, ~0° epsilon —
   distinct from the looser `airDriftLevelThreshold` that still gates air drift) consumes the hold so a NEW
   press is needed once tilted again. Leveling takes priority over manual pitch for the frames it runs.
-  **Air drift is gated behind self-level:** a per-airtime latch `airDriftUnlocked` (reset on grounding) is
-  set the moment the player engages self-level (armed + held, before the fully-level check — so it fires
-  even if already level, no soft-lock, full rotation not required); `ApplyAirDrift` only runs when that
-  latch is set (still also requires `IsRollLevel`). So each airtime the player must use self-level once
-  before air drift works. Air-brake gravity keeps its own roll-only gate.
+- **Air-drift runaway-speed bug ROOT-CAUSED & FIXED; drift restored to grace-period unlock.** The old
+  `ApplyAirDrift` flattened BOTH car forward and car right onto the horizontal plane; with pitch+roll
+  combined (angled launches) those flattened axes are non-perpendicular, and splitting/rebuilding the
+  velocity on skewed axes double-counts their overlap — injecting speed every physics step (exponential
+  runaway; explosive with the prefab tuning `airDrag 0.05`, `airDriftSpeed 75`). The old auto-leveler only
+  masked it by pinning roll to 0 (the one orientation where the math is safe). Fix: `driftAxis =
+  Vector3.Cross(Vector3.up, forwardAxis)` — perpendicular by construction, so the rebuild is lossless and
+  only the sideways component can change (bounded by MoveTowards), plus a belt-and-braces horizontal-speed
+  clamp (old horizontal speed + one drift step, never triggers with the orthonormal axes). Vertical speed
+  untouched — drift never fights gravity. The interim `airDriftUnlocked` self-level-prerequisite latch was
+  REMOVED: air drift is available after the grace period again, still gated by `IsRollLevel`
+  (`airDriftLevelThreshold`, 5°) — so holding Self-Level (Y) is now an OPTIONAL re-orientation tool that
+  also happens to be how you regain drift after a tilted launch, not a requirement.
 - **Persistence.** `UI/GameSettings.cs` (static PlayerPrefs, mirrors `TutorialSettings`):
   `MusicVolume`/`SfxVolume`, `ResolutionWidth/Height` (+`SetResolution`), `FullScreenModeValue`,
   `QualityLevel`, `VSync`, each with a `Has*` flag. `AudioManager.Awake` applies audio volumes on boot
