@@ -34,6 +34,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: f97b77cd52305c8488a25839a5a9ec87, type: 3}
   - {fileID: 8300000, guid: 47d4582eea7b72540a94b351450292d6, type: 3}
   - {fileID: 8300000, guid: 3246ab764ce9deb41ab089f714999311, type: 3}
+  - {fileID: 8300000, guid: f9f382eedb8bdc44d9751f251e41a4d0, type: 3}
   windowsInteriorMusic: {fileID: 8300000, guid: 385b9954ae6ef5246a9f73bbdd39300f, type: 3}
   interiorMusicCrossfadeSeconds: 0.15
   menuMove: {fileID: 8300000, guid: f81f55d27c305a14bbed3f4c07877fce, type: 3}

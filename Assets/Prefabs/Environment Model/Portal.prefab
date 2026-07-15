@@ -67,7 +67,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5d82d2bd8e366b340bec5bc941e76fed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  trackSceneIndex: 2
+  trackSceneIndex: 3
   portalVisual: {fileID: 1674484778209847424}
   portalParticles: {fileID: 0}
   rotationSpeed: 0

@@ -265,7 +265,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoundDirectionalLightToggle
   directionalLight: {fileID: 310890319}
-  deactivateChance: 0.4
+  deactivateChance: 0.33
 --- !u!1001 &513852949
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -525,7 +525,7 @@ PrefabInstance:
     - target: {fileID: 3042359968238648207, guid: 889bf45c475bd0140895f8a5ea26426f, type: 3}
       propertyPath: boulderPrefab
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 5205368112099070930, guid: f837fd34fc2488e4fa546ab9a7d0203c, type: 3}
     - target: {fileID: 3042359968238648207, guid: 889bf45c475bd0140895f8a5ea26426f, type: 3}
       propertyPath: spawnInterval
       value: 0.3
@@ -1214,7 +1214,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: altitudeVariance
-      value: 3000
+      value: 500
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceSwing

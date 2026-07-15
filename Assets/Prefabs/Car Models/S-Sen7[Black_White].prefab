@@ -1296,13 +1296,12 @@ MonoBehaviour:
   fullAssistAngle: 25
   airDriftSpeed: 75
   airDriftAcceleration: 50
-  airDriftGracePeriod: 0.4
+  airAbilitiesGracePeriod: 0.4
   manualPitchSpeed: 30
   airBrakeGravityMultiplier: 6
   gravityMultiplier: 4
   airDrag: 0.05
   airLevelingSpeed: 20
-  airDriftLevelThreshold: 5
   turboMultiplier: 2
   turboDuration: 2
   turboCooldown: 0

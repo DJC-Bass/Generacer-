@@ -895,6 +895,74 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CameraSwitcher
   mainCamera: {fileID: 476342791}
   rearViewCamera: {fileID: 1769614144}
+--- !u!1 &529714223
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 529714226}
+  - component: {fileID: 529714225}
+  - component: {fileID: 529714224}
+  m_Layer: 0
+  m_Name: MainMenuCollider (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &529714224
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 529714223}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1a4aa8e3d6c2f9343bf7c70946f26790, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MainMenuReturnTrigger
+  playerTag: Player
+  mainMenuSceneName: MainMenu
+--- !u!65 &529714225
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 529714223}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 10, y: 58.4, z: 260.3}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!4 &529714226
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 529714223}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 3700, y: 22.9, z: 1.90718}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &593096524
 GameObject:
   m_ObjectHideFlags: 0
@@ -1844,7 +1912,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8777634849189473332, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
       propertyPath: m_LocalScale.x
-      value: 600
+      value: 1200
       objectReference: {fileID: 0}
     - target: {fileID: 8777634849189473332, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
       propertyPath: m_LocalScale.z
@@ -5148,6 +5216,7 @@ SceneRoots:
   - {fileID: 2124528238232008960}
   - {fileID: 1036535242}
   - {fileID: 1152412821}
+  - {fileID: 529714226}
   - {fileID: 1826854317}
   - {fileID: 717988246}
   - {fileID: 278457640229837632}
