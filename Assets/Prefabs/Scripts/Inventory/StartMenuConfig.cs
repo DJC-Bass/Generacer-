@@ -34,4 +34,13 @@ public class StartMenuConfig : ScriptableObject
     public float titleY = 270f;
     public float buttonColumnY = 0f;
     public float hintY = -330f;
+
+    [Header("Layout — Controls screen rows")]
+    [Tooltip("Height of each key-binding row (and the RESET button) on the CONTROLS screen (pixels). " +
+             "Shrink so the full list clears the title.")]
+    public float controlsRowHeight = 34f;
+    [Tooltip("Font size of the CONTROLS rows as a fraction of Button Font Size.")]
+    public float controlsRowFontScale = 0.6f;
+    [Tooltip("Vertical gap between CONTROLS rows (pixels).")]
+    public float controlsRowSpacing = 4f;
 }

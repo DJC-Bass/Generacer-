@@ -187,7 +187,9 @@ public class CarController : MonoBehaviour
              "(default Y) is HELD in the air (degrees/second). Releasing early stops the level " +
              "mid-way; reaching fully level ends the hold (press again next time).")]
     public float airLevelingSpeed = 90f;
-    [Tooltip("Tilt threshold (degrees) below which air drift unlocks.")]
+    [Tooltip("Roll tilt (degrees) below which air drift is allowed. Air drift is ADDITIONALLY locked " +
+             "each airtime until the player engages manual self-leveling at least once (hold the " +
+             "Self-Level button) — full rotation to level is not required to unlock it.")]
     public float airDriftLevelThreshold = 5f;
 
     [Header("Turbo Boost")]
@@ -287,6 +289,8 @@ public class CarController : MonoBehaviour
     private bool selfLevelHeld;            // Self-Level button (Y) is currently held
     private bool selfLevelArmed;           // the hold is live: set by a fresh press, cleared on release
                                            // or once the car reaches fully level (press again to re-arm)
+    private bool airDriftUnlocked;         // air drift stays locked each airtime until manual self-level is
+                                           // engaged at least once; reset on landing (grace-period reset)
     private bool isDrifting;
     private bool loopFlag;                // "in a loop" state for the camera (hysteresis)
 
@@ -505,7 +509,10 @@ public class CarController : MonoBehaviour
             ApplyDriveAndBrake();
             ApplyDownforce();
 
-            IsManuallyPitching = false;   // reset the air state for the next airtime
+            // Reset the air state for the next airtime: pitch flag, and re-lock air drift until the
+            // player engages self-level again (grounding is when the grace period resets).
+            IsManuallyPitching = false;
+            airDriftUnlocked = false;
         }
         else if (inRealAir)
         {
@@ -519,7 +526,9 @@ public class CarController : MonoBehaviour
 
             if (IsRollLevel())
             {
-                ApplyAirDrift();
+                // Air drift stays LOCKED until the player has used manual self-level at least once
+                // this airtime (see UpdateManualSelfLevel). Air braking keeps its own roll-only gate.
+                if (airDriftUnlocked) ApplyAirDrift();
                 ApplyAirBrakeGravity();
             }
 
@@ -956,6 +965,11 @@ public class CarController : MonoBehaviour
     bool UpdateManualSelfLevel()
     {
         if (!selfLevelArmed || !selfLevelHeld) return false;
+
+        // Engaging self-level (holding an armed press in the air) unlocks air drift for this airtime —
+        // the car needn't finish rotating to level, and this fires even if it's already level.
+        airDriftUnlocked = true;
+
         if (IsFullyLevel()) { selfLevelArmed = false; return false; }   // level — consume the hold
 
         ApplyAirLeveling();

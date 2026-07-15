@@ -60,6 +60,7 @@ public static class SettingsUI
         t.fontSize = fontSize;
         t.alignment = align;
         t.enableWordWrapping = false;
+        t.fontStyle = FontStyles.UpperCase;   // settings widgets render in caps (matches the menus' all-caps text)
         return t;
     }
 

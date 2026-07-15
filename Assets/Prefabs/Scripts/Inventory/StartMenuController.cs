@@ -319,7 +319,7 @@ public class StartMenuController : MonoBehaviour
         drt.offsetMin = Vector2.zero; drt.offsetMax = Vector2.zero;
 
         titleText = NewText(root.transform, "Title", cfg.titleFontSize, TextAlignmentOptions.Center);
-        titleText.fontStyle = FontStyles.Bold;
+        titleText.fontStyle = FontStyles.Bold | FontStyles.UpperCase;
         titleText.color = cfg.titleColor;
         SetCentered(titleText.rectTransform, new Vector2(700f, 100f), new Vector2(0f, cfg.titleY));
 
@@ -434,7 +434,7 @@ public class StartMenuController : MonoBehaviour
         rebind.ClearRows();
 
         var go = NewUI("ControlsPanel", parent);
-        SetupColumn(go, cfg.buttonColumnY, 5f);
+        SetupColumn(go, cfg.buttonColumnY, cfg.controlsRowSpacing);
 
         var buttons = new List<Button>();
         foreach (var action in map.actions)
@@ -473,19 +473,21 @@ public class StartMenuController : MonoBehaviour
         go.GetComponent<Image>().color = Color.white;
 
         float w = cfg.buttonSize.x + 170f;
+        float font = cfg.buttonFontSize * cfg.controlsRowFontScale;
         var le = go.AddComponent<LayoutElement>();
-        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 42f; le.minHeight = 42f;
+        le.preferredWidth = w; le.minWidth = w;
+        le.preferredHeight = cfg.controlsRowHeight; le.minHeight = cfg.controlsRowHeight;
 
         var btn = go.GetComponent<Button>();
         ApplyColors(btn);
         btn.onClick.AddListener(AudioManager.PlayMenuSelect);
 
-        var nameLabel = SettingsUI.NewText(go.transform, "Name", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.MidlineLeft);
+        var nameLabel = SettingsUI.NewText(go.transform, "Name", font, TextAlignmentOptions.MidlineLeft);
         nameLabel.text = rowName; nameLabel.color = cfg.buttonTextColor;
         Stretch(nameLabel.rectTransform, Vector2.zero, Vector2.one, new Vector2(18f, 0f), new Vector2(-18f, 0f));
 
-        valueLabel = SettingsUI.NewText(go.transform, "Value", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.MidlineRight);
-        valueLabel.color = Color.white; valueLabel.fontStyle = FontStyles.Bold;
+        valueLabel = SettingsUI.NewText(go.transform, "Value", font, TextAlignmentOptions.MidlineRight);
+        valueLabel.color = Color.white; valueLabel.fontStyle = FontStyles.Bold | FontStyles.UpperCase;
         Stretch(valueLabel.rectTransform, Vector2.zero, Vector2.one, new Vector2(18f, 0f), new Vector2(-18f, 0f));
 
         return btn;
@@ -499,14 +501,15 @@ public class StartMenuController : MonoBehaviour
 
         float w = cfg.buttonSize.x + 170f;
         var le = go.AddComponent<LayoutElement>();
-        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 42f; le.minHeight = 42f;
+        le.preferredWidth = w; le.minWidth = w;
+        le.preferredHeight = cfg.controlsRowHeight; le.minHeight = cfg.controlsRowHeight;
 
         var btn = go.GetComponent<Button>();
         ApplyColors(btn);
         btn.onClick.AddListener(onClick);
         btn.onClick.AddListener(AudioManager.PlayMenuSelect);
 
-        var lbl = SettingsUI.NewText(go.transform, "Label", cfg.buttonFontSize * 0.72f, TextAlignmentOptions.Center);
+        var lbl = SettingsUI.NewText(go.transform, "Label", cfg.buttonFontSize * cfg.controlsRowFontScale, TextAlignmentOptions.Center);
         lbl.text = label; lbl.color = cfg.buttonTextColor;
         Stretch(lbl.rectTransform, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
@@ -693,6 +696,7 @@ public class StartMenuController : MonoBehaviour
         t.fontSize = fontSize;
         t.alignment = align;
         t.enableWordWrapping = false;
+        t.fontStyle = FontStyles.UpperCase;   // all Start-Menu text renders in caps
         return t;
     }
 

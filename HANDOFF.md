@@ -36,6 +36,10 @@ two shared helpers so they match the Main Menu's behaviour:
 - **Start Menu specifics:** AUDIO = Music/SFX slider rows; CONTROLS = binding rows + RESET (compact rows,
   vertically centred); SETTINGS = the Tutorial toggle followed by RESOLUTION / DISPLAY MODE / QUALITY / V-SYNC
   option rows (`BuildSettingsPanel`). `Update`/`LateUpdate` early-out while `rebind.IsRebinding`.
+  CONTROLS row size is tunable via `StartMenuConfig` (`controlsRowHeight` / `controlsRowFontScale` /
+  `controlsRowSpacing`) so the (now 11-row) list stays clear of the title. All Start-Menu text renders in caps
+  via `FontStyles.UpperCase` in `StartMenuController.NewText` + `SettingsUI.NewText` (only the Start Menu uses
+  the latter; the Main Menu has its own text factory and is unaffected).
 - **In-game rebinds apply immediately:** `InputRebinding` now raises a static `OverridesChanged` event on
   Save/Reset; `CarController`, `CameraSwitcher` and `SDAbilityController` subscribe and re-apply overrides on the
   spot (previously an in-game rebind only took effect on the next scene load).
@@ -88,6 +92,11 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
   mid-level stops it (press again to continue), and reaching fully level (`IsFullyLevel`, ~0° epsilon —
   distinct from the looser `airDriftLevelThreshold` that still gates air drift) consumes the hold so a NEW
   press is needed once tilted again. Leveling takes priority over manual pitch for the frames it runs.
+  **Air drift is gated behind self-level:** a per-airtime latch `airDriftUnlocked` (reset on grounding) is
+  set the moment the player engages self-level (armed + held, before the fully-level check — so it fires
+  even if already level, no soft-lock, full rotation not required); `ApplyAirDrift` only runs when that
+  latch is set (still also requires `IsRollLevel`). So each airtime the player must use self-level once
+  before air drift works. Air-brake gravity keeps its own roll-only gate.
 - **Persistence.** `UI/GameSettings.cs` (static PlayerPrefs, mirrors `TutorialSettings`):
   `MusicVolume`/`SfxVolume`, `ResolutionWidth/Height` (+`SetResolution`), `FullScreenModeValue`,
   `QualityLevel`, `VSync`, each with a `Has*` flag. `AudioManager.Awake` applies audio volumes on boot

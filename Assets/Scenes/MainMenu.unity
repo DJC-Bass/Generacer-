@@ -284,9 +284,9 @@ MonoBehaviour:
   buttonSelectedColor: {r: 0.1254902, g: 0.6745098, b: 0.9019608, a: 0.95}
   buttonTextColor: {r: 1, g: 1, b: 1, a: 1}
   buttonColorFadeDuration: 0.1
-  controlsRowHeight: 46
+  controlsRowHeight: 40
   controlsRowFontSize: 20
-  controlsRowSpacing: 6
+  controlsRowSpacing: 4
   controlsPanelOffsetY: 0
   startSceneName: CarSelection
   tutorialSceneName: Tutorial
