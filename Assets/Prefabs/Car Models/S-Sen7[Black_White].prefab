@@ -1302,8 +1302,8 @@ MonoBehaviour:
   airDriftAcceleration: 50
   airAbilitiesGracePeriod: 0.4
   manualPitchSpeed: 30
-  manualYawSpeed: 120
-  manualRollSpeed: 120
+  manualYawSpeed: 30
+  manualRollSpeed: 30
   airBrakeGravityMultiplier: 6
   gravityMultiplier: 4
   airDrag: 0.05
