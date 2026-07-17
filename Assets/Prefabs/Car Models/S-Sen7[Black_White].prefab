@@ -1312,7 +1312,7 @@ MonoBehaviour:
   turboDuration: 2
   turboCooldown: 0
   turboTrails: 1
-  turboTrailTime: 1
+  turboTrailTime: 2
   turboTrailWidth: 0.5
   turboTrailColor: {r: 0.08, g: 0.08, b: 0.08, a: 0.75}
   turboTrailHeightOffset: 0.2

@@ -119,11 +119,6 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &276107662 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-  m_PrefabInstance: {fileID: 513852949}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &310890318
 GameObject:
   m_ObjectHideFlags: 0
@@ -266,160 +261,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RoundDirectionalLightToggle
   directionalLight: {fileID: 310890319}
   deactivateChance: 0.33
---- !u!1001 &513852949
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 2344762442658144046, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_AngularDamping
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: -721.494
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 177.80096
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: -301.8472
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: rideHeight
-      value: 0.75
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: jetItemName
-      value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrails
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: jumpVelocity
-      value: 25
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboItemName
-      value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: manualYawSpeed
-      value: 30
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailTime
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: manualRollSpeed
-      value: 30
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailWidth
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailColor.a
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailColor.b
-      value: 0.21960786
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailColor.g
-      value: 0.21960786
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailColor.r
-      value: 0.21960786
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailMaterial
-      value: 
-      objectReference: {fileID: 2100000, guid: 1da06100f0cfdef4d993c67d3f5194d8, type: 2}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: airDriftAcceleration
-      value: 50
-      objectReference: {fileID: 0}
-    - target: {fileID: 4811024633163034544, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: turboTrailHeightOffset
-      value: 0.2
-      objectReference: {fileID: 0}
-    - target: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      propertyPath: m_Name
-      value: 'S-Sen7[Red]'
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents:
-    - targetCorrespondingSourceObject: {fileID: 6014248814096734578, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 513852954}
-  m_SourcePrefab: {fileID: 100100000, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
---- !u!4 &513852950 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 4075101811678349161, guid: 498c59bd57b03e44d82a684ad6fa3999, type: 3}
-  m_PrefabInstance: {fileID: 513852949}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &513852954
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 276107662}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5b7d9f1a3c2e4068b1a3c5d7e9f0a2b4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CarEngineAudio
-  engineClip: {fileID: 8300000, guid: c5e64a493f86ce14a9b3f60d40a98900, type: 3}
-  idlePitch: 0.8
-  maxPitch: 6
-  speedForMaxPitch: 400
-  idleVolume: 0.5
-  fullVolume: 0.9
-  responsiveness: 6
-  spatialBlend: 0
-  maxDistance: 60
 --- !u!1001 &867425769
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -533,7 +374,7 @@ PrefabInstance:
     - target: {fileID: 3042359968238648207, guid: 889bf45c475bd0140895f8a5ea26426f, type: 3}
       propertyPath: boulderPrefab
       value: 
-      objectReference: {fileID: 0}
+      objectReference: {fileID: 5205368112099070930, guid: f837fd34fc2488e4fa546ab9a7d0203c, type: 3}
     - target: {fileID: 3042359968238648207, guid: 889bf45c475bd0140895f8a5ea26426f, type: 3}
       propertyPath: spawnInterval
       value: 0.3
@@ -600,6 +441,80 @@ GameObject:
 Transform:
   m_CorrespondingSourceObject: {fileID: 5171084764504823678, guid: 5efde4c7db78a37498e6ec65e145b9a0, type: 3}
   m_PrefabInstance: {fileID: 2754024211961253112}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &955446420
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: jetItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: turboItemName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: turboTrailTime
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.11765
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.91444
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9203637246216865349, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: m_Name
+      value: 'S-Sen7[Black_White]'
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+--- !u!4 &1116922108 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+  m_PrefabInstance: {fileID: 955446420}
   m_PrefabAsset: {fileID: 0}
 --- !u!114 &1171030678 stripped
 MonoBehaviour:
@@ -1098,7 +1013,7 @@ PrefabInstance:
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: target
       value: 
-      objectReference: {fileID: 513852950}
+      objectReference: {fileID: 1116922108}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: turboFOVDuration
       value: 2
@@ -1404,7 +1319,7 @@ PrefabInstance:
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: target
       value: 
-      objectReference: {fileID: 513852950}
+      objectReference: {fileID: 1116922108}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: turboFOVDuration
       value: 2
@@ -1521,7 +1436,6 @@ SceneRoots:
   m_Roots:
   - {fileID: 6811985953301711630}
   - {fileID: 8567115014161889789}
-  - {fileID: 513852949}
   - {fileID: 310890320}
   - {fileID: 8566347199259631861}
   - {fileID: 2108021634}
@@ -1534,3 +1448,4 @@ SceneRoots:
   - {fileID: 867425769}
   - {fileID: 1761268719}
   - {fileID: 1655904791}
+  - {fileID: 955446420}

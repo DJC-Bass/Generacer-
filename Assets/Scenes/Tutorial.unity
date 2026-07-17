@@ -691,6 +691,10 @@ PrefabInstance:
       propertyPath: airBrakeGravityMultiplier
       value: 8
       objectReference: {fileID: 0}
+    - target: {fileID: 4322009895405194616, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: engineClip
+      value: 
+      objectReference: {fileID: 8300000, guid: bbc790c1803a7b145b40811637748082, type: 3}
     - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
