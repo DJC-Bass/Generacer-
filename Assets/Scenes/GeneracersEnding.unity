@@ -551,6 +551,96 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!1001 &998891569
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1719848288373882537, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_Name
+      value: Rear View Camera
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 383.12302
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 8243.117
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 14890.847
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.9979937
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.063313074
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 7.26
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3039209729095934604, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: target
+      value: 
+      objectReference: {fileID: 242314603}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelAimEaseTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelVertical
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelHorizontal
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelReturnSmoothTime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: maxSwivelPitchDownAngle
+      value: 20
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+--- !u!20 &998891570 stripped
+Camera:
+  m_CorrespondingSourceObject: {fileID: 762074699419970283, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+  m_PrefabInstance: {fileID: 998891569}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1054917918
 GameObject:
   m_ObjectHideFlags: 0
@@ -564,6 +654,7 @@ GameObject:
   - component: {fileID: 1054917919}
   - component: {fileID: 1054917922}
   - component: {fileID: 1054917923}
+  - component: {fileID: 1054917924}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -709,6 +800,16 @@ MonoBehaviour:
   rollSmoothTime: 0.25
   rotationSmoothTime: 0.1
   lookAheadDistance: 5
+  enableSwivel: 1
+  maxSwivelYawAngle: 90
+  maxSwivelPitchUpAngle: 60
+  maxSwivelPitchDownAngle: 20
+  swivelSmoothTime: 1
+  swivelReturnSmoothTime: 0.5
+  swivelAimEaseTime: 1
+  swivelDeadzone: 0.15
+  invertSwivelHorizontal: 1
+  invertSwivelVertical: 1
   baseFOV: 70
   maxFOV: 90
   maxSpeed: 100
@@ -724,11 +825,26 @@ MonoBehaviour:
   speedBarrierGroundedGrace: 1
   speedBarrierMuffle: 1
   barrierMuffleCutoff: 400
+--- !u!114 &1054917924
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054917918}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0609071b94e26da4fb2d903127038040, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraSwitcher
+  mainCamera: {fileID: 1054917920}
+  rearViewCamera: {fileID: 998891570}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 1054917921}
+  - {fileID: 998891569}
   - {fileID: 609218967}
   - {fileID: 561640419}
   - {fileID: 350669424}

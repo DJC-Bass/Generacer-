@@ -1015,8 +1015,16 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1116922108}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: swivelSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: turboFOVDuration
       value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: swivelAimEaseTime
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: speedBarrierMuffle
@@ -1027,12 +1035,28 @@ PrefabInstance:
       value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: invertSwivelVertical
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: speedBarrierFOVBoost
       value: 45
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: invertSwivelHorizontal
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: speedBarrierReleaseMph
       value: 725
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: swivelReturnSmoothTime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: maxSwivelPitchDownAngle
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 6084672688749080874, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_Name
@@ -1321,8 +1345,16 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1116922108}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: turboFOVDuration
       value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelAimEaseTime
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierMuffle
@@ -1333,12 +1365,28 @@ PrefabInstance:
       value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelVertical
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierFOVBoost
       value: 45
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelHorizontal
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierReleaseMph
       value: 725
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelReturnSmoothTime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: maxSwivelPitchDownAngle
+      value: 20
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

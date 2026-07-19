@@ -335,6 +335,12 @@ public class CarController : MonoBehaviour
     /// up while fully airborne. Lets external effects (e.g. the speed-barrier kick) apply their own
     /// grounded grace window.</summary>
     public float AirborneTime => airborneTimer;
+    /// <summary>Right-stick X/Y (the rebindable Yaw and Pitch axes) as the car read them this frame.
+    /// Exposed so the follow cameras can drive their grounded swivel from the SAME reading the air
+    /// rotation uses — one stick poll, one set of rebinds, no second InputActionAsset to keep in sync.</summary>
+    public float ManualYawInput => manualYawInput;
+    /// <inheritdoc cref="ManualYawInput"/>
+    public float ManualPitchInput => manualPitchInput;
 
     /// <summary>Fired the moment the car successfully fires its Jet (a jump that spent a Jet and
     /// launched). Accessories such as JetFlames subscribe to flare on jump.</summary>

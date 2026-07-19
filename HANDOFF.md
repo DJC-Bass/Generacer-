@@ -100,6 +100,61 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
   mid-level stops it (press again to continue), and reaching fully level (`IsFullyLevel`, ~0° epsilon —
   distinct from the looser `airDriftLevelThreshold` that still gates air drift) consumes the hold so a NEW
   press is needed once tilted again. Leveling takes priority over manual pitch for the frames it runs.
+- **Grounded camera swivel on the right stick (`CameraFollow`), both axes.** While the car is on the ground
+  the right stick orbits the follow camera around it — left/right (`maxSwivelYawAngle`, default 90°) and
+  up/down (`maxSwivelPitchUpAngle` 60° / `maxSwivelPitchDownAngle` 25°) — easing back to neutral on release.
+  Both cameras get it, main and Rear View, and the rear one needs no special case: its offset AND its
+  look-ahead are both mirrored, so the same signed angles pan its view the same way on screen.
+  **Diagonals work** (a northeast push orbits northeast): the two angles compose as
+  `AngleAxis(yaw, up) * AngleAxis(pitch, right)` (yaw outermost — the standard orbit order, so the angles
+  don't skew as they compound), the deadzone is **radial** on the stick vector rather than per-axis (a
+  per-axis deadzone clips one component on a gentle diagonal and bends it back toward a cardinal), and the
+  pair is eased with a single `Vector2.SmoothDamp` so a diagonal transition stays a straight line instead
+  of the axes arriving apart. Up/down have separate limits, so the envelope is an ellipse — a full diagonal
+  reaches ~71% of each. Down is deliberately tighter: nothing in this project does camera collision and the
+  default offset only sits ~23° above the car, so a large down-swivel dips through the ground.
+  The orbit is applied to the offset (*inside* `smoothedRot`, so it rides on the lazy-Susan lag; being a
+  pure rotation it preserves the offset distance — the camera moves on a sphere, never toward the car)
+  **and** to the look-ahead point (`target.rotation * (SwivelRotation * Vector3.forward)` — the same orbit
+  in the car's frame), so the rig swings as one piece and the car stays framed instead of sliding out of shot.
+  **The stick hand-off is gated on `CarController.IsAirborne`** — the very flag that unlocks the car's air
+  rotation — so the two are exact complements: the stick never drives both at once and never drives
+  neither. Going airborne mid-swivel drops the target angle to 0 and the camera glides home even if the
+  player never released; landing picks the stick back up. Because `IsAirborne` is false through the
+  air-abilities grace window, crests and short hops keep the camera under player control rather than
+  snapping it back. Input comes from `CarController.ManualYawInput` / `ManualPitchInput` (new properties) —
+  the car's own poll of the rebindable `Yaw`/`Pitch` actions — so there's no second `InputActionAsset` to
+  keep in sync and rebinds are free; also gated on `!MenuState.AnyOpen` so menu navigation doesn't swing
+  the camera. Note this means the SAME stick axes drive the camera on the ground and the car in the air,
+  which is the whole point of gating them on complementary conditions.
+  Fields: `enableSwivel`, `maxSwivelYawAngle`, `maxSwivelPitchUpAngle`, `maxSwivelPitchDownAngle`,
+  `swivelSmoothTime` (out), `swivelReturnSmoothTime` (home), `swivelDeadzone`, `invertSwivelHorizontal`,
+  `invertSwivelVertical`. The two renames carry `[FormerlySerializedAs]` (`maxSwivelAngle`,
+  `invertSwivel`), and the pitch angles are `[Range]`-capped at 85° — at 90°+ the camera sits directly
+  over the car and `Quaternion.LookRotation` can go degenerate against a world-up `camUp`.
+  **Direction defaults:** pushing RIGHT orbits the camera to the car's RIGHT side and pushing UP lifts it
+  ABOVE the car (literal "orbits in the direction you input"); `invertSwivelHorizontal` gives the
+  conventional look-stick feel where pushing right pans the VIEW right, `invertSwivelVertical` is the
+  classic invert-Y.
+  **`rotationSmoothTime` is forced to 0 for the duration of a swivel** (`swivelEngaged` latch). The swivel
+  already carries its own smoothing, so leaving the aim lag layered on top double-smooths the look-around
+  and it drags behind the stick. The latch sets on the first frame off neutral and clears only once the
+  camera is fully home — deliberately spanning the glide back too, so the return is as crisp as the swing
+  out. "Fully home" needs a threshold (`SwivelNeutralEpsilon`, 0.05°) because `SmoothDamp` only approaches
+  asymptotically; under it the swivel is snapped to exact zero so neutral is a real state, not a shrinking
+  tail. The removal is **ramped, not cut**: `aimSmoothTime = rotationSmoothTime * (1 - aimEase)`, where
+  `aimEase` climbs 0→1 over the public `swivelAimEaseTime` (default 0.15s, linear `MoveTowards` so the
+  field reads as real seconds). Without that ramp, starting a swivel mid-corner snaps away whatever aim
+  lag had accumulated — a few degrees, invisible on a straight but a visible pop in a turn. The ramp is
+  **one-directional by design**: `aimEase` drops straight back to 0 on release, which is pop-free because
+  unsmoothed aim leaves the camera exactly ON its desired rotation every frame, so restoring the easing
+  has no gap to reveal. Set `swivelAimEaseTime` to 0 for the old hard cut.
+- **`CameraFollow` target cache is now self-healing** (`RefreshTargetCache` in `LateUpdate`). `targetRb`/
+  `targetCar` were resolved once in `Start`, but `PlayerCarSwapper` (car select) and
+  `TrackGenerator.AttachCamera` (track spawn) both re-point `target` afterwards — leaving those cached on a
+  destroyed car, or null. That silently killed the turbo/loop FOV kicks and the speed-barrier grounded
+  grace; the swivel would have hit the same. Re-resolves only when `target` actually changes, and re-seeds
+  `smoothedRot` so a swap doesn't swing the camera.
 - **Air-drift runaway-speed bug ROOT-CAUSED & FIXED; drift restored to grace-period unlock.** The old
   `ApplyAirDrift` flattened BOTH car forward and car right onto the horizontal plane; with pitch+roll
   combined (angled launches) those flattened axes are non-perpendicular, and splitting/rebuilding the

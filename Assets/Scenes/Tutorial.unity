@@ -992,6 +992,16 @@ MonoBehaviour:
   rollSmoothTime: 0.25
   rotationSmoothTime: 0.1
   lookAheadDistance: 5
+  enableSwivel: 1
+  maxSwivelYawAngle: 90
+  maxSwivelPitchUpAngle: 60
+  maxSwivelPitchDownAngle: 20
+  swivelSmoothTime: 1
+  swivelReturnSmoothTime: 0.5
+  swivelAimEaseTime: 1
+  swivelDeadzone: 0.15
+  invertSwivelHorizontal: 1
+  invertSwivelVertical: 1
   baseFOV: 70
   maxFOV: 90
   maxSpeed: 100
@@ -1378,12 +1388,36 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1742804877}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelAimEaseTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelVertical
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierFOVBoost
       value: 45
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelHorizontal
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierReleaseMph
       value: 725
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelReturnSmoothTime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: maxSwivelPitchDownAngle
+      value: 20
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

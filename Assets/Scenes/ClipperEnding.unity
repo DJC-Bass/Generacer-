@@ -529,6 +529,63 @@ Camera:
   m_CorrespondingSourceObject: {fileID: 762074699419970283, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
   m_PrefabInstance: {fileID: 1730348856}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &870346672
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 4427852465150423725, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_Name
+      value: Speedometer
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 383.12302
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 8243.117
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 14890.847
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 9019236507937390493, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 7d755a91ff7be6c45b21bef6dcfbed1d, type: 3}
 --- !u!1 &997777840 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 4675093747225913974, guid: 44d0cd6a28b8aae44833bcbdea217598, type: 3}
@@ -603,16 +660,40 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 260870596}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: swivelSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: swivelAimEaseTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: barrierMuffleCutoff
       value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: invertSwivelVertical
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: speedBarrierFOVBoost
       value: 45
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: invertSwivelHorizontal
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: speedBarrierReleaseMph
       value: 725
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: swivelReturnSmoothTime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: maxSwivelPitchDownAngle
+      value: 20
       objectReference: {fileID: 0}
     - target: {fileID: 6084672688749080874, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_Name
@@ -876,16 +957,40 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 260870596}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelAimEaseTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: barrierMuffleCutoff
       value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelVertical
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierFOVBoost
       value: 45
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: invertSwivelHorizontal
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierReleaseMph
       value: 725
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: swivelReturnSmoothTime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: maxSwivelPitchDownAngle
+      value: 20
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -1317,3 +1422,4 @@ SceneRoots:
   - {fileID: 290499043}
   - {fileID: 622170118}
   - {fileID: 1553230670}
+  - {fileID: 870346672}
