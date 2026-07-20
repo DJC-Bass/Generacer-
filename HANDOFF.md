@@ -10,12 +10,69 @@ tutorial guide, event-system guard) or their own object (`AudioManager`, `GameLo
 ---
 
 ## NEXT TASK (this is why a fresh agent is here)
-**Settings are COMPLETE in BOTH menus — no settings work is outstanding.** The Main Menu has AUDIO / VIDEO /
-CONTROLS, and the in-game Start Menu now mirrors them (AUDIO + CONTROLS sub-screens, and VIDEO living in the
-SETTINGS sub-screen next to the Tutorial-tips toggle). Suggested follow-ups (pick per the user): build ONLINE
-MULTIPLAYER; assign the still-empty AudioLibrary slots (below); optionally **retrofit `MainMenuController` onto
-the shared `SettingsUI` + `RebindController`** (it still has its own inline `CreateSlider` /
-`CreateOptionSelector` / rebind — the Start Menu already uses the shared versions, so this is a dedupe cleanup).
+**ONLINE MULTIPLAYER** — build out the Main Menu's Online Multiplayer button. **Nothing exists yet**: no
+netcode package, no lobby, no networked anything. This is from scratch and by far the largest feature in the
+project. Settings are COMPLETE in both menus and no settings work is outstanding.
+
+### The design (from the user)
+- **Lobby screen** reached from the Main Menu's Online Multiplayer button: **host a lobby**, **join a lobby**,
+  and **set the lobby's rules** — including **how many players per team**, so team size is a lobby parameter,
+  never a hard-coded 3.
+- **Two teams**, 3 players each by default (6 total), running the existing game loop against each other.
+- **Win:** the first team to hold **3 SDs collectively across its members** wins. Note this is a *team*
+  aggregate — one player holding 3, or three players holding 1 each, both win it.
+- **Lose:** **two drone wins is still a game over for EVERYONE** — both teams, exactly as in single-player.
+- **Netcode must use EXTRAPOLATION** for remote cars. Cars routinely exceed **600 mph**, where snapshot
+  interpolation alone visibly jitters and rubber-bands; remote cars have to look smooth to every player.
+
+### What already lines up (do NOT rebuild these)
+- **`GameLoopManager` already encodes both win rules**, and the numbers already match the multiplayer spec:
+  `sdItemsToWin = 3` and `droneWinsToGameOver = 2`. `EvaluateRoundOutcome()` (runs once per round) is the
+  single decision point: first place + enough SDs ⇒ win; anything else ⇒ `DroneWins++` ⇒ drone ending at 2.
+  **The multiplayer change is narrow in shape** — make `CountPlayerSDs()` a *team* aggregate rather than a
+  read of the one local `PlayerInventory`, make `playerFirstPlaceThisRound` team-scoped, and make the whole
+  manager **server-authoritative** so one machine scores the round. The rule logic itself survives intact.
+- **Audio is already multiplayer-shaped by design** — every world/gameplay sound is 3D specifically so remote
+  players hear each other, and local-only effects (the speed-barrier muffle) are per-**AudioListener** rather
+  than on a mixer. See "Design rules" below; don't undo either.
+
+### What's missing / what will fight you
+- **No netcode stack at all.** `Packages/manifest.json` has `com.unity.multiplayer.center` (1.0.1), but that
+  is *only the Multiplayer Center guidance window* — it ships no transport, no `NetworkManager`, no services.
+  There is **no** `com.unity.netcode.gameobjects`, no `com.unity.transport`, no `com.unity.services.*`
+  (Lobby/Relay/Authentication), no Mirror, no Photon. **Choosing the stack is decision #1** and it constrains
+  everything after it.
+- **`PlayerInventory` is a single DontDestroyOnLoad singleton holding *the* player's items**, and SD ownership
+  is read globally off it (`EquippedSD`, `Order`). Team aggregation needs per-player inventory state with an
+  owner id, which is the deepest structural change in this list.
+- **12 `FindWithTag("Player")` / `FindGameObjectWithTag` sites across 9 files** — `DroneCar`, `BoulderObstacle`,
+  `SpeedCheck`, `HubSpawnBoost`, `SDAbilityController`, `TrackGenerator`, `PlayerCarSwapper`, plus
+  `Assets/vehicle/controller.cs` and `Assets/vehicle/cameraController.cs`. Every one assumes **exactly one**
+  player car and silently grabs whichever it finds first. (The two `Assets/vehicle/*` files look like leftover
+  sample/tutorial scripts outside the `Prefabs/Scripts` tree — **confirm they're dead before spending time on
+  them.**)
+- **Singletons are only a problem for *shared* state.** Statics are per-process, so each client having its own
+  `MenuState.AnyOpen`, HUDs, `StartMenuController`, camera rig and `SDAbilityController` input is *correct* —
+  those are local-player concerns. What must move to server authority is **game state**: round scoring, SD
+  ownership, drone wins, round start/end.
+- **`CarController` is custom raycast-hover physics in `FixedUpdate`**, not a WheelCollider car. Unity PhysX is
+  not cross-platform deterministic, so **lockstep is out** — expect server-authoritative movement with client
+  prediction + reconciliation, or client-authoritative with server validation.
+- **The track is procedurally generated** (`TrackGenerator`, plus a random road hue and `SkyboxHueRandomizer`,
+  and `RoundDirectionalLightToggle`'s 33% blackout roll). **Every one of these needs a synced seed** or players
+  will be driving different tracks under different lighting.
+- **The grounded camera swivel and air rotation are local-only.** Both read `CarController.ManualYawInput` /
+  `ManualPitchInput`, which are that machine's stick poll — on a remote car they'd read 0. Gate the camera rig
+  and input reads on **local ownership**, not on "found the Player tag".
+
+### Open questions to settle with the user FIRST (they change the architecture)
+1. **Netcode stack** — NGO + Unity Relay/Lobby, Mirror, Photon Fusion, something else?
+2. **Topology** — dedicated server, host-as-client (listen server), or P2P over a relay?
+3. **Movement authority** — server-authoritative with prediction/reconciliation (safest, since a *competitive*
+   win condition makes cheating matter), or client-authoritative (much simpler, trivially cheatable)?
+4. **Do both teams share ONE TrackScene instance** (6 cars + drones in one world) or race parallel instances?
+   This swings the scope enormously.
+5. **Are the drones server-simulated?** They must be, or their positions and the round outcome desync.
 
 ## Settings in the in-game Start Menu (mirrors the Main Menu)
 `StartMenuController` (persistent, on PlayerSystems) builds its AUDIO / CONTROLS / SETTINGS sub-screens from
@@ -209,10 +266,19 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
 ---
 
 ## Current state
-Everything below is **code-complete and compiles**. The prior session built the audio-system
-foundation (`AudioManager` + `AudioLibrary` ScriptableObject at `Assets/Resources/AudioLibrary.asset`,
-`Spatial3DSettings`, `PortalAudio`, `CarEngineAudio`, `BoulderAudio`, per-scene music, endings). **This
-session** extended audio and added visual FX + gameplay systems + fixed two editor-freeze bugs (below).
+Three sessions have layered up here, so read the labels rather than assuming "this session":
+1. **Audio foundation** — `AudioManager` + `AudioLibrary` ScriptableObject (`Assets/Resources/AudioLibrary.asset`),
+   `Spatial3DSettings`, `PortalAudio`, `CarEngineAudio`, `BoulderAudio`, per-scene music, endings.
+2. **Audio extensions + visual FX + gameplay systems**, and two editor-freeze fixes — the "New scripts" /
+   "Modified systems" / "Bugs hit & fixed" sections below are mostly this one.
+3. **Most recent session** — the full settings/rebinding stack in both menus, the manual air-ability rework
+   (manual self-level, 3-axis manual rotation, the air-drift runaway fix), per-SD activation VFX, and the
+   grounded camera swivel. All of it is documented in the bulleted sections near the top.
+
+> **Compile status:** everything through session 2 is code-complete and compiles. Session 3's later work
+> (SD VFX and the camera swivel, including the `CarController` property additions) was written **without a
+> Unity compile** — no editor was available. It should be clean, but a fresh agent's first move is to open
+> the editor and confirm rather than assume.
 
 ### AudioLibrary slots STILL EMPTY (`{fileID: 0}`) — assign clips (OGG/WAV)
 As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carLanding`,
@@ -224,7 +290,7 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 
 ---
 
-## What this session added / changed
+## What sessions 1–2 added / changed (session 3's work is in the bulleted sections near the top)
 
 ### New scripts (each has a hand-written `.meta` with a fixed GUID)
 - `Audio/WindowsAudio.cs` — on the Windows prefab's box collider (trigger). 3D enter/exit one-shots
@@ -245,6 +311,14 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   both ways). Hides + pauses its timer while any menu is open or when turned off in Settings.
 - `UI/TutorialSettings.cs` — PlayerPrefs wrapper for the tutorial-guide on/off toggle. **Template for the
   new GameSettings.**
+- `Car Scripts/SDAbilityVFX.cs` — on the **PlayerCar root**, next to the SD particle systems. A serializable
+  `Entry[] effects` maps each SD's exact inventory name → its `ParticleSystem`; `Show(sdName)` plays that one
+  and stops every other, `Hide()` stops all. `Awake() => Hide()` so nothing emits even if a system has
+  Play-On-Awake ticked, and `SetPlaying` is idempotent (checks `activeSelf`/`isPlaying`) so repeated calls
+  never restart a running system. Driven by `SDAbilityController`; optional and null-safe.
+- `UI/GameSettings.cs`, `UI/OptionSelector.cs`, `UI/InputRebinding.cs`, `UI/SettingsUI.cs`,
+  `UI/RebindController.cs` — the settings/rebinding stack; all documented in detail in the two Settings
+  sections above.
 - `UI/EventSystemGuard.cs` — bootstrapped; guarantees exactly one EventSystem (freeze fix, see below).
 - `SkyboxHueRandomizer.cs` — bootstrapped; when a scene's skybox is the `SimpleSkybox` (Skybox/Procedural),
   randomizes `_SkyTint` and `_GroundColor` to **independent** random hues (S/V preserved) on an instance,
@@ -257,11 +331,15 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   the FOV smoothing, log-space cutoff), only on the camera holding the active AudioListener; (4) fires
   `speedBarrierBreak`/`speedBarrierLeave` stingers on the barrier edge (bypass the muffle); (5)
   grounded-grace gate (`speedBarrierGroundedGrace`, default 1s) — force-exits the barrier when airborne,
-  which also avoids the kill-floor audio pop.
+  which also avoids the kill-floor audio pop; (6) the **grounded right-stick camera swivel** (both axes,
+  diagonals, aim-easing latch) and (7) the **self-healing target cache** — both detailed in their own bullets
+  in the settings/gameplay section above.
 - `CarController.cs` — turbo **tire trails** (rear `TrailRenderer`s; emit on real turbo **or**
   `TriggerTurboTrail()` from BoostGate **or** `IsLoopGravityCut`; `turboTrail*` fields incl.
   `turboTrailHeightOffset`); `AirborneTime` property; `loopBoost` one-shot on the loop-flag rising edge;
-  `OnJumped` event (for JetFlames).
+  `OnJumped` event (for JetFlames); the **manual air-ability rework** (manual self-level, 3-axis manual
+  rotation, fixed air drift — see the bullets above); and `ManualYawInput` / `ManualPitchInput` properties
+  exposing the right-stick poll so the cameras can share it.
 - `AudioManager.cs` — **interior-music crossfade layer** (2nd `interiorSource`, `PlayInteriorMusic` /
   `StopInteriorMusic`, per-frame crossfade in `Update`, `interiorMusicCrossfadeSeconds` from library);
   **portal-exit** system (`ArmPortalExit` static flag / `TryPlayPortalExit(transform)` flag-consuming /
@@ -286,7 +364,9 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 
 ---
 
-## Bugs hit & fixed this session (the "failed attempts")
+## Bugs hit & fixed in sessions 1–2 (the "failed attempts")
+> Session 3's big one — the **air-drift runaway-speed bug** — is written up in full in its own bullet near
+> the top, including why the old auto-leveler masked it.
 1. **Editor freeze on TrackScene exit** — `LightningStrike.SpawnBolt` built a **convex `MeshCollider`
    from a 9000-unit zigzag ribbon mesh**; PhysX cooked a degenerate hull every strike (10k+ "triangles
    > 500 units" warnings) and hung the editor during scene-switch physics teardown (worse with many
@@ -320,11 +400,10 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 ---
 
 ## Exact next steps for a fresh agent
-1. **Build the Main Menu Settings screen** (the task above): wire `MainMenuController.OnSettings()` to a
-   sub-menu (AUDIO / VIDEO / CONTROLS) modeled on `StartMenuController`'s SETTINGS panel; back Audio with
-   the existing `AudioManager` volume setters; add a `GameSettings` PlayerPrefs static (copy
-   `TutorialSettings`) applied at bootstrap; Video via `Screen`/`QualitySettings`; Controls read-only for
-   now. Rely on `EventSystemGuard`; don't spawn EventSystems.
+1. **Scope ONLINE MULTIPLAYER with the user before writing any code** — work the five open questions in the
+   NEXT TASK section above (stack, topology, movement authority, shared-vs-parallel world, drone authority).
+   Each one invalidates work done under the wrong assumption, and the stack choice gates the package install.
+   Then confirm this session's uncompiled code is clean (see the Compile status note above).
 2. **Assign the 8 empty AudioLibrary slots** and, if desired, give distinct clips to the placeholder-shared
    pairs listed above.
 3. **Verify component wiring in the editor** (GUIDs match the `.meta`s, so they should bind — confirm no
@@ -345,8 +424,12 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 
 ### Deferred
 - **Player Victory sequence** still ends at the "BOTS DEFEATED" banner in a portal-less hub — a fuller win
-  presentation has no design yet.
-- **Input rebinding** UI (live control remapping) — start Controls as read-only; rebinding is its own task.
+  presentation has no design yet. **Multiplayer will need a team-win presentation anyway**, so these two are
+  worth designing together rather than separately.
+- **Retrofit `MainMenuController` onto the shared `SettingsUI` + `RebindController`.** It still carries its own
+  inline `CreateSlider` / `CreateOptionSelector` / rebind flow; the Start Menu already uses the shared
+  versions. Pure dedupe — behaviour is already matched, so this is cleanup, not a fix.
+- ~~Input rebinding UI~~ — **DONE** (both menus, with conflict detection and live re-apply).
 
 ---
 
@@ -368,4 +451,10 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   EventSystem. `MainMenuController`/`CarSelectionController` are per-scene code-built menus.
 - **Player car**: spawned per gameplay scene by `PlayerCarSwapper` (from `SelectedCarStore`) or the
   `TrackGenerator`'s delayed spawn; components read live state off `CarController` (`SpeedMph`,
-  `IsTurboActive`, `IsLoopGravityCut`, `IsAirborne`, `AirborneTime`, `OnJumped`).
+  `IsTurboActive`, `IsLoopGravityCut`, `IsAirborne`, `AirborneTime`, `OnJumped`, `ManualYawInput` /
+  `ManualPitchInput`). Optional per-car components: `PortalExitAudio`, `JetFlames`, `SDAbilityVFX`.
+- **Cameras**: two always-running `CameraFollow` rigs (main + Rear View) with `CameraSwitcher` toggling which
+  one *renders* on R3 — both keep following every frame, so the switch is instant. `CameraFollow` owns the
+  lazy-Susan per-axis rotation lag, the speed/turbo/loop/barrier FOV kicks, the barrier low-pass muffle, and
+  the grounded right-stick swivel. It re-resolves its `Rigidbody`/`CarController` whenever `target` changes.
+  **All of it is local-player-only** — relevant when multiplayer lands.
