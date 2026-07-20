@@ -68,7 +68,16 @@ public class KillFloor : MonoBehaviour
             PlayerInventory.Instance.ResetToStarting();
 
         if (GameLoopManager.Instance != null)
-            GameLoopManager.Instance.NotifyReturnedToHub();
+            GameLoopManager.Instance.NotifyReturnedToHub();   // no-op while remote-driven
+
+        // Multiplayer: dying is a per-player TELEPORT back to the hub — the round keeps running for
+        // everyone still racing. (The trigger re-arms so this client can fail again next round.)
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            MultiplayerWorld.Instance.ReturnToHubLocally();
+            triggered = false;
+            return;
+        }
 
         if (!string.IsNullOrEmpty(hubSceneName))
             SceneManager.LoadScene(hubSceneName);

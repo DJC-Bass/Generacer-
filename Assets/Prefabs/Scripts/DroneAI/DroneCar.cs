@@ -185,7 +185,7 @@ public class DroneCar : MonoBehaviour
     public void BeginChase()
     {
         chaseMode = true;
-        var p = GameObject.FindWithTag(playerTag);
+        var p = PlayerRegistry.LocalCar;
         if (p != null) chaseTarget = p.transform;
     }
 
@@ -196,7 +196,7 @@ public class DroneCar : MonoBehaviour
     {
         if (chaseTarget == null)
         {
-            var p = GameObject.FindWithTag(playerTag);
+            var p = PlayerRegistry.LocalCar;
             if (p == null) return;
             chaseTarget = p.transform;
         }

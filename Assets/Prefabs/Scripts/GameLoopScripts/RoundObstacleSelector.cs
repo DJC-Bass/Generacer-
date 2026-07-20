@@ -33,12 +33,17 @@ public class RoundObstacleSelector : MonoBehaviour
         // Round 1 -> 1 active, round 2 -> 2 active, round 3+ -> all active.
         int activeCount = Mathf.Clamp(round, 1, spawners.Length);
 
-        // Fisher–Yates shuffle of indices so the active subset is random each round.
+        // Fisher–Yates shuffle of indices so the active subset is random each round. In multiplayer
+        // the shuffle derives from the server's round seed so every client activates the SAME subset
+        // (the spawners' own timing still runs locally until Phase 5 makes them server-simulated).
+        System.Random seeded = MultiplayerWorld.IsMultiplayerGame
+            ? MultiplayerWorld.DeriveRandom("obstacles")
+            : null;
         int[] order = new int[spawners.Length];
         for (int i = 0; i < order.Length; i++) order[i] = i;
         for (int i = order.Length - 1; i > 0; i--)
         {
-            int j = Random.Range(0, i + 1);
+            int j = seeded != null ? seeded.Next(i + 1) : Random.Range(0, i + 1);
             (order[i], order[j]) = (order[j], order[i]);
         }
 

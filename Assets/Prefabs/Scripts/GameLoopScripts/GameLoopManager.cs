@@ -102,6 +102,16 @@ public class GameLoopManager : MonoBehaviour
     private bool playerFirstPlaceThisRound;
     private bool roundOutcomeCounted;
 
+    // ---- Multiplayer puppet mode (Phase 2) ----
+    /// <summary>When true this manager is REMOTE-DRIVEN: the multiplayer server owns the round loop,
+    /// so local phase transitions/scoring are suppressed and <see cref="RemoteBeginRound"/> /
+    /// <see cref="RemoteEndRound"/> (called by MultiplayerWorld from network messages) drive the
+    /// events. Set BEFORE the manager is created; cleared by MultiplayerWorld's teardown.</summary>
+    public static bool RemoteDriven;
+    /// <summary>The server-rolled seed <see cref="GetNextTrackSeed"/> returns while remote-driven,
+    /// so TrackGenerator's existing seed path needs no changes.</summary>
+    public static int RemoteTrackSeed;
+
     void Awake()
     {
         // Standard singleton setup with persistence
@@ -133,6 +143,15 @@ public class GameLoopManager : MonoBehaviour
     {
         if (GameEnded) return;   // an ending has taken over — stop the normal round loop
 
+        // Remote-driven (multiplayer): the server owns all transitions. Tick the round timer down
+        // purely for display; the real round end arrives as a network message.
+        if (RemoteDriven)
+        {
+            if (CurrentPhase == Phase.HubPortalActive || CurrentPhase == Phase.InTrack)
+                RoundTimeRemaining = Mathf.Max(0f, RoundTimeRemaining - Time.deltaTime);
+            return;
+        }
+
         switch (CurrentPhase)
         {
             case Phase.HubCountdown:
@@ -144,6 +163,68 @@ public class GameLoopManager : MonoBehaviour
                 TickRoundTimer();
                 break;
         }
+    }
+
+    // -------------------------------------------------------
+    //  Multiplayer puppet API — called by MultiplayerWorld when the server's round messages land.
+    //  These fire the SAME events the local loop would, so every consumer (HubSceneController's
+    //  portal spawn/despawn, RoundObstacleSelector's RoundNumber read, TrackGenerator's seed pull)
+    //  works unmodified in multiplayer.
+    // -------------------------------------------------------
+
+    /// <summary>Server said a round started: set the round state and spawn the portal everywhere.</summary>
+    public void RemoteBeginRound(int roundNumber, float roundDuration)
+    {
+        if (!RemoteDriven) return;
+        RoundNumber = roundNumber;
+        CurrentPhase = Phase.HubPortalActive;
+        RoundTimeRemaining = roundDuration;
+        playerFirstPlaceThisRound = false;
+        roundOutcomeCounted = false;
+        AnyRacerFinishedAhead = false;
+        Debug.Log($"[GameLoop] (remote) Round {roundNumber} — portal active, {roundDuration:F0}s round timer");
+        OnPortalShouldSpawn?.Invoke();
+    }
+
+    /// <summary>Server said the round ended: despawn the portal everywhere. Round scoring is the
+    /// server's job (MultiplayerScoring) — never scored locally in multiplayer.</summary>
+    public void RemoteEndRound()
+    {
+        if (!RemoteDriven) return;
+        Debug.Log("[GameLoop] (remote) Round ended — despawning portal");
+        OnPortalShouldDespawn?.Invoke();
+        CurrentPhase = Phase.HubCountdown;
+        TimeRemainingInPhase = 0f;
+        RoundTimeRemaining = 0f;
+    }
+
+    /// <summary>Server replicated the SHARED drone-wins tally (HUDs read <see cref="DroneWins"/>).</summary>
+    public void RemoteSetDroneWins(int wins)
+    {
+        if (!RemoteDriven) return;
+        DroneWins = wins;
+    }
+
+    /// <summary>Server declared the drone ending — game over for EVERYONE, both teams. Fires the same
+    /// event the local loop would, so HubSceneController's swarm presentation plays unmodified.</summary>
+    public void RemoteTriggerDroneEnding()
+    {
+        if (!RemoteDriven || GameEnded) return;
+        GameEnded = true;
+        DroneEndingActive = true;
+        Debug.Log("[GameLoop] (remote) DRONE ENDING — the drones beat both teams.");
+        OnDroneEnding?.Invoke();
+    }
+
+    /// <summary>Server declared a team victory. Fires the player-win event so HubSceneController's
+    /// banner presentation plays; MultiplayerWorld sets the banner text per team beforehand.</summary>
+    public void RemoteTriggerTeamVictory()
+    {
+        if (!RemoteDriven || GameEnded) return;
+        GameEnded = true;
+        PlayerWinActive = true;
+        Debug.Log("[GameLoop] (remote) TEAM VICTORY.");
+        OnPlayerWin?.Invoke();
     }
 
     void TickCountdown()
@@ -266,6 +347,7 @@ public class GameLoopManager : MonoBehaviour
     /// <summary>Player has entered the hub portal � they're now in the track.</summary>
     public void NotifyEnteredTrack()
     {
+        if (RemoteDriven) return;   // multiplayer: per-player presence is MultiplayerWorld's business
         if (CurrentPhase == Phase.HubPortalActive)
         {
             CurrentPhase = Phase.InTrack;
@@ -300,6 +382,7 @@ public class GameLoopManager : MonoBehaviour
     /// <summary>Player returned to hub via end-portal or kill-floor.</summary>
     public void NotifyReturnedToHub()
     {
+        if (RemoteDriven) return;   // multiplayer: the server ends rounds, not a single player's return
         if (CurrentPhase == Phase.InTrack)
         {
             Debug.Log("[GameLoop] Player returned to hub � round complete");
@@ -307,9 +390,11 @@ public class GameLoopManager : MonoBehaviour
         }
     }
 
-    /// <summary>Triggers a fresh seed for the next track scene generation.</summary>
+    /// <summary>Triggers a fresh seed for the next track scene generation. In multiplayer this
+    /// returns the SERVER-rolled round seed instead, so every client generates the same track.</summary>
     public int GetNextTrackSeed()
     {
+        if (RemoteDriven) return RemoteTrackSeed;
         return UnityEngine.Random.Range(1, 999999);
     }
 

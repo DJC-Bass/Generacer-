@@ -310,7 +310,7 @@ public class SDAbilityController : MonoBehaviour
     {
         if (carGO != null) return;
 
-        carGO = GameObject.FindWithTag(playerTag);
+        carGO = PlayerRegistry.LocalCar;
         carColliders = carGO != null ? carGO.GetComponentsInChildren<Collider>(true) : null;
         carRb = carGO != null ? carGO.GetComponent<Rigidbody>() : null;
         carVFX = carGO != null ? carGO.GetComponentInChildren<SDAbilityVFX>(true) : null;
@@ -381,7 +381,7 @@ public class SDAbilityController : MonoBehaviour
     {
         if (recorderCarGO != null && rewinder != null) return;
 
-        recorderCarGO = GameObject.FindWithTag(playerTag);
+        recorderCarGO = PlayerRegistry.LocalCar;
         if (recorderCarGO == null) { rewinder = null; return; }
 
         rewinder = recorderCarGO.GetComponent<CarRewind>();

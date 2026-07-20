@@ -20,10 +20,296 @@ project. Settings are COMPLETE in both menus and no settings work is outstanding
   never a hard-coded 3.
 - **Two teams**, 3 players each by default (6 total), running the existing game loop against each other.
 - **Win:** the first team to hold **3 SDs collectively across its members** wins. Note this is a *team*
-  aggregate — one player holding 3, or three players holding 1 each, both win it.
+  aggregate — one player holding 3, or three players holding 1 each, both win it. SDs are counted as
+  **distinct SD names within a team** (same rule `CountPlayerSDs` already uses), and a team can't be awarded
+  an SD it already holds; **duplicates ACROSS teams are fine** (both teams may own a Lightning SD).
 - **Lose:** **two drone wins is still a game over for EVERYONE** — both teams, exactly as in single-player.
+- **Individual track entry/exit (2026-07-19):** players enter the TrackScene **separately** through the hub
+  portal, each on their own timing. When one player dies/finishes/leaves, the others keep racing; the track
+  round ends only when **all players have left OR the round timer expires**.
+- **Sticky random targeting (2026-07-19):** any entity that targets "the player" (drones, boulders, etc.),
+  when several players are in the track, picks **one random player and keeps that target for its whole
+  lifespan** (retarget/despawn only if the target leaves — see Phase 5).
 - **Netcode must use EXTRAPOLATION** for remote cars. Cars routinely exceed **600 mph**, where snapshot
   interpolation alone visibly jitters and rubber-bands; remote cars have to look smooth to every player.
+
+### DECISIONS MADE (2026-07-19, confirmed with the user — the 5 open questions are settled)
+1. **Stack:** Netcode for GameObjects (NGO 2.x) + Unity Transport + Unity Gaming Services
+   (Authentication anonymous; Lobby + Relay via the unified `com.unity.services.multiplayer`
+   **Sessions API** — the standalone Lobby/Relay packages are deprecated). Packages are INSTALLED
+   (see Phase 0 status).
+2. **Topology:** **listen server** — one player hosts, traffic over Relay (no port forwarding, no dedicated
+   server). Host quitting ends the session; **host migration is explicitly out of scope for v1**.
+3. **Movement authority:** **owner-authoritative cars** (each client simulates its own `CarController`
+   physics) synced by a **custom extrapolating transform sync**; the **server owns all game state**
+   (round phase/timers, seeds, SD awards, drone wins, endings, AI). Cheating accepted for v1.
+4. **World:** **one shared world** — both teams race the SAME track instance. Implemented as hub + track
+   loaded **additively in one session** with the generated track at a large world offset (see Phase 2).
+5. **Drones/obstacles are server-simulated** NetworkObjects (forced by the scoring rules).
+
+### MULTIPLAYER ROADMAP (phases in order; Phase 0 = DONE)
+
+**Phase 0 — Foundation — ✅ DONE 2026-07-19**
+1. ✅ Compile check of session 3's uncompiled code: `dotnet build Assembly-CSharp.csproj` → **0 errors**
+   (32 warnings, all pre-existing deprecations like `enableWordWrapping`/`FindObjectOfType` — harmless).
+2. ✅ Confirmed the WheelCollider sample kit was dead (no scene/prefab/asset referenced its GUIDs; only its
+   own editor tool referenced its classes) and **DELETED `Assets/vehicle/` (all 5 scripts) +
+   `Assets/Editor/vehicleManager.cs`** (+ metas + now-empty `Assets/Editor/`). Re-verified: 0 errors.
+   The `FindWithTag("Player")` cleanup list is now **9 call sites across 7 files** (see below).
+3. ✅ Added to `Packages/manifest.json` (versions = registry latest, editor is 6000.4.11f1):
+   `com.unity.netcode.gameobjects` 2.13.0, `com.unity.services.authentication` 3.7.3,
+   `com.unity.services.multiplayer` 2.2.4, `com.unity.multiplayer.playmode` 2.0.2,
+   `com.unity.multiplayer.tools` 2.2.9 (`com.unity.transport` arrives as an NGO dependency).
+   **NOTE (2026-07-19):** the standalone `com.unity.services.lobby` / `com.unity.services.relay` packages
+   are DEPRECATED — Lobby + Relay now ship inside the unified **Multiplayer Services SDK**
+   (`com.unity.services.multiplayer`) and its **Sessions API**; the manifest was corrected to use it.
+   Do NOT re-add the standalone packages.
+   **NOT yet done (needs the editor/dashboard, do first next session):** open the editor so Package Manager
+   resolves these, then **link the project to a UGS project ID** (Project Settings → Services) and enable
+   Authentication/Lobby/Relay in the Unity Dashboard.
+
+**Phase 1 — Lobby & session plumbing — ✅ CODE-COMPLETE 2026-07-20 (compiles 0 errors; needs
+editor verification + the UGS project link before it can actually run)**
+Two new scripts in `Assets/Prefabs/Scripts/Multiplayer/` (hand-written `.meta`s, fixed GUIDs):
+- **`NetworkSessionManager.cs`** — persistent singleton (`EnsureExists()`, created on demand by the lobby
+  UI; no scene setup) wrapping the **Sessions API**. Anonymous UGS auth (`EnsureServicesAsync`; local name
+  derived from the player id, "PLAYER-XXXX"); creates the persistent `NetworkManager`+`UnityTransport` in
+  code with **`ConnectionApproval = true` and `EnableSceneManagement = false`** (Phase 2 uses additive
+  areas, never NGO scene sync); `HostSessionAsync` / `JoinByCodeAsync` / `JoinByIdAsync` /
+  `QueryPublicSessionsAsync`. **The Sessions API starts NGO itself** (`WithRelayNetwork()` → Relay
+  allocation → its `GameObjectsNetcodeNetworkHandler` calls `StartHost`/`StartClient` — verified in the
+  package source), so by the room screen every member is transport-connected. **Team size is a session
+  property** (`teamSize`, public + `PropertyIndex.Number1` so the browser shows it; `MaxPlayers = 2×`,
+  clamp 1–4, default 3, never hard-coded). Player metadata = member-visible player properties
+  (`name`/`team`/`car`/`ready`) via `SetLocalPlayerPropertyAsync` → `SaveCurrentPlayerDataAsync`.
+  NGO **connection approval** re-caps at `Session.MaxPlayers` and refuses joins once `started` is set.
+  Teardown: **host leave = `AsHost().DeleteAsync()`** (clients get a clean "HOST CLOSED THE LOBBY"),
+  client leave = `LeaveAsync()`; session `RemovedFromSession`/`Deleted`/`Disconnected` (and the NGO
+  local-client disconnect) all funnel into one idempotent `EndLocally(reason)` → `NetworkManager.Shutdown`
+  + `SessionEnded(reason)` event (deliberate leaves suppressed via a `leaving` flag).
+  `StartGameAsync` (host): locks the session + sets `started="1"` — **Phase 2's hook**; Phase 1 stops there.
+  Helpers the UI/Phase 4 reuse: `TeamOf`/`IsReady`/`PropertyOf`, `CountTeam`, `TrySwitchTeamAsync`,
+  `AutoAssignTeamAsync` (joiners land on the smaller team), `ReadyToStart(out reason)`.
+- **`MultiplayerLobbyUI.cs`** — the code-built lobby flow on the MainMenu canvas (same style/colours,
+  reuses `SettingsUI` widgets + `MenuNavigation`). Screens: ROOT (HOST LOBBY / JOIN WITH CODE / LOBBY
+  BROWSER / BACK) → HOST (PLAYERS-PER-TEAM cycler + PUBLIC/PRIVATE cycler → CREATE) → ROOM, plus
+  JOIN-BY-CODE (code-built `TMP_InputField` — **keyboard entry; the browser is the gamepad path**) and
+  BROWSER (query + join-by-id rows "NAME 3/6 (3 PER TEAM)"). ROOM: lobby name, **join code**, two team
+  rosters (host marker, local ▸, car, ready ✓, "- OPEN SLOT -" fillers), SWITCH TEAM (full-team denial
+  buzz), CAR cycler (writes `SelectedCarStore` + the `car` player property), READY toggle, host-only
+  START GAME (interactable only when `ReadyToStart`), LEAVE. Async ops gate input on a `busy` flag and
+  report through a shared status line (incl. a "IS THE PROJECT LINKED?" hint on init failure). B/Esc
+  backs out per screen; in ROOM it leaves the lobby.
+- **`MainMenuController` wiring:** new `multiplayerCars` Inspector field (**fill with the same name+prefab
+  entries as the CarSelection scene's list** — the lobby can't read another scene's Inspector); builds
+  `MultiplayerLobbyUI` in `BuildUI`; ONLINE MULTIPLAYER hides the main column and opens it; menu
+  `Update`/`LateUpdate` defer entirely to the lobby while `lobbyUI.IsOpen`; exit restores + refocuses.
+- **Still to do to RUN it (needs the editor / dashboard):** (1) link the project to a UGS project ID
+  (Project Settings → Services) + enable Authentication/Lobby/Relay in the dashboard; (2) fill
+  `multiplayerCars` on the MainMenu scene's controller; (3) verify in-editor and then two-instance test
+  via Multiplayer Play Mode (host in one, join by code in the other). Session-side caveat: NGO
+  approval-denial UX for a full/locked lobby is minimal (client just fails to connect) — acceptable
+  because lobby slots already gate joins service-side.
+
+**Phase 2 — Shared world & synced randomness — ✅ CODE-COMPLETE 2026-07-20 (compiles 0 errors; needs
+the same runtime checklist as Phase 1 plus a two-instance world test). Single-player is UNTOUCHED —
+every change is gated on `MultiplayerWorld.IsMultiplayerGame`.**
+- **`Multiplayer/MultiplayerWorld.cs` (new, the Phase 2 core)** — persistent controller launched by
+  `NetworkSessionManager.Update()` when Phase 1's `started` flag lands (host AND joiners; that was the
+  Phase 1→2 hook). The multiplayer world = **HubWorld loaded single + TrackScene loaded ADDITIVELY each
+  round at `TrackAreaOffset` (0,0,−35 km)** — inside the float envelope single-player tracks already
+  occupy (~30 km ⇒ mm-scale). **Deliberately prefab-free** (NGO custom named messages `GNRC_*`, not
+  NetworkObjects — no editor setup, no GlobalObjectIdHash headaches; Phase 4 migrates game state to
+  NetworkVariables once Phase 3's player prefab exists).
+  - **Host round loop** (single source of rounds AND randomness): waits for every member's READY (hub
+    loaded, 25s cap) → countdown (GameLoopManager's own min/max fields) → rolls the round seed →
+    ROUND_START{round,seed} → round runs `roundDuration`, **ending early once ≥1 player entered the
+    track and every entrant has left** (the user's "all players leave" rule; disconnects are removed
+    from the in-track set so they can't hold a round open) → ROUND_END → `postRoundDelay` → repeat.
+  - **Every client keeps a real `GameLoopManager` in REMOTE-DRIVEN (puppet) mode** (`RemoteDriven`
+    static; set before creation, whose Awake doubles as the menu→hub transition):
+    `RemoteBeginRound`/`RemoteEndRound` fire the SAME events the local loop would, so
+    **HubSceneController's portal spawn/despawn, RoundObstacleSelector, RoundDirectionalLightToggle and
+    TrackGenerator's seed pull all work unmodified**. Local transitions/scoring suppressed
+    (`Update` ticks `RoundTimeRemaining` for display only; `NotifyEnteredTrack`/`NotifyReturnedToHub`
+    no-op; `GetNextTrackSeed` returns the server's `RemoteTrackSeed`).
+  - **Additive track load handling:** before the scene's Starts run — roots shoved by `TrackAreaOffset`,
+    the scene's OWN cameras/AudioListeners disabled (the hub rig follows the car everywhere), the
+    authored test car destroyed, the scene's Speedometer HUD area-gated. After its Starts — directional
+    lights recorded AS TOGGLED (so restoring them preserves blackout rounds).
+  - **Teleports** (`EnterTrackLocally` via the hub portal / `ReturnToHubLocally` for every way out):
+    zero velocities → `SetPositionAndRotation` → the generator's own two-FixedUpdate spawn-boost dance;
+    return pose = the hub car pose captured at hub load. **Per-area presentation is local**:
+    `SetActiveScene` follows the local player (RenderSettings skybox/fog + `AudioManager`'s scene-keyed
+    music), per-area directional-light switching, camera rigs snapped so they don't swoosh 35 km.
+  - **Teardown** (`TeardownToMenu`): session death mid-game (host quit, kicked, connection lost — wired
+    from `NetworkSessionManager.EndLocally`) or deliberate quit → stop loop, unregister handlers, clear
+    puppet statics, `GameLoopManager.EndRun()`, inventory reset, single-load MainMenu (which also dumps
+    the additive track).
+- **The ONE seed drives everything** (`MultiplayerWorld.DeriveRandom(stream)` — FNV-1a stream name ⊕
+  round seed, so streams are independent but identical on every client): track geometry
+  (`Random.InitState(GetNextTrackSeed())`, unchanged code path), **road hue** (was an UNSEEDED
+  `System.Random` — now `DeriveRandom("roadhue")` in multiplayer), **skybox hues**
+  (`DeriveRandom("skybox")`, recolors on `activeSceneChanged` so area teleports restore the same sky),
+  **blackout roll** (`DeriveRandom("blackout")`), **obstacle-spawner subset**
+  (`DeriveRandom("obstacles")` Fisher–Yates; spawner *timing* stays local until Phase 5).
+- **Edited for multiplayer branches** (all no-ops in single-player): `TrackGenerator` (static `Current`,
+  `CarSpawnPosition/Rotation` + `ApplySpawnBoostTo` exposed, generates at the area offset, end portal
+  parented into the track scene, **auto car placement skipped** — the portal teleport does it),
+  `PortalTrigger` (teleport + stays usable for re-entry), `ReturnPortalTrigger` (awards locally for now
+  → teleport; no special-ending routing), `KillFloor` (inventory wipe → teleport; **trigger re-arms** for
+  the next round), `LraAbortController`, `MainMenuReturnTrigger` + `StartMenuController.OnQuit` (leave
+  session — host leave deletes it for everyone — then world teardown), `PlayerCarSwapper` + `AudioManager`
+  (ignore ADDITIVE loads — the swapper would have grabbed the LIVE hub car via `FindWithTag` and
+  destroyed it).
+- **Post-playtest fixes (2026-07-20, first two-instance run):** (1) **LRA dead in the track** —
+  `LraAbortController.IsInTrack()` gated on `CurrentPhase == InTrack`, which never happens in
+  multiplayer (per-player presence isn't a global phase); now asks `MultiplayerWorld.InTrackLocally`
+  (new public accessor). (2) **Meteors bleeding into the hub** — the authored BoulderSpawnPlane spans
+  the whole track corridor, and shifted −35 km its far edge reaches back over the hub; boulders also
+  kept spawning while the local player was hub-side. Fixes: spawners only run while the LOCAL player is
+  in the track (`BoulderSpawner` + `LightningSpawner` gates, cadence kept fresh for re-entry), boulder
+  spawns inside a **4 km hub-exclusion radius** around the world origin are skipped, and
+  `ReturnToHubLocally` destroys this client's live `BoulderObstacle`s so nothing follows you home
+  (safe: boulders are per-client until Phase 5).
+- **Known Phase 2 boundaries (by design):** no round SCORING in multiplayer yet (Phase 4 — rounds cycle
+  but nothing counts wins/drone-wins/endings); end-portal credits/SD awards still land in each player's
+  LOCAL inventory (Phase 4 makes them server-validated + team-aggregated); remote players are INVISIBLE
+  (Phase 3 networked cars); obstacle spawn timing diverges between clients (Phase 5). Editor checks
+  worth doing on the first two-instance run: teleport feel + camera snap, per-area light/sky/music
+  swapping, the hub portal surviving a full round cycle, kill-floor → re-enter same round.
+
+**Phase 3 — Networked cars at 600 mph — ✅ CODE-COMPLETE 2026-07-20 (compiles 0 errors).
+DELIBERATE DEVIATION from the original plan: NO NetworkObject player prefab.** Each client simulates
+only its OWN plain local car (the one the game already spawns), and remote players are **local
+PUPPETS** — stripped visual clones driven by an extrapolated state stream over the existing custom-
+message layer. Why: every selectable car is its own prefab (NetworkObject + NetworkPrefabs registration
+on each = editor asset work), `PlayerCarSwapper` destroys/respawns cars per scene (ownership juggling),
+and hand-authoring a NetworkObject prefab risks GlobalObjectIdHash breakage. The puppet approach needs
+ZERO editor setup and structurally satisfies the "gate on IsOwner" goal: **CarController, cameras,
+swivel/`ManualYawInput`, SD input and engine audio exist ONLY on the owner's machine — there is no
+remote instance of any of them to gate** (the handoff's local-only-camera warning is thereby resolved).
+Cost: no NetworkVariables on players — Phase 4 stays on the message layer (fine at 6 players) or
+introduces its own object then.
+- **`Multiplayer/PlayerRegistry.cs` (new)** — the single "where is the player?" answer. `LocalCar`
+  (cached; explicit `SetLocalCar` from `PlayerCarSwapper` at spawn; old `FindWithTag("Player")` as the
+  resolution fallback so single-player is behaviour-identical), `Remotes` (clientId/name/car/team/
+  puppet — **Phase 5's targeting pool**), and the **car catalog** (name → prefab, fed from
+  `MainMenuController.multiplayerCars` in `BuildUI`; asset refs outlive the menu scene). All 9
+  `FindWithTag` call sites replaced (`DroneCar`×2, `SDAbilityController`×2, `HubSpawnBoost`,
+  `SpeedCheck`, `BoulderObstacle`, `TrackGenerator`, + `MultiplayerWorld`'s 4 internal uses);
+  `PlayerCarSwapper` keeps its find-the-PLACED-car lookup (different semantics — it's hunting the
+  scene's authored car to replace) and now registers what it spawns.
+- **`Multiplayer/RemoteCarManager.cs` (new, added to the MultiplayerWorld object at session begin)** —
+  roster + state stream + puppet lifecycle. HELLO (client→host once the local car exists: name/car/
+  team) → host broadcasts the full ROSTER on every hello AND on disconnects; receivers diff it
+  (create/destroy puppets). CAR state @ **30 Hz, `NetworkDelivery.Unreliable`**, `{clientId, ushort
+  seq, pos, rot, linVel, angVel}` (~62 B), host applies + relays to the other clients. **Puppets:**
+  instantiated from the catalog **under an INACTIVE staging root** (component Awakes never run), then
+  stripped via `DestroyImmediate` — all MonoBehaviours, AudioListeners/Sources, Cameras, Colliders,
+  Rigidbodies; trails muted, particles stopped + `playOnAwake` off — then released as a pure visual.
+  **Not tagged "Player", no colliders**: can't be grabbed by tag lookups, can't fire portals/kill
+  floors, can't physically shove anyone (deliberate: 600 mph contact through 100 ms latency isn't a v1
+  fight). Parked at (0,−10000,0) until their first state lands. Empty catalog ⇒ placeholder cube +
+  warning.
+- **`Multiplayer/RemoteCarPuppet.cs` (new — THE extrapolating sync, the phase's hard requirement)** —
+  dead reckoning, never snapshot interpolation: each frame projects the last state forward by its age
+  (pos + v·t; angular velocity integrated into the rotation) and eases the visible pose toward the
+  projection with an exponential blend (`τ_pos` 0.12 s, `τ_rot` 0.10 s). Three load-bearing details:
+  (1) the projection **leads by the blend's own τ** — a pure exponential chase sits τ·v behind a moving
+  target (~32 m at 600 mph), leading cancels that to first order; (2) **extrapolation age is capped**
+  (0.5 s) so a stalled sender doesn't sail a ghost kilometres off the track; (3) **100 m snap
+  threshold** for teleport-sized discontinuities (portal = 35 km between two packets) + ushort
+  **serial-number sequence** dropping stale packets from the unreliable stream.
+- **Post-playtest fix (2026-07-20):** puppets showed EVERY authored-active conditional accessory
+  (Jet flames, SD ability effects) because the scripts that normally hide them at Awake/OnEnable are
+  exactly what the strip removes (and their Awakes deliberately never run). `StripPuppet` now calls
+  `HideConditionalVisuals` FIRST — while component data is still readable — replicating each script's
+  at-rest state: JetFlames' flame list (assigned array, else its direct children) SetActive(false),
+  and each `SDAbilityVFX.effects` particle-system GameObject deactivated (stopping the system alone
+  isn't enough — the owner-side `Hide()` deactivates the OBJECT). Any future conditional car accessory
+  needs a line there too.
+- **Phase 3 boundaries:** puppet wheels don't spin / no engine audio / no nameplates (Phase 6 gives
+  remotes a speed-driven audio+visual pass); drones still chase the LOCAL player per client (Phase 5
+  moves AI server-side with the sticky random targeting from the registry pool); no car-to-car
+  collision (deliberate, above). **Two-instance checks:** both players visible in hub + track, a
+  600 mph fly-by staying smooth under Network Simulator latency (100–200 ms), portal teleport = clean
+  snap (no cross-map streak), leaver's puppet despawning mid-round.
+
+**Phase 4 — Server-authoritative game loop & team scoring — ✅ CODE-COMPLETE 2026-07-20 (compiles 0
+errors). Implemented on the custom-message layer per the Phase 3 deviation (no NetworkBehaviour/
+NetworkVariables — same authority model, zero editor setup).**
+- **`Multiplayer/MultiplayerScoring.cs` (new, on the MultiplayerWorld object)** — the server's scoring
+  brain. The single-player rule logic survives with EXACTLY the two planned changes:
+  `playerFirstPlaceThisRound` → **which team claimed the round** (the FIRST player to reach the end
+  portal with a first-place verdict claims it for their team), and `CountPlayerSDs()` →
+  **distinct SD names across the claiming team's members** (`TeamDistinctSds`).
+- **Per-player SD ownership:** `PlayerInventory` stays each player's full LOCAL inventory
+  (credits/turbos local — completion credits still awarded client-side); only SD ownership is
+  server-truth. Every client reports its **distinct held SD set** (same "name ends ' SD'" rule) via
+  `GNRC_SDS` on `PlayerInventory.OnChanged` (debounced, only when the set actually changed — so a
+  kill-floor wipe arrives as an empty report and shrinks the team aggregate). The server ALSO books
+  its own awards instantly so the round-end win check never races the client echo.
+- **First-place + SD award flow:** `ReturnPortalTrigger`'s MP branch → `AwardCompletionCredits(
+  grantSdLocally: false)` (refactored to return the first-place verdict; the LOCAL SD grant is
+  multiplayer-disabled) → `GNRC_FINISH{firstPlace}` → server: first valid claim wins the round for
+  that team → server picks a random SD **the team doesn't collectively hold** (duplicates across teams
+  fine; team holds all three ⇒ no award) → `GNRC_SD_AWARD` to the finisher → lands in their local
+  inventory. *Interim semantics until Phase 5:* "before any AI" is the finisher's OWN sim's
+  `AnyRacerFinishedAhead` (drones are still per-client), and claims are client-trusted (cheating
+  accepted per the movement-authority decision).
+- **Round lifecycle** (server loop in MultiplayerWorld, extended): round start clears the claim →
+  round runs (portal for all, individual entry/exit, per-player deaths/finishes as before) → round end
+  broadcast (everyone teleports home FIRST) → **`EvaluateRoundServer()` runs ONCE**: claimed team ⇒
+  win check at `sdItemsToWin` (3); nobody ⇒ shared `DroneWins++` (replicated via `GNRC_SCORE` →
+  `RemoteSetDroneWins` for HUD reads) ⇒ **drone ending for EVERYONE** at `droneWinsToGameOver` (2).
+  Game over stops the round loop; `ApplyRoundStart` also guards on `GameEnded`.
+- **Endings on all machines at once** (`GNRC_ENDING` → `MultiplayerWorld.ApplyEnding` → new
+  GameLoopManager puppet triggers `RemoteTriggerDroneEnding`/`RemoteTriggerTeamVictory` fire the SAME
+  events as single-player, so **HubSceneController's existing presentations play unmodified**): drone
+  ending = the swarm + music swap (the hub portal it spawns is inert in MP — `CanEnterTrack` is false,
+  so the ClipperEnding secret escape is **deferred**); team victory = the banner presentation with
+  **per-team text/colour set beforehand** ("YOUR TEAM WINS" green for the winners, "TEAM N WINS" red
+  for the losers) — the deferred single-player victory presentation folded into the team win as
+  planned. After an ending players sit in the hub (swarmed or victorious) and leave via the Start
+  Menu / hub exit, same as single-player.
+- **Supporting edits:** `RemoteCarManager.TeamOfServer(clientId)` (scoring reads teams off the HELLO
+  roster); `GameLoopManager` gained the three `Remote*` ending/score puppets.
+- **Two-instance checks:** finish first on one instance → SD lands in that inventory only, both
+  instances log the claim; let a round time out with nobody finishing → both show the drone-win log,
+  second timeout → BOTH machines get the swarm; win 3 rounds on one team (with kill-floor wipes in
+  between to verify the team aggregate shrinks) → both machines get the banner, winner green / loser
+  red.
+- **Post-playtest fix (2026-07-20): DronePissBall game-over exit left the MP world alive.**
+  `DroneProjectile.ReturnToMainMenu()` (a drone-ending hit = back to the menu) did only the
+  single-player teardown — the surviving `MultiplayerWorld` made the menu's background TrackGenerator
+  generate out at the −35 km track offset (invisible menu backdrop) and the stale started session
+  blocked re-hosting; quitting a fresh SP run "fixed" it because StartMenu's quit branch found the
+  stale world and tore it down. Now has the SAME multiplayer branch as MainMenuReturnTrigger /
+  StartMenu quit (leave session → `TeardownToMenu`). **RULE: every exit that loads MainMenu during
+  gameplay needs that branch** — audited all `LoadScene` sites; the only unbranched one left is the
+  legacy `ReturnToHub.cs`, which is referenced by nothing (dead).
+
+**Phase 5 — Server-simulated AI & obstacles**
+- Drones, challengers, boulders, lightning, fans: spawn **server-side only** as NetworkObjects (drones
+  reuse the Phase 3 extrapolation sync — they're fast too). All their random rolls happen on the server.
+- Sticky targeting: on spawn the server picks a random player **currently in the track** and keeps that
+  reference for the entity's lifespan; if the target leaves/disconnects, retarget a random remaining track
+  player, or despawn if none remain.
+
+**Phase 6 — Multiplayer UX & polish**
+- Team SD tally HUD, teammate markers, drone-wins counter, round scoreboard.
+- Remote cars' `CarEngineAudio` driven off replicated speed (the all-3D audio design anticipated this).
+
+**Phase 7 — Testing (throughout, not at the end)**
+- Multiplayer Play Mode virtual players from Phase 3 onward; Unity Transport network simulator for
+  100–200 ms latency + loss. Critical scenarios: two cars passing at combined 1200 mph, portal teleports
+  mid-sync, disconnect mid-round, late join, all-leave-early round end.
+
+**Sizing note:** Phases 0–3 are the make-or-break half; once two cars drive smoothly in the shared world,
+Phase 4 is comparatively small because `GameLoopManager` is already shaped right. The riskiest items are
+the extrapolation component and the additive-world restructure — **prototype those before polishing the
+lobby**.
 
 ### What already lines up (do NOT rebuild these)
 - **`GameLoopManager` already encodes both win rules**, and the numbers already match the multiplayer spec:
@@ -37,20 +323,15 @@ project. Settings are COMPLETE in both menus and no settings work is outstanding
   than on a mixer. See "Design rules" below; don't undo either.
 
 ### What's missing / what will fight you
-- **No netcode stack at all.** `Packages/manifest.json` has `com.unity.multiplayer.center` (1.0.1), but that
-  is *only the Multiplayer Center guidance window* — it ships no transport, no `NetworkManager`, no services.
-  There is **no** `com.unity.netcode.gameobjects`, no `com.unity.transport`, no `com.unity.services.*`
-  (Lobby/Relay/Authentication), no Mirror, no Photon. **Choosing the stack is decision #1** and it constrains
-  everything after it.
+- ~~No netcode stack at all~~ — **RESOLVED in Phase 0**: NGO + UGS packages are in `manifest.json` (see the
+  roadmap's Phase 0 status; the editor still needs to resolve them once, and the UGS project link is pending).
 - **`PlayerInventory` is a single DontDestroyOnLoad singleton holding *the* player's items**, and SD ownership
   is read globally off it (`EquippedSD`, `Order`). Team aggregation needs per-player inventory state with an
   owner id, which is the deepest structural change in this list.
-- **12 `FindWithTag("Player")` / `FindGameObjectWithTag` sites across 9 files** — `DroneCar`, `BoulderObstacle`,
-  `SpeedCheck`, `HubSpawnBoost`, `SDAbilityController`, `TrackGenerator`, `PlayerCarSwapper`, plus
-  `Assets/vehicle/controller.cs` and `Assets/vehicle/cameraController.cs`. Every one assumes **exactly one**
-  player car and silently grabs whichever it finds first. (The two `Assets/vehicle/*` files look like leftover
-  sample/tutorial scripts outside the `Prefabs/Scripts` tree — **confirm they're dead before spending time on
-  them.**)
+- **9 `FindWithTag("Player")` call sites across 7 files** — `DroneCar` (×2), `SDAbilityController` (×2),
+  `BoulderObstacle`, `SpeedCheck`, `HubSpawnBoost`, `TrackGenerator`, `PlayerCarSwapper`. Every one assumes
+  **exactly one** player car and silently grabs whichever it finds first → replace with the Phase 3
+  `PlayerRegistry`. (The old `Assets/vehicle/*` sample scripts were confirmed dead and **deleted** in Phase 0.)
 - **Singletons are only a problem for *shared* state.** Statics are per-process, so each client having its own
   `MenuState.AnyOpen`, HUDs, `StartMenuController`, camera rig and `SDAbilityController` input is *correct* —
   those are local-player concerns. What must move to server authority is **game state**: round scoring, SD
@@ -65,14 +346,7 @@ project. Settings are COMPLETE in both menus and no settings work is outstanding
   `ManualPitchInput`, which are that machine's stick poll — on a remote car they'd read 0. Gate the camera rig
   and input reads on **local ownership**, not on "found the Player tag".
 
-### Open questions to settle with the user FIRST (they change the architecture)
-1. **Netcode stack** — NGO + Unity Relay/Lobby, Mirror, Photon Fusion, something else?
-2. **Topology** — dedicated server, host-as-client (listen server), or P2P over a relay?
-3. **Movement authority** — server-authoritative with prediction/reconciliation (safest, since a *competitive*
-   win condition makes cheating matter), or client-authoritative (much simpler, trivially cheatable)?
-4. **Do both teams share ONE TrackScene instance** (6 cars + drones in one world) or race parallel instances?
-   This swings the scope enormously.
-5. **Are the drones server-simulated?** They must be, or their positions and the round outcome desync.
+### ~~Open questions~~ — ALL FIVE SETTLED, see "DECISIONS MADE (2026-07-19)" above.
 
 ## Settings in the in-game Start Menu (mirrors the Main Menu)
 `StartMenuController` (persistent, on PlayerSystems) builds its AUDIO / CONTROLS / SETTINGS sub-screens from
@@ -275,10 +549,11 @@ Three sessions have layered up here, so read the labels rather than assuming "th
    (manual self-level, 3-axis manual rotation, the air-drift runaway fix), per-SD activation VFX, and the
    grounded camera swivel. All of it is documented in the bulleted sections near the top.
 
-> **Compile status:** everything through session 2 is code-complete and compiles. Session 3's later work
-> (SD VFX and the camera swivel, including the `CarController` property additions) was written **without a
-> Unity compile** — no editor was available. It should be clean, but a fresh agent's first move is to open
-> the editor and confirm rather than assume.
+> **Compile status: VERIFIED CLEAN (2026-07-19, Phase 0).** `dotnet build Assembly-CSharp.csproj` → 0 errors
+> including all of session 3's previously-uncompiled work (SD VFX, camera swivel, `CarController` additions),
+> and again after deleting the `Assets/vehicle` sample kit. 32 warnings remain, all pre-existing deprecations
+> (`enableWordWrapping`, `FindObjectOfType`-family). Note the new netcode packages haven't been resolved by
+> an editor yet — first editor open will import them.
 
 ### AudioLibrary slots STILL EMPTY (`{fileID: 0}`) — assign clips (OGG/WAV)
 As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carLanding`,
@@ -400,10 +675,21 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 ---
 
 ## Exact next steps for a fresh agent
-1. **Scope ONLINE MULTIPLAYER with the user before writing any code** — work the five open questions in the
-   NEXT TASK section above (stack, topology, movement authority, shared-vs-parallel world, drone authority).
-   Each one invalidates work done under the wrong assumption, and the stack choice gates the package install.
-   Then confirm this session's uncompiled code is clean (see the Compile status note above).
+1. **Phases 0–4 are DONE in code** (full detail per phase in the roadmap section; everything compiles
+   0-errors via `dotnet build Assembly-CSharp.csproj`; still ZERO editor asset setup beyond filling
+   `multiplayerCars`). Two-instance runtime checklist: the Phase 2/3 world+puppet checks plus the
+   Phase 4 scoring checks (SD award to the first-place finisher only, kill-floor wipes shrinking the
+   team SD aggregate, two timed-out rounds ⇒ drone swarm on BOTH machines, 3 distinct team SDs +
+   a claimed round ⇒ victory banner on both, green for winners / red for losers).
+2. Then **Phase 5 (server-simulated AI & obstacles)** — drones/challengers/boulders/lightning become
+   HOST-simulated and streamed (the RemoteCarPuppet extrapolation is reusable for drones), with the
+   user's **sticky random targeting**: entity picks a random player from the in-track pool
+   (`PlayerRegistry` + the server's area sets) and keeps it for its lifespan (retarget on leave,
+   despawn if none). That also makes first-place SERVER-judged (one shared AnyRacerFinishedAhead)
+   instead of per-client, closing Phase 4's interim semantics.
+3. Deferred smaller items: MP drone-ending secret escape (ClipperEnding) — the ending's hub portal is
+   currently inert in MP; remote-car presentation pass (wheel spin, engine audio off replicated speed,
+   flames/SD VFX from replicated events, nameplates) + team SD tally HUD = **Phase 6**.
 2. **Assign the 8 empty AudioLibrary slots** and, if desired, give distinct clips to the placeholder-shared
    pairs listed above.
 3. **Verify component wiring in the editor** (GUIDs match the `.meta`s, so they should bind — confirm no

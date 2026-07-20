@@ -99,6 +99,10 @@ public class AudioManager : MonoBehaviour
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        // An ADDITIVE load never changes where the local player is (only the multiplayer world loads
+        // additively) — music follows the ACTIVE scene, swapped by MultiplayerWorld on teleport.
+        if (mode == LoadSceneMode.Additive) return;
+
         ApplyMusicForScene(scene.name);
 
         // Portals only lead to gameplay scenes; the arriving player car plays the "portal exit" sound

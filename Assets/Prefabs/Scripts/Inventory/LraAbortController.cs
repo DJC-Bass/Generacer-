@@ -113,6 +113,11 @@ public class LraAbortController : MonoBehaviour
 
     bool IsInTrack()
     {
+        // Multiplayer: presence is per-player (the shared world's phase never goes InTrack — the
+        // server keeps it HubPortalActive for the whole round), so ask MultiplayerWorld instead.
+        if (MultiplayerWorld.IsMultiplayerGame)
+            return MultiplayerWorld.Instance.InTrackLocally;
+
         return GameLoopManager.Instance != null
             && GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.InTrack;
     }
@@ -143,6 +148,14 @@ public class LraAbortController : MonoBehaviour
         if (inv == null || !inv.Consume(lraItemName, 1)) return;
 
         Debug.Log("[LRA] Race aborted — returning to hub with inventory intact");
+
+        // Multiplayer: the abort is a per-player TELEPORT back to the hub (no scene load; the round
+        // keeps running for everyone else). The teleport plays the portal-exit sound itself.
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            MultiplayerWorld.Instance.ReturnToHubLocally();
+            return;
+        }
 
         // Play the Portal Exit sound off the player car when it lands back in the hub, same as a real
         // portal return (the car's PortalExitAudio consumes this on spawn).

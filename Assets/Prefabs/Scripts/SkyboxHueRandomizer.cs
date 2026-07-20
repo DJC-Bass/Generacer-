@@ -28,12 +28,31 @@ public class SkyboxHueRandomizer : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
-    void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
-    void OnDisable() => SceneManager.sceneLoaded -= OnSceneLoaded;
+    void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        SceneManager.activeSceneChanged += OnActiveSceneChanged;
+    }
+
+    void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.activeSceneChanged -= OnActiveSceneChanged;
+    }
 
     // sceneLoaded may not fire for the scene already active when we bootstrap, so also run once here.
     void Start() => Recolor();
-    void OnSceneLoaded(Scene scene, LoadSceneMode mode) => Recolor();
+
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        // An additive load (multiplayer's track area) doesn't change RenderSettings — those follow
+        // the ACTIVE scene, handled by OnActiveSceneChanged when MultiplayerWorld teleports us.
+        if (mode == LoadSceneMode.Additive) return;
+        Recolor();
+    }
+
+    // Multiplayer teleports switch the active scene (hub ⇄ track area) — recolor the incoming sky.
+    void OnActiveSceneChanged(Scene from, Scene to) => Recolor();
 
     void Recolor()
     {
@@ -50,9 +69,20 @@ public class SkyboxHueRandomizer : MonoBehaviour
         instance = new Material(sky) { name = TargetName + " (Random)" };
 
         // Independent random hue for each colour; each keeps its own saturation + value.
-        // (0..1 == the full 0..360 hue wheel.)
-        ShiftHue(instance, "_SkyTint", (float)rng.NextDouble());
-        ShiftHue(instance, "_GroundColor", (float)rng.NextDouble());
+        // (0..1 == the full 0..360 hue wheel.) In a multiplayer round the hues derive from the
+        // server's round seed, so every player sees the SAME sky — and repeated recolors within a
+        // round (area teleports) are stable because the derived stream restarts identically.
+        if (MultiplayerWorld.IsMultiplayerGame && MultiplayerWorld.CurrentRoundSeed != 0)
+        {
+            var seeded = MultiplayerWorld.DeriveRandom("skybox");
+            ShiftHue(instance, "_SkyTint", (float)seeded.NextDouble());
+            ShiftHue(instance, "_GroundColor", (float)seeded.NextDouble());
+        }
+        else
+        {
+            ShiftHue(instance, "_SkyTint", (float)rng.NextDouble());
+            ShiftHue(instance, "_GroundColor", (float)rng.NextDouble());
+        }
 
         RenderSettings.skybox = instance;
         DynamicGI.UpdateEnvironment();   // refresh ambient / reflections from the recoloured sky

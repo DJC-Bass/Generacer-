@@ -8,12 +8,12 @@ using UnityEngine;
 public class BoulderSpawner : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("The boulder prefab — must have BoulderObstacle script and Rigidbody.")]
+    [Tooltip("The boulder prefab ï¿½ must have BoulderObstacle script and Rigidbody.")]
     public GameObject boulderPrefab;
 
     [Header("Spawn Region")]
     [Tooltip("Reference to a flat plane mesh that defines the spawn area. The plane's " +
-             "world position and scale are read automatically — boulders spawn anywhere " +
+             "world position and scale are read automatically ï¿½ boulders spawn anywhere " +
              "within the plane's footprint, at the plane's Y position.")]
     public Transform spawnPlane;
     [Tooltip("Fallback bounds if no spawn plane is assigned (units, half-width).")]
@@ -26,8 +26,8 @@ public class BoulderSpawner : MonoBehaviour
     [Header("Spawn Rate")]
     [Tooltip("Average time between boulder spawns (seconds).")]
     public float spawnInterval = 0.5f;
-    [Tooltip("Random variance on spawn interval — actual interval is " +
-             "spawnInterval ± this fraction.")]
+    [Tooltip("Random variance on spawn interval ï¿½ actual interval is " +
+             "spawnInterval ï¿½ this fraction.")]
     [Range(0f, 1f)] public float spawnIntervalJitter = 0.5f;
 
     [Header("Boulder Size & Mass")]
@@ -35,8 +35,8 @@ public class BoulderSpawner : MonoBehaviour
     public float minScale = 30f;
     [Tooltip("Largest boulder scale.")]
     public float maxScale = 120f;
-    [Tooltip("Mass per unit scale — larger boulders get proportionally more mass. " +
-             "Mass = scale × this value.")]
+    [Tooltip("Mass per unit scale ï¿½ larger boulders get proportionally more mass. " +
+             "Mass = scale ï¿½ this value.")]
     public float massPerScale = 50f;
 
     [Header("Launch Power")]
@@ -63,11 +63,31 @@ public class BoulderSpawner : MonoBehaviour
 
     void Update()
     {
+        // Multiplayer: boulders are simulated per-client (until Phase 5), so only spawn while the
+        // LOCAL player is racing â€” a hub-dwelling player has nothing to dodge, and shouldn't see or
+        // hear a meteor shower running 35 km away.
+        if (MultiplayerWorld.IsMultiplayerGame && !MultiplayerWorld.Instance.InTrackLocally)
+        {
+            nextSpawnTime = Time.time + GetNextInterval();   // keep the cadence fresh for re-entry
+            return;
+        }
+
         if (Time.time >= nextSpawnTime)
         {
             SpawnBoulder();
             nextSpawnTime = Time.time + GetNextInterval();
         }
+    }
+
+    /// <summary>Keep-out radius around the hub (world origin) in multiplayer. The authored spawn
+    /// plane spans the whole track corridor, and once the corridor is shifted to the track area its
+    /// far edge can reach back over the hub â€” never launch a boulder that could land there.</summary>
+    const float HubExclusionRadius = 4000f;
+
+    static bool InsideHubExclusion(Vector3 pos)
+    {
+        if (!MultiplayerWorld.IsMultiplayerGame) return false;
+        return new Vector2(pos.x, pos.z).magnitude < HubExclusionRadius;
     }
 
     float GetNextInterval()
@@ -80,15 +100,15 @@ public class BoulderSpawner : MonoBehaviour
     {
         if (boulderPrefab == null) return;
 
-        // Determine spawn region — use the assigned plane if available, otherwise
+        // Determine spawn region ï¿½ use the assigned plane if available, otherwise
         // fall back to the configured rectangle around this transform.
         Vector3 regionCenter;
         float halfX, halfZ;
 
         if (spawnPlane != null)
         {
-            // Unity's default plane mesh is 10×10 units at scale 1, so the
-            // half-width in world units is scale × 5.
+            // Unity's default plane mesh is 10ï¿½10 units at scale 1, so the
+            // half-width in world units is scale ï¿½ 5.
             regionCenter = spawnPlane.position;
             halfX = spawnPlane.lossyScale.x * 5f;
             halfZ = spawnPlane.lossyScale.z * 5f;
@@ -105,6 +125,10 @@ public class BoulderSpawner : MonoBehaviour
             Random.Range(-halfX, halfX),
             0f,
             Random.Range(-halfZ, halfZ));
+
+        // Multiplayer: never launch from over/near the hub â€” skip this spawn (the next roll
+        // relocates it). Cheaper and less biased than re-rolling in a loop.
+        if (InsideHubExclusion(spawnPos)) return;
 
         // Boulder properties
         float scale = Random.Range(minScale, maxScale);

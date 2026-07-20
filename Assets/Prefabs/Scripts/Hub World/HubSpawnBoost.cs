@@ -28,7 +28,7 @@ public class HubSpawnBoost : MonoBehaviour
         yield return new WaitForFixedUpdate();
         yield return new WaitForFixedUpdate();
 
-        GameObject car = GameObject.FindWithTag(playerTag);
+        GameObject car = PlayerRegistry.LocalCar;
         if (car == null)
         {
             Debug.LogWarning("[HubSpawnBoost] No GameObject tagged Player found in hub scene.");

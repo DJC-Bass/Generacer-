@@ -46,6 +46,16 @@ public class MainMenuReturnTrigger : MonoBehaviour
     /// inventory, and load the Main Menu.</summary>
     void ReturnToMainMenu()
     {
+        // Multiplayer: leave the session first (host leave deletes it for everyone), then the world
+        // teardown does the run/inventory reset and loads the Main Menu itself.
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            if (NetworkSessionManager.Instance != null)
+                _ = NetworkSessionManager.Instance.LeaveSessionAsync();
+            MultiplayerWorld.Instance.TeardownToMenu("LEFT VIA HUB EXIT");
+            return;
+        }
+
         GameLoopManager.EndRun();
         if (PlayerInventory.Instance != null) PlayerInventory.Instance.ResetToStarting();
 

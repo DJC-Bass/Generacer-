@@ -121,6 +121,19 @@ public class DroneProjectile : MonoBehaviour
     /// like the QUIT button) and load the main menu.</summary>
     void ReturnToMainMenu()
     {
+        // Multiplayer: leave the session first (a HOST leave deletes it for everyone), then the world
+        // teardown resets the run/inventory, clears the puppet statics, and loads the Main Menu
+        // itself. Without this, the world survives into the menu — the menu's background track
+        // generates out at the multiplayer track-area offset, and the stale started session blocks
+        // hosting a new game. (Same branch as MainMenuReturnTrigger / StartMenuController.OnQuit.)
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            if (NetworkSessionManager.Instance != null)
+                _ = NetworkSessionManager.Instance.LeaveSessionAsync();
+            MultiplayerWorld.Instance.TeardownToMenu("HIT IN THE DRONE ENDING");
+            return;
+        }
+
         GameLoopManager.EndRun();
         if (PlayerInventory.Instance != null) PlayerInventory.Instance.ResetToStarting();
 

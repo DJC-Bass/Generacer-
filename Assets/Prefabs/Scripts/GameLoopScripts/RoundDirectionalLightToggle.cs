@@ -33,7 +33,11 @@ public class RoundDirectionalLightToggle : MonoBehaviour
             return;
         }
 
-        bool blackout = Random.value < deactivateChance;
+        // Multiplayer: the roll derives from the server's round seed so every player gets the same
+        // blackout (or lack of one). Single-player keeps the plain per-load roll.
+        bool blackout = MultiplayerWorld.IsMultiplayerGame
+            ? MultiplayerWorld.DeriveRandom("blackout").NextDouble() < deactivateChance
+            : Random.value < deactivateChance;
         if (blackout) target.enabled = false;
 
         Debug.Log($"[RoundDirectionalLightToggle] Round {GameLoopManager.Instance.RoundNumber}: " +

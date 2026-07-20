@@ -273,6 +273,16 @@ public class StartMenuController : MonoBehaviour
     {
         Close();
 
+        // Multiplayer: leave the session first (a HOST leave deletes it for everyone), then the world
+        // teardown resets the run/inventory and loads the Main Menu itself.
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            if (NetworkSessionManager.Instance != null)
+                _ = NetworkSessionManager.Instance.LeaveSessionAsync();
+            MultiplayerWorld.Instance.TeardownToMenu("QUIT FROM START MENU");
+            return;
+        }
+
         // Tear down the current run so a brand-new game loop begins on the next play. Without this,
         // the DontDestroyOnLoad GameLoopManager keeps its old phase/round/timer, and the next game
         // resumes mid-run — leaving the player stranded in the hub with no portal.

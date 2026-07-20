@@ -61,9 +61,30 @@ public class PortalTrigger : MonoBehaviour
 
         if (other.CompareTag("Player"))
         {
+            // Multiplayer: the portal TELEPORTS the local car into the shared track area instead of
+            // loading a scene, and stays usable (other players enter on their own timing).
+            if (MultiplayerWorld.IsMultiplayerGame)
+            {
+                if (MultiplayerWorld.Instance.CanEnterTrack)
+                {
+                    isLoading = true;
+                    StartCoroutine(TeleportIntoTrack());
+                }
+                return;
+            }
+
             isLoading = true;
             StartCoroutine(LoadTrackScene());
         }
+    }
+
+    IEnumerator TeleportIntoTrack()
+    {
+        // Same activation beat as the scene-load path so the portal "feel" matches single-player.
+        yield return new WaitForSeconds(activationDelay);
+        if (MultiplayerWorld.IsMultiplayerGame)
+            MultiplayerWorld.Instance.EnterTrackLocally();
+        isLoading = false;   // the portal persists; the same player may re-enter after returning
     }
 
     IEnumerator LoadTrackScene()

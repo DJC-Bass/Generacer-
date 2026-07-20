@@ -35,7 +35,7 @@ public class SpeedCheck : MonoBehaviour
         // Cache the player car; re-find it if it's gone (it can be spawned / swapped after scene load).
         if (playerCar == null)
         {
-            var go = GameObject.FindWithTag(playerTag);
+            var go = PlayerRegistry.LocalCar;
             if (go != null) playerCar = go.GetComponent<CarController>();
         }
 

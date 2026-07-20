@@ -22,6 +22,11 @@ public class PlayerCarSwapper : MonoBehaviour
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        // Additive loads never carry the player's car (only the multiplayer world additively loads
+        // scenes, and its TrackScene's authored car is stripped by MultiplayerWorld) — swapping here
+        // would grab the LIVE hub car via FindWithTag and destroy it.
+        if (mode == LoadSceneMode.Additive) return;
+
         // Only gameplay scenes have a player car (reuse the HUD's gameplay-scene rule).
         if (!GameplayHud.VisibleInScene(scene.name)) return;
 
@@ -53,6 +58,7 @@ public class PlayerCarSwapper : MonoBehaviour
         var car = Instantiate(prefab, pos, rot);
         if (parent != null) car.transform.SetParent(parent, true);
         car.tag = playerTag;
+        PlayerRegistry.SetLocalCar(car);   // register before anything can race the tag lookup
 
         // Re-point every follow camera (main + rear view) at the new car.
         foreach (var cam in FindObjectsByType<CameraFollow>(FindObjectsSortMode.None))

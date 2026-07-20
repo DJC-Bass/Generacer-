@@ -50,6 +50,18 @@ public class ReturnPortalTrigger : MonoBehaviour
 
     void ReturnToHub()
     {
+        // Multiplayer: credits stay a LOCAL concern, but the SD award is the SERVER's call — report
+        // the finish (with this client's own first-place verdict, until Phase 5 centralises the AI)
+        // and let MultiplayerScoring claim the round for our team + validate the award. Then TELEPORT
+        // back to the hub — no scene load, no special-ending routing (endings are server-declared).
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            bool firstPlace = AwardCompletionCredits(grantSdLocally: false);
+            MultiplayerScoring.NotifyLocalFinished(firstPlace);
+            MultiplayerWorld.Instance.ReturnToHubLocally();
+            return;
+        }
+
         // Arm the "portal exit" sound to play once the destination scene loads (hub or special ending).
         AudioManager.ArmPortalExit();
 
@@ -87,21 +99,23 @@ public class ReturnPortalTrigger : MonoBehaviour
     /// <summary>
     /// Grants the player their credits for reaching the End Portal: the flat
     /// completion reward, plus a first-place bonus if no AI car finished the track
-    /// first this round. Both amounts are tunable on the GameLoopManager.
+    /// first this round. Both amounts are tunable on the GameLoopManager. Returns
+    /// whether this finish was first place. In multiplayer the SD grant is the
+    /// SERVER's job (team-validated), so the caller passes grantSdLocally: false.
     /// </summary>
-    void AwardCompletionCredits()
+    bool AwardCompletionCredits(bool grantSdLocally = true)
     {
-        var inventory = PlayerInventory.Instance;
-        if (inventory == null) return;   // nothing to credit if the inventory isn't up
-
         var manager = GameLoopManager.Instance;
+
+        // First place = no AI car has finished ahead of the player this round.
+        bool firstPlace = manager == null || !manager.AnyRacerFinishedAhead;
+
+        var inventory = PlayerInventory.Instance;
+        if (inventory == null) return firstPlace;   // nothing to credit if the inventory isn't up
 
         // Fall back to sensible defaults if the manager is somehow missing.
         int completion = manager != null ? manager.trackCompletionCredits : 200;
         int firstPlaceBonus = manager != null ? manager.firstPlaceBonusCredits : 200;
-
-        // First place = no AI car has finished ahead of the player this round.
-        bool firstPlace = manager == null || !manager.AnyRacerFinishedAhead;
 
         // Tell the loop this round was a player win (so it isn't scored for the drones, and can
         // clinch the game at 3 SDs). Anything other than first place is left to count as a drone win.
@@ -116,7 +130,8 @@ public class ReturnPortalTrigger : MonoBehaviour
             : $"[ReturnPortal] Track complete. Awarded {reward} credits (completion only)");
 
         // First place also grants one random equippable SD the player doesn't own yet.
-        if (firstPlace) AwardFirstPlaceItem(inventory);
+        if (firstPlace && grantSdLocally) AwardFirstPlaceItem(inventory);
+        return firstPlace;
     }
 
     /// <summary>

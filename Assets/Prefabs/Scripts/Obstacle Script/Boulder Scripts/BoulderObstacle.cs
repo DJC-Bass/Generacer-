@@ -52,7 +52,7 @@ public class BoulderObstacle : MonoBehaviour
         // Find the player once at spawn � homing checks this each frame.
         // If the player is destroyed/replaced (e.g. after a scene reload), the
         // reference becomes null and homing simply stops applying force.
-        var playerObj = GameObject.FindWithTag(playerTag);
+        var playerObj = PlayerRegistry.LocalCar;
         if (playerObj != null)
         {
             playerTransform = playerObj.transform;

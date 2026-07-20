@@ -76,8 +76,18 @@ public class MainMenuController : MonoBehaviour
     [Tooltip("Scene that Tutorial loads. Leave blank until the tutorial scene exists.")]
     public string tutorialSceneName = "Tutorial";
 
+    [Header("Online Multiplayer")]
+    [Tooltip("Selectable cars for the multiplayer lobby's car cycler — fill with the SAME name+prefab " +
+             "entries as the CarSelection scene's list (the lobby can't read that scene's Inspector). " +
+             "Empty = a single DEFAULT entry.")]
+    public CarSelectionController.CarEntry[] multiplayerCars;
+
     private GameObject firstButton;   // current screen's rescue target for a null selection (main list or a settings panel)
     private GameObject lastSelectedForSfx;   // tracks the highlighted item so we can fire the "move" SFX
+
+    // ---- Online Multiplayer (lobby flow lives in its own component; menu input defers while it's open) ----
+    private MultiplayerLobbyUI lobbyUI;
+    private Button onlineButton;      // re-focused when the lobby flow exits back to this menu
 
     // ---- Settings screen (SETTINGS button -> AUDIO / VIDEO / CONTROLS) ----
     private GameObject buttonsColumn;         // the main menu button list; hidden while the Settings screen is up
@@ -115,6 +125,9 @@ public class MainMenuController : MonoBehaviour
 
     void LateUpdate()
     {
+        // The lobby flow runs its own selection rescue + move SFX while it's up.
+        if (lobbyUI != null && lobbyUI.IsOpen) return;
+
         // If nothing is highlighted (e.g. a mouse click cleared the selection), pressing Up/Down
         // re-highlights the top item so D-pad / arrow navigation never soft-locks.
         MenuNavigation.EnsureSelectionOnNavigate(firstButton);
@@ -125,6 +138,9 @@ public class MainMenuController : MonoBehaviour
 
     void Update()
     {
+        // The lobby flow owns all input (including B/Escape) while it's open.
+        if (lobbyUI != null && lobbyUI.IsOpen) return;
+
         // While an interactive rebind is listening, ignore normal menu input — the rebind operation is
         // capturing the next control press. Gamepad Start (excluded from binding) or Escape cancels it.
         if (rebinding)
@@ -849,9 +865,18 @@ public class MainMenuController : MonoBehaviour
 
         buttonsColumn = menu.gameObject;
         settingsButton = settings;
+        onlineButton = online;
 
         // The SETTINGS screens (category chooser + Audio/Video/Controls panels) — hidden until used.
         BuildSettingsScreens(canvasGO.transform);
+
+        // The Online Multiplayer lobby flow (hidden until the button opens it).
+        lobbyUI = canvasGO.AddComponent<MultiplayerLobbyUI>();
+        lobbyUI.Configure(this, canvasGO.transform, multiplayerCars, OnLobbyExit);
+
+        // Remote players' puppet cars are built from this same catalog (prefab references are asset
+        // references, so the catalog outlives this menu scene).
+        PlayerRegistry.SetCarCatalog(multiplayerCars);
 
         // Pre-select Start so a gamepad/keyboard can navigate the menu immediately.
         FocusFirst(start != null ? start.gameObject : null);
@@ -979,8 +1004,19 @@ public class MainMenuController : MonoBehaviour
     void OnStart() => LoadScene(startSceneName, "Start");
     void OnTutorial() => LoadScene(tutorialSceneName, "Tutorial");
 
-    void OnOnlineMultiplayer() =>
-        Debug.Log("[MainMenu] Online Multiplayer — not implemented yet.");
+    void OnOnlineMultiplayer()
+    {
+        if (lobbyUI == null) return;
+        if (buttonsColumn != null) buttonsColumn.SetActive(false);
+        lobbyUI.Open();
+    }
+
+    /// <summary>The lobby flow backed all the way out — restore the main list, land on ONLINE MULTIPLAYER.</summary>
+    void OnLobbyExit()
+    {
+        if (buttonsColumn != null) buttonsColumn.SetActive(true);
+        FocusFirst(onlineButton != null ? onlineButton.gameObject : null);
+    }
 
     void OnSettings() => ShowCategories();
 

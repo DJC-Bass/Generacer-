@@ -187,12 +187,26 @@ public class TrackGenerator : MonoBehaviour
     private Vector3 trackStart;
     private Vector3 trackFinish;
 
+    /// <summary>The live generator (the TrackScene holds exactly one). MultiplayerWorld uses it to
+    /// teleport portal-entering players onto the track it generated.</summary>
+    public static TrackGenerator Current { get; private set; }
+
+    /// <summary>Where a car entering this track should be placed (the same pose the single-player
+    /// spawn uses).</summary>
+    public Vector3 CarSpawnPosition =>
+        trackStart + Vector3.forward * carSpawnForwardOffset + Vector3.up * carSpawnHeightOffset;
+    public Quaternion CarSpawnRotation => Quaternion.LookRotation(Vector3.forward);
+
+    /// <summary>Applies this track's spawn boost to a car (public for MultiplayerWorld's teleport-in).</summary>
+    public void ApplySpawnBoostTo(Rigidbody rb) => ApplySpawnBoost(rb, Vector3.forward, spawnVelocityMph);
+
     // -------------------------------------------------------
     //  Entry point
     // -------------------------------------------------------
 
     void Start()
     {
+        Current = this;
         int resolved;
         if (GameLoopManager.Instance != null)
             resolved = GameLoopManager.Instance.GetNextTrackSeed();
@@ -220,12 +234,15 @@ public class TrackGenerator : MonoBehaviour
 
         // Start position: world origin plus random offsets so each play has a
         // uniquely-located starting point. Altitude is positive-only — start never
-        // goes below baseAltitude.
+        // goes below baseAltitude. In multiplayer the whole track generates in the
+        // TRACK AREA (the additively-loaded scene's world offset, matching the offset
+        // MultiplayerWorld applied to the scene's authored objects).
+        Vector3 areaOrigin = MultiplayerWorld.IsMultiplayerGame ? MultiplayerWorld.TrackAreaOffset : Vector3.zero;
         float startX = Random.Range(-startLateralVariance, startLateralVariance);
         float startY = baseAltitude + Random.Range(0f, startAltitudeVariance);
         float startZ = Random.Range(-startForwardVariance, startForwardVariance);
 
-        trackStart = new Vector3(startX, startY, startZ);
+        trackStart = areaOrigin + new Vector3(startX, startY, startZ);
 
         // Total path goes start → outward tip → finish
         // Half the length is outward, half is the convergence back
@@ -262,7 +279,13 @@ public class TrackGenerator : MonoBehaviour
         foreach (var edge in allEdges) BuildEdgeMesh(edge);
 
         if (endPortalPrefab != null)
-            Instantiate(endPortalPrefab, trackFinish + Vector3.up * 2f, Quaternion.identity);
+        {
+            // Parented under the generator so it lives in the TrackScene (an un-parented Instantiate
+            // goes to the ACTIVE scene — wrong in the multiplayer additive world) and is torn down
+            // with the scene.
+            var portal = Instantiate(endPortalPrefab, trackFinish + Vector3.up * 2f, Quaternion.identity);
+            portal.transform.SetParent(transform, true);
+        }
 
         StartCoroutine(SpawnCarDelayed());
     }
@@ -1123,7 +1146,11 @@ public class TrackGenerator : MonoBehaviour
         {
             Color c = runtimeRoadMaterial.GetColor(prop);
             Color.RGBToHSV(c, out _, out float s, out float v);            // keep saturation + value
-            float hue = (float)new System.Random().NextDouble();          // 0..1 == the full 0..360 hue wheel
+            // Multiplayer: derive the hue from the round seed so every client's road matches.
+            System.Random hueRng = MultiplayerWorld.IsMultiplayerGame
+                ? MultiplayerWorld.DeriveRandom("roadhue")
+                : new System.Random();
+            float hue = (float)hueRng.NextDouble();                        // 0..1 == the full 0..360 hue wheel
             Color randomized = Color.HSVToRGB(hue, s, v);
             randomized.a = c.a;                                            // leave alpha untouched
             runtimeRoadMaterial.SetColor(prop, randomized);
@@ -1139,6 +1166,7 @@ public class TrackGenerator : MonoBehaviour
 
     void OnDestroy()
     {
+        if (Current == this) Current = null;
         // The runtime instance isn't owned by any GameObject, so free it when the generator is torn down.
         if (runtimeRoadMaterial != null) Destroy(runtimeRoadMaterial);
     }
@@ -1190,6 +1218,11 @@ public class TrackGenerator : MonoBehaviour
 
     IEnumerator SpawnCarDelayed()
     {
+        // Multiplayer: the car stays in the hub until the player drives through the portal —
+        // MultiplayerWorld teleports it to CarSpawnPosition then. Auto-placing here would yank a
+        // hub-dwelling player onto the track the moment the round generates.
+        if (MultiplayerWorld.IsMultiplayerGame) yield break;
+
         yield return new WaitForFixedUpdate();
         yield return new WaitForFixedUpdate();
 
@@ -1199,7 +1232,7 @@ public class TrackGenerator : MonoBehaviour
                     + Vector3.up * carSpawnHeightOffset;
         Quaternion rot = Quaternion.LookRotation(spawnForward);
 
-        GameObject existingCar = GameObject.FindWithTag("Player");
+        GameObject existingCar = PlayerRegistry.LocalCar;
         if (existingCar != null)
         {
             var rb = existingCar.GetComponent<Rigidbody>();

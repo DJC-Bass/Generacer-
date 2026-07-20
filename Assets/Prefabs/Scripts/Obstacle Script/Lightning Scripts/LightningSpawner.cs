@@ -82,6 +82,14 @@ public class LightningSpawner : MonoBehaviour
     {
         if (trackSamples == null || trackSamples.Count == 0) return;
 
+        // Multiplayer: strikes are per-client (until Phase 5) — only strike while the LOCAL player
+        // is racing, so a hub-dwelling player doesn't hear/see a distant storm for nobody.
+        if (MultiplayerWorld.IsMultiplayerGame && !MultiplayerWorld.Instance.InTrackLocally)
+        {
+            nextStrikeTime = Time.time + GetInterval();   // keep the cadence fresh for re-entry
+            return;
+        }
+
         if (Time.time >= nextStrikeTime)
         {
             SpawnStrike();
