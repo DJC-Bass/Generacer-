@@ -37,8 +37,18 @@ public class DroneCarSpawner : MonoBehaviour
 
     private bool spawned;
 
+    void Start()
+    {
+        // Clients build their replicated-drone puppets from this prefab (registering it also
+        // registers the drone's projectile prefab). Harmless no-op in single-player.
+        NpcReplicator.RegisterPrefab(droneCarPrefab);
+    }
+
     void Update()
     {
+        // Multiplayer: the HOST is the one true AI sim; clients only render replicated puppets.
+        if (MultiplayerWorld.IsClientOnly) return;
+
         if (spawned) return;
         if (GameLoopManager.Instance == null) return;
         if (GameLoopManager.Instance.RoundNumber < minimumRound) return;   // not active until this round
@@ -46,7 +56,13 @@ public class DroneCarSpawner : MonoBehaviour
         float elapsed = GameLoopManager.Instance.roundDuration
                       - GameLoopManager.Instance.RoundTimeRemaining;
 
-        if (GameLoopManager.Instance.CurrentPhase != GameLoopManager.Phase.InTrack) return;
+        // "Racing" phase differs by mode: single-player flips to InTrack when the player enters; the
+        // multiplayer puppet loop keeps HubPortalActive for the whole round (per-player presence
+        // isn't a global phase) — the round being active IS the racing window.
+        bool racing = MultiplayerWorld.IsMultiplayerGame
+            ? GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.HubPortalActive
+            : GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.InTrack;
+        if (!racing) return;
         if (elapsed < spawnDelay) return;
         if (trackGenerator == null) return;
 
@@ -103,6 +119,9 @@ public class DroneCarSpawner : MonoBehaviour
 
             if (drone.GetComponent<DroneFadeIn>() == null)
                 drone.AddComponent<DroneFadeIn>();
+
+            // Multiplayer host: stream this racer to the clients. No-op otherwise.
+            NpcReplicator.Track(drone, NpcKind.Drone, droneCarPrefab);
         }
     }
 

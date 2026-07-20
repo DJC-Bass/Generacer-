@@ -275,20 +275,50 @@ public class MainMenuController : MonoBehaviour
         go.transform.SetParent(parent, false);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);   // upper-left, like the button column
-        rt.sizeDelta = new Vector2(700f, 220f);
+        rt.sizeDelta = new Vector2(760f, 440f);
         rt.anchoredPosition = new Vector2(96f, -330f);
 
         musicSlider = BuildAudioRow(go.transform, "MUSIC", -10f, InitialMusic(), OnMusicChanged, out musicValueText);
         sfxSlider   = BuildAudioRow(go.transform, "SFX",   -95f, InitialSfx(),   OnSfxChanged,   out sfxValueText);
 
-        // Up/Down moves between the two sliders (wrapping); Left/Right adjusts the focused slider's value.
-        WireSliderPair(musicSlider, sfxSlider);
+        // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceChat) ----
+        var micLabels = BuildMicrophoneOptions(out int micStart);
+        var micSel = BuildOptionRow(go.transform, "MICROPHONE",  -180f, micLabels, micStart, OnMicDeviceChanged);
+        var muteSelfSel = BuildOptionRow(go.transform, "MUTE MY MIC", -250f,
+            new List<string> { "Off", "On" }, GameSettings.VoiceMuteSelf ? 1 : 0, i => GameSettings.VoiceMuteSelf = i == 1);
+        var mutePlayersSel = BuildOptionRow(go.transform, "MUTE PLAYERS", -320f,
+            new List<string> { "Off", "On" }, GameSettings.VoiceMuteOthers ? 1 : 0, i => GameSettings.VoiceMuteOthers = i == 1);
+
+        // Up/Down chains all five rows (wrapping); Left/Right adjusts the focused row's value.
+        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, micSel, muteSelfSel, mutePlayersSel });
 
         UpdateMusicValueText(musicSlider.value);
         UpdateSfxValueText(sfxSlider.value);
 
         go.SetActive(false);
         return go;
+    }
+
+    /// <summary>Microphone picker options: DEFAULT plus every detected capture device, outs the index
+    /// of the saved choice (falls back to DEFAULT if the saved device is unplugged).</summary>
+    static List<string> BuildMicrophoneOptions(out int currentIndex)
+    {
+        var labels = new List<string> { "Default" };
+        string saved = GameSettings.VoiceMicDevice;
+        currentIndex = 0;
+        var devices = Microphone.devices;
+        for (int i = 0; i < devices.Length; i++)
+        {
+            labels.Add(devices[i]);
+            if (!string.IsNullOrEmpty(saved) && devices[i] == saved) currentIndex = i + 1;
+        }
+        return labels;
+    }
+
+    void OnMicDeviceChanged(int index)
+    {
+        var devices = Microphone.devices;
+        GameSettings.VoiceMicDevice = (index <= 0 || index > devices.Length) ? "" : devices[index - 1];
     }
 
     /// <summary>One labelled volume row: "LABEL  [====slider====]  75%". Returns the slider and outs its

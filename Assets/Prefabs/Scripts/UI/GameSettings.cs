@@ -37,6 +37,33 @@ public static class GameSettings
         set { PlayerPrefs.SetFloat(SfxKey, Mathf.Clamp01(value)); PlayerPrefs.Save(); }
     }
 
+    // ---- Voice chat (read live by VoiceChat each second, so menu changes apply mid-game) ----
+
+    const string VoiceMicKey        = "voice.micDevice";
+    const string VoiceMuteSelfKey   = "voice.muteSelf";
+    const string VoiceMuteOthersKey = "voice.muteOthers";
+
+    /// <summary>Chosen microphone device name; "" = the system default device.</summary>
+    public static string VoiceMicDevice
+    {
+        get => PlayerPrefs.GetString(VoiceMicKey, "");
+        set { PlayerPrefs.SetString(VoiceMicKey, value ?? ""); PlayerPrefs.Save(); }
+    }
+
+    /// <summary>True = never transmit (microphone off entirely).</summary>
+    public static bool VoiceMuteSelf
+    {
+        get => PlayerPrefs.GetInt(VoiceMuteSelfKey, 0) == 1;
+        set { PlayerPrefs.SetInt(VoiceMuteSelfKey, value ? 1 : 0); PlayerPrefs.Save(); }
+    }
+
+    /// <summary>True = never play other players' voice (proximity AND team).</summary>
+    public static bool VoiceMuteOthers
+    {
+        get => PlayerPrefs.GetInt(VoiceMuteOthersKey, 0) == 1;
+        set { PlayerPrefs.SetInt(VoiceMuteOthersKey, value ? 1 : 0); PlayerPrefs.Save(); }
+    }
+
     // ---- Video / Graphics (applied live from the menu + re-applied at boot via ApplyVideoSettings) ----
 
     const string ResWKey       = "video.resWidth";

@@ -41,8 +41,17 @@ public class MultiplayerWorld : MonoBehaviour
 
     /// <summary>True while the LOCAL player is in the track area. The multiplayer replacement for
     /// "CurrentPhase == InTrack" checks (per-player presence isn't a global phase in a shared world) —
-    /// the LRA abort gates on it, and the per-client obstacle spawners only run while it's true.</summary>
+    /// the LRA abort gates on it.</summary>
     public bool InTrackLocally => inTrackLocally;
+
+    /// <summary>True on a multiplayer CLIENT that is not the host. The AI/obstacle spawners gate on
+    /// this (Phase 5): the host runs the one real simulation, clients render replicated puppets.</summary>
+    public static bool IsClientOnly =>
+        IsMultiplayerGame && NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer;
+
+    /// <summary>Server: is anyone racing right now? Host-side obstacle spawners idle when nobody is.</summary>
+    public static bool AnyPlayerInTrackServer =>
+        IsMultiplayerGame && Instance.inTrackNow.Count > 0;
 
     /// <summary>Where the track area lives relative to the hub. -35 km keeps the whole generated
     /// track (which spans up to ~28 km forward from its origin) clear of the hub while staying inside
@@ -52,6 +61,86 @@ public class MultiplayerWorld : MonoBehaviour
     /// <summary>The server-rolled seed for the current round (0 between rounds). Every per-round
     /// random decision on every client must derive from this (see <see cref="DeriveRandom"/>).</summary>
     public static int CurrentRoundSeed { get; private set; }
+
+    // -------------------------------------------------------
+    //  Sticky entity targeting (Phase 5, HOST-side): an entity that targets "the player" picks ONE
+    //  random player and keeps it for its whole lifespan; it retargets only when the target ceases
+    //  to be valid (left the track / disconnected), per the design decision.
+    // -------------------------------------------------------
+
+    /// <summary>Picks a random player car for an entity to target and STICK with. On the multiplayer
+    /// host: a random player currently in the track (`anyArea` widens to everyone — the hub ending
+    /// swarm hunts both teams). Single-player: the local car, unchanged behaviour.</summary>
+    public static Transform PickStickyTarget(bool anyArea)
+    {
+        if (!IsMultiplayerGame)
+        {
+            var localCar = PlayerRegistry.LocalCar;
+            return localCar != null ? localCar.transform : null;
+        }
+
+        var self = Instance;
+        var nm = NetworkManager.Singleton;
+        var pool = new List<Transform>();
+
+        var local = PlayerRegistry.LocalCar;
+        if (local != null && (anyArea || (nm != null && self.inTrackNow.Contains(nm.LocalClientId))))
+            pool.Add(local.transform);
+        foreach (var remote in PlayerRegistry.Remotes)
+            if (remote.Car != null && (anyArea || self.inTrackNow.Contains(remote.ClientId)))
+                pool.Add(remote.Car.transform);
+
+        if (pool.Count == 0) return null;
+        return pool[UnityEngine.Random.Range(0, pool.Count)];
+    }
+
+    /// <summary>Returns the target unchanged while it's still valid; null once its player left the
+    /// pool (left the track for track-scoped entities, or disconnected — the puppet is destroyed),
+    /// telling the entity to retarget (or idle if the pool is empty).</summary>
+    public static Transform ValidateStickyTarget(Transform target, bool anyArea)
+    {
+        if (target == null) return null;
+        if (!IsMultiplayerGame) return target;
+
+        var self = Instance;
+        var nm = NetworkManager.Singleton;
+
+        var local = PlayerRegistry.LocalCar;
+        if (local != null && target == local.transform)
+            return (anyArea || (nm != null && self.inTrackNow.Contains(nm.LocalClientId))) ? target : null;
+
+        foreach (var remote in PlayerRegistry.Remotes)
+            if (remote.Car != null && target == remote.Car.transform)
+                return (anyArea || self.inTrackNow.Contains(remote.ClientId)) ? target : null;
+
+        return null;   // owner gone (disconnect destroyed the puppet)
+    }
+
+    /// <summary>Resolves which player's car a collider belongs to: the LOCAL player, a remote player
+    /// (outs their clientId), or neither. Used for bounty attribution on the host.</summary>
+    public static bool TryGetCarOwner(Transform hit, out ulong clientId, out bool isLocalPlayer)
+    {
+        clientId = 0;
+        isLocalPlayer = false;
+        if (hit == null) return false;
+
+        var local = PlayerRegistry.LocalCar;
+        if (local != null && (hit == local.transform || hit.IsChildOf(local.transform)))
+        {
+            isLocalPlayer = true;
+            return true;
+        }
+        foreach (var remote in PlayerRegistry.Remotes)
+        {
+            if (remote.Car == null) continue;
+            if (hit == remote.Car.transform || hit.IsChildOf(remote.Car.transform))
+            {
+                clientId = remote.ClientId;
+                return true;
+            }
+        }
+        return false;
+    }
 
     /// <summary>A deterministic RNG for one named random decision (e.g. "skybox", "roadhue",
     /// "blackout", "obstacles"), derived from the round seed + the stream name (FNV-1a) so streams
@@ -71,6 +160,7 @@ public class MultiplayerWorld : MonoBehaviour
     const string MsgRoundStart = "GNRC_ROUND_START"; // {round, seed}
     const string MsgRoundEnd = "GNRC_ROUND_END";     // {reason: 0 timeout, 1 all racers left}
     const string MsgArea = "GNRC_AREA";              // client → server: {inTrack}
+    const string MsgRacerFin = "GNRC_RACER_FIN";     // an AI racer crossed the finish — first place forfeit
 
     const string MainMenuSceneName = "MainMenu";
 
@@ -93,6 +183,8 @@ public class MultiplayerWorld : MonoBehaviour
     private readonly HashSet<ulong> readyClients = new HashSet<ulong>();
     private readonly HashSet<ulong> enteredThisRound = new HashSet<ulong>();
     private readonly HashSet<ulong> inTrackNow = new HashSet<ulong>();
+    private bool gameLoopStarted;        // full room reached once — rounds are running
+    private float serverRoundRemaining;  // current round's time left (for syncing mid-game joiners)
 
     static bool IsServer => NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
     static CustomMessagingManager Msg => NetworkManager.Singleton != null ? NetworkManager.Singleton.CustomMessagingManager : null;
@@ -140,6 +232,12 @@ public class MultiplayerWorld : MonoBehaviour
 
         // Phase 4: server-authoritative round scoring, team SD aggregation and endings.
         gameObject.AddComponent<MultiplayerScoring>();
+
+        // Phase 5: host-simulated AI/obstacles streamed to clients as puppets.
+        gameObject.AddComponent<NpcReplicator>();
+
+        // Voice chat: proximity (3D, out of the cars) + LB team-direct (2D, teammates only).
+        gameObject.AddComponent<VoiceChat>();
 
         // Creating the manager doubles as the transition out of the menu: its Awake loads the hub.
         if (GameLoopManager.Instance == null)
@@ -213,6 +311,9 @@ public class MultiplayerWorld : MonoBehaviour
         {
             hubSpawnPos = car.transform.position;
             hubSpawnRot = car.transform.rotation;
+            // Every client's car was placed at the SAME authored pose — with solid puppets that means
+            // spawning inside a teammate. Shift into this player's formation slot immediately.
+            car.transform.SetPositionAndRotation(ApplySpawnFormation(hubSpawnPos, hubSpawnRot), hubSpawnRot);
         }
         else
         {
@@ -310,7 +411,9 @@ public class MultiplayerWorld : MonoBehaviour
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
-        car.transform.SetPositionAndRotation(generator.CarSpawnPosition, generator.CarSpawnRotation);
+        car.transform.SetPositionAndRotation(
+            ApplySpawnFormation(generator.CarSpawnPosition, generator.CarSpawnRotation),
+            generator.CarSpawnRotation);
 
         inTrackLocally = true;
         ApplyAreaPresentation();
@@ -344,20 +447,34 @@ public class MultiplayerWorld : MonoBehaviour
                 rb.linearVelocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
             }
-            car.transform.SetPositionAndRotation(hubSpawnPos, hubSpawnRot);
+            car.transform.SetPositionAndRotation(ApplySpawnFormation(hubSpawnPos, hubSpawnRot), hubSpawnRot);
         }
 
         inTrackLocally = false;
         ApplyAreaPresentation();
         if (car != null) AudioManager.PlayPortalExit(car.transform);
-
-        // Boulders are simulated per-client (until Phase 5): clear ours so nothing we launched keeps
-        // arcing/rumbling — or follows us — once we're back in the hub. Other players' clients run
-        // their own boulders, so this touches nobody else's race.
-        foreach (var boulder in FindObjectsByType<BoulderObstacle>(FindObjectsSortMode.None))
-            Destroy(boulder.gameObject);
-
+        // (Phase 5 note: boulders are now HOST-simulated for everyone — a returning player must NOT
+        // destroy them; the old per-client boulder cleanup that lived here is gone deliberately.)
         if (notifyServer) SendAreaToServer(false);
+    }
+
+    /// <summary>Since puppets are SOLID (kinematic colliders), players can't all be placed on the
+    /// exact same spawn pose — the local car would materialise inside a teammate. Every placement
+    /// (hub capture, portal entry, hub return) offsets by this per-player formation slot: 3 abreast,
+    /// then rows behind, keyed by this client's stable index among the connected ids.</summary>
+    Vector3 ApplySpawnFormation(Vector3 basePos, Quaternion baseRot)
+    {
+        var nm = NetworkManager.Singleton;
+        int index = 0;
+        if (nm != null)
+        {
+            var ids = new List<ulong>(nm.ConnectedClientsIds);
+            ids.Sort();
+            index = Mathf.Max(0, ids.IndexOf(nm.LocalClientId));
+        }
+        float lateral = ((index % 3) - 1) * 5f;
+        float back = (index / 3) * 9f;
+        return basePos + baseRot * new Vector3(lateral, 0f, -back);
     }
 
     /// <summary>Everything cosmetic that follows the LOCAL player's area: active scene (RenderSettings
@@ -401,7 +518,7 @@ public class MultiplayerWorld : MonoBehaviour
     //  Round lifecycle (client side — applied from messages; the host applies locally too)
     // -------------------------------------------------------
 
-    void ApplyRoundStart(int round, int seed)
+    void ApplyRoundStart(int round, int seed, float remaining)
     {
         if (!begun || roundActive) return;
         var manager = GameLoopManager.Instance;
@@ -412,7 +529,7 @@ public class MultiplayerWorld : MonoBehaviour
         GameLoopManager.RemoteTrackSeed = seed;
 
         var glm = GameLoopManager.Instance;
-        if (glm != null) glm.RemoteBeginRound(round, glm.roundDuration);   // fires OnPortalShouldSpawn
+        if (glm != null) glm.RemoteBeginRound(round, remaining);   // fires OnPortalShouldSpawn
 
         Debug.Log($"[MultiplayerWorld] Round {round} started (seed {seed}) — loading the track area.");
         SceneManager.LoadSceneAsync(glm != null ? glm.trackSceneName : "TrackScene", LoadSceneMode.Additive);
@@ -432,6 +549,7 @@ public class MultiplayerWorld : MonoBehaviour
             SceneManager.UnloadSceneAsync(trackScene);
         trackLights.Clear();
         trackSpeedometerRoot = null;
+        NpcReplicator.ClearRoundPuppets();   // round-scoped NPC puppets die with the round
 
         CurrentRoundSeed = 0;
         GameLoopManager.RemoteTrackSeed = 0;
@@ -475,14 +593,29 @@ public class MultiplayerWorld : MonoBehaviour
 
     IEnumerator ServerRoundLoop()
     {
-        // Let every member (and our own hub) load in before the first countdown, with a cap so one
-        // stuck client can't hold the game hostage.
-        float deadline = Time.time + 25f;
-        while (Time.time < deadline)
+        // The game loop does NOT begin until EVERY seat the lobby allows (2 × team size) is filled
+        // AND all of those players have entered the hub — each on their own accord via ENTER GAME
+        // (the host is just the first one in). Two teams of one ⇒ wait for the 2nd player; two teams
+        // of two ⇒ wait for all four. No timeout: waiting for the room IS the design.
+        int capacity;
+        while (begun)
         {
-            if (hubCaptured && AllConnectedReady()) break;
+            capacity = SessionCapacity();
+            if (hubCaptured && capacity > 0 && readyClients.Count >= capacity) break;
             yield return new WaitForSeconds(0.5f);
         }
+        if (!begun) yield break;
+
+        // Full room: LOCK the lobby and begin the rounds. (A mid-game leave unlocks it again so a
+        // replacement can join; MarkReady re-locks when the room refills.)
+        gameLoopStarted = true;
+        if (NetworkSessionManager.Instance != null)
+            _ = NetworkSessionManager.Instance.SetSessionLockedAsync(true);
+        Debug.Log("[MultiplayerWorld] Full room in the hub — the game loop begins.");
+
+        // Phase 6: assign every player their RIVAL from the opposing team, now that all seats are in.
+        var scoringForRivals = GetComponent<MultiplayerScoring>();
+        if (scoringForRivals != null) scoringForRivals.AssignRivalsServer();
 
         var glm = GameLoopManager.Instance;
         while (begun)
@@ -501,12 +634,22 @@ public class MultiplayerWorld : MonoBehaviour
 
             // Round runs for the configured duration, or ends early once at least one player raced
             // and every player who entered the track has left it (per the multiplayer design).
-            float remaining = glm != null ? glm.roundDuration : 300f;
+            serverRoundRemaining = glm != null ? glm.roundDuration : 300f;
             bool allLeft = false;
-            while (remaining > 0f)
+            bool racerFinBroadcast = false;
+            while (serverRoundRemaining > 0f)
             {
                 yield return new WaitForSeconds(0.5f);
-                remaining -= 0.5f;
+                serverRoundRemaining -= 0.5f;
+
+                // Phase 5: the host's sim is THE AI truth — replicate "an AI finished first" so every
+                // client's first-place verdict (credits + finish reports) matches the server's.
+                if (!racerFinBroadcast && glm != null && glm.AnyRacerFinishedAhead)
+                {
+                    racerFinBroadcast = true;
+                    BroadcastRacerFinished();
+                }
+
                 if (enteredThisRound.Count > 0 && inTrackNow.Count == 0) { allLeft = true; break; }
             }
             BroadcastRoundEnd(allLeft ? (byte)1 : (byte)0);
@@ -524,16 +667,33 @@ public class MultiplayerWorld : MonoBehaviour
         }
     }
 
-    bool AllConnectedReady()
+    /// <summary>The lobby's full seat count (2 × team size). 0 while the session is unknown.</summary>
+    int SessionCapacity()
     {
-        var nm = NetworkManager.Singleton;
-        if (nm == null) return true;
-        foreach (var id in nm.ConnectedClientsIds)
-            if (!readyClients.Contains(id)) return false;
-        return true;
+        var session = NetworkSessionManager.Instance != null ? NetworkSessionManager.Instance.Session : null;
+        return session != null ? session.MaxPlayers : 0;
     }
 
-    void MarkReady(ulong clientId) => readyClients.Add(clientId);
+    void MarkReady(ulong clientId)
+    {
+        readyClients.Add(clientId);
+        if (!gameLoopStarted) return;   // pre-start: the round loop's own wait watches the count
+
+        // Mid-game joiner (a freed seat was refilled): catch them up on the round in progress so
+        // they get the portal + the same track instead of idling until the next round…
+        if (roundActive)
+            SendRoundStartTo(clientId, roundNumber, CurrentRoundSeed, serverRoundRemaining);
+
+        // …give them the vacant RIVAL slot (they inherit the leaver's rival; the leaver's orphaned
+        // opponents get them)…
+        var scoring = GetComponent<MultiplayerScoring>();
+        if (scoring != null) scoring.HandleJoinerServer(clientId);
+
+        // …and re-LOCK the lobby once every seat is filled again.
+        int capacity = SessionCapacity();
+        if (capacity > 0 && readyClients.Count >= capacity && NetworkSessionManager.Instance != null)
+            _ = NetworkSessionManager.Instance.SetSessionLockedAsync(true);
+    }
 
     void HandleAreaChanged(ulong clientId, bool inTrack)
     {
@@ -553,6 +713,11 @@ public class MultiplayerWorld : MonoBehaviour
         if (!IsServer) return;
         readyClients.Remove(clientId);
         inTrackNow.Remove(clientId);   // a vanished racer can't hold the round open
+
+        // A seat freed up mid-game: UNLOCK the lobby so a replacement can join and enter the hub
+        // (MarkReady re-locks once the room is full again). The rounds keep running meanwhile.
+        if (gameLoopStarted && begun && NetworkSessionManager.Instance != null)
+            _ = NetworkSessionManager.Instance.SetSessionLockedAsync(false);
     }
 
     // -------------------------------------------------------
@@ -568,7 +733,8 @@ public class MultiplayerWorld : MonoBehaviour
         {
             reader.ReadValueSafe(out int round);
             reader.ReadValueSafe(out int seed);
-            ApplyRoundStart(round, seed);
+            reader.ReadValueSafe(out float remaining);
+            ApplyRoundStart(round, seed, remaining);
         });
         msg.RegisterNamedMessageHandler(MsgRoundEnd, (sender, reader) =>
         {
@@ -585,6 +751,20 @@ public class MultiplayerWorld : MonoBehaviour
             reader.ReadValueSafe(out bool inTrack);
             if (IsServer) HandleAreaChanged(sender, inTrack);
         });
+        msg.RegisterNamedMessageHandler(MsgRacerFin, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out byte _);
+            // The host's sim says an AI racer beat everyone — mirror into the local puppet manager
+            // so this client's own first-place verdict matches the server's.
+            if (GameLoopManager.Instance != null) GameLoopManager.Instance.NotifyRacerFinished();
+        });
+    }
+
+    void BroadcastRacerFinished()
+    {
+        using var writer = new FastBufferWriter(sizeof(byte), Allocator.Temp);
+        writer.WriteValueSafe((byte)1);
+        SendToRemoteClients(MsgRacerFin, writer);
     }
 
     void UnregisterMessageHandlers()
@@ -595,17 +775,36 @@ public class MultiplayerWorld : MonoBehaviour
         msg.UnregisterNamedMessageHandler(MsgRoundEnd);
         msg.UnregisterNamedMessageHandler(MsgReady);
         msg.UnregisterNamedMessageHandler(MsgArea);
+        msg.UnregisterNamedMessageHandler(MsgRacerFin);
     }
 
     void BroadcastRoundStart(int round, int seed)
     {
-        using (var writer = new FastBufferWriter(sizeof(int) * 2, Allocator.Temp))
+        var glm = GameLoopManager.Instance;
+        float remaining = glm != null ? glm.roundDuration : 300f;
+        using (var writer = new FastBufferWriter(sizeof(int) * 2 + sizeof(float), Allocator.Temp))
         {
             writer.WriteValueSafe(round);
             writer.WriteValueSafe(seed);
+            writer.WriteValueSafe(remaining);
             SendToRemoteClients(MsgRoundStart, writer);
         }
-        ApplyRoundStart(round, seed);   // the host applies directly rather than relying on loopback
+        ApplyRoundStart(round, seed, remaining);   // the host applies directly rather than relying on loopback
+    }
+
+    /// <summary>Targeted round sync for a MID-GAME joiner: the round already started for everyone
+    /// else — send them the same round/seed with the TRUE time remaining, so they load the identical
+    /// track, get the portal, and their timer matches.</summary>
+    void SendRoundStartTo(ulong clientId, int round, int seed, float remaining)
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm == null || nm.CustomMessagingManager == null || clientId == nm.LocalClientId) return;
+        using var writer = new FastBufferWriter(sizeof(int) * 2 + sizeof(float), Allocator.Temp);
+        writer.WriteValueSafe(round);
+        writer.WriteValueSafe(seed);
+        writer.WriteValueSafe(remaining);
+        nm.CustomMessagingManager.SendNamedMessage(MsgRoundStart, clientId, writer, NetworkDelivery.ReliableSequenced);
+        Debug.Log($"[MultiplayerWorld] Synced mid-game joiner {clientId} into round {round} ({remaining:F0}s left).");
     }
 
     void BroadcastRoundEnd(byte reason)

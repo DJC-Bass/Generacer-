@@ -82,12 +82,16 @@ public class LightningSpawner : MonoBehaviour
     {
         if (trackSamples == null || trackSamples.Count == 0) return;
 
-        // Multiplayer: strikes are per-client (until Phase 5) — only strike while the LOCAL player
-        // is racing, so a hub-dwelling player doesn't hear/see a distant storm for nobody.
-        if (MultiplayerWorld.IsMultiplayerGame && !MultiplayerWorld.Instance.InTrackLocally)
+        // Multiplayer (Phase 5): the HOST rolls every strike and event-replicates it (same point +
+        // column height on every machine = the same hazard everywhere); it idles while nobody races.
+        // Clients never roll — their strikes arrive via NpcReplicator → SpawnStrikeAt.
+        if (MultiplayerWorld.IsMultiplayerGame)
         {
-            nextStrikeTime = Time.time + GetInterval();   // keep the cadence fresh for re-entry
-            return;
+            if (MultiplayerWorld.IsClientOnly || !MultiplayerWorld.AnyPlayerInTrackServer)
+            {
+                nextStrikeTime = Time.time + GetInterval();   // keep the cadence fresh
+                return;
+            }
         }
 
         if (Time.time >= nextStrikeTime)
@@ -163,14 +167,26 @@ public class LightningSpawner : MonoBehaviour
         // Random offset within range, applied perpendicular to the track
         float offset = Random.Range(-lateralOffsetRange, lateralOffsetRange);
         Vector3 strikePoint = sample.position + lateralAxis * offset;
+        float height = Random.Range(minStrikeHeight, maxStrikeHeight);
 
+        SpawnStrikeAt(strikePoint, height);
+
+        // Multiplayer host: replicate the strike so every client materialises the identical hazard.
+        NpcReplicator.BroadcastStrike(strikePoint, height);
+    }
+
+    /// <summary>Materialises one strike (warning column → bolt) at an exact point with an exact
+    /// column height. Used by the local roll above AND by NpcReplicator when the host's strike
+    /// events arrive on a client — same inputs, same hazard, every machine.</summary>
+    public void SpawnStrikeAt(Vector3 strikePoint, float height)
+    {
         var strikeObj = new GameObject("LightningStrike");
         strikeObj.transform.SetParent(transform);
         if (lightningLayer >= 0) strikeObj.layer = lightningLayer;
 
         var strike = strikeObj.AddComponent<LightningStrike>();
         strike.lightningLayer = lightningLayer;   // propagate to the WarningColumn + LightningBolt
-        strike.strikeHeight = Random.Range(minStrikeHeight, maxStrikeHeight);
+        strike.strikeHeight = height;
         strike.warningRadius = warningRadius;
         strike.boltThickness = boltThickness;
         strike.boltSegments = boltSegments;

@@ -375,7 +375,29 @@ public class StartMenuController : MonoBehaviour
         musicSlider = BuildSliderRow(go.transform, "MUSIC", InitialMusic(), OnMusicChanged, out musicValueText);
         sfxSlider   = BuildSliderRow(go.transform, "SFX",   InitialSfx(),   OnSfxChanged,   out sfxValueText);
 
-        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider });
+        // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceChat) ----
+        var micLabels = new System.Collections.Generic.List<string> { "Default" };
+        string savedMic = GameSettings.VoiceMicDevice;
+        int micStart = 0;
+        var micDevices = Microphone.devices;
+        for (int i = 0; i < micDevices.Length; i++)
+        {
+            micLabels.Add(micDevices[i]);
+            if (!string.IsNullOrEmpty(savedMic) && micDevices[i] == savedMic) micStart = i + 1;
+        }
+        var micSel = BuildCyclerRow(go.transform, "MICROPHONE", micLabels, micStart, i =>
+        {
+            var devices = Microphone.devices;
+            GameSettings.VoiceMicDevice = (i <= 0 || i > devices.Length) ? "" : devices[i - 1];
+        });
+        var muteSelfSel = BuildCyclerRow(go.transform, "MUTE MY MIC",
+            new System.Collections.Generic.List<string> { "Off", "On" },
+            GameSettings.VoiceMuteSelf ? 1 : 0, i => GameSettings.VoiceMuteSelf = i == 1);
+        var mutePlayersSel = BuildCyclerRow(go.transform, "MUTE PLAYERS",
+            new System.Collections.Generic.List<string> { "Off", "On" },
+            GameSettings.VoiceMuteOthers ? 1 : 0, i => GameSettings.VoiceMuteOthers = i == 1);
+
+        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, micSel, muteSelfSel, mutePlayersSel });
 
         UpdateMusicValueText(musicSlider.value);
         UpdateSfxValueText(sfxSlider.value);
@@ -383,6 +405,26 @@ public class StartMenuController : MonoBehaviour
         audioFirst = musicSlider.gameObject;
         go.SetActive(false);
         return go;
+    }
+
+    /// <summary>A labelled option-cycler row in the audio column, styled like BuildSliderRow.</summary>
+    OptionSelector BuildCyclerRow(Transform col, string label,
+                                  System.Collections.Generic.IList<string> options, int startIndex,
+                                  System.Action<int> onChanged)
+    {
+        var row = NewUI(label + "Row", col);
+        float w = cfg.buttonSize.x + 200f;
+        var le = row.AddComponent<LayoutElement>();
+        le.preferredWidth = w; le.minWidth = w; le.preferredHeight = 54f; le.minHeight = 54f;
+
+        var lbl = SettingsUI.NewText(row.transform, "Label", cfg.buttonFontSize * 0.8f, TextAlignmentOptions.MidlineLeft);
+        lbl.text = label; lbl.color = cfg.buttonTextColor;
+        Stretch(lbl.rectTransform, new Vector2(0f, 0f), new Vector2(0.38f, 1f), new Vector2(10f, 0f), Vector2.zero);
+
+        var sel = SettingsUI.OptionCycler(row.transform, Theme(), cfg.buttonFontSize * 0.7f, options, startIndex, onChanged);
+        Stretch((RectTransform)sel.transform, new Vector2(0.40f, 0.1f), new Vector2(1f, 0.9f), Vector2.zero, new Vector2(-10f, 0f));
+
+        return sel;
     }
 
     Slider BuildSliderRow(Transform col, string label, float initial,

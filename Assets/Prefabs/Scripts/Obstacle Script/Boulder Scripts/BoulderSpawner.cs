@@ -59,17 +59,21 @@ public class BoulderSpawner : MonoBehaviour
     void Start()
     {
         nextSpawnTime = Time.time + GetNextInterval();
+        // Clients build their replicated-boulder puppets from this prefab. No-op in single-player.
+        NpcReplicator.RegisterPrefab(boulderPrefab);
     }
 
     void Update()
     {
-        // Multiplayer: boulders are simulated per-client (until Phase 5), so only spawn while the
-        // LOCAL player is racing — a hub-dwelling player has nothing to dodge, and shouldn't see or
-        // hear a meteor shower running 35 km away.
-        if (MultiplayerWorld.IsMultiplayerGame && !MultiplayerWorld.Instance.InTrackLocally)
+        // Multiplayer (Phase 5): the HOST runs the one true boulder sim, streamed to clients — and it
+        // idles while nobody is racing (a hub full of players needs no meteor shower).
+        if (MultiplayerWorld.IsMultiplayerGame)
         {
-            nextSpawnTime = Time.time + GetNextInterval();   // keep the cadence fresh for re-entry
-            return;
+            if (MultiplayerWorld.IsClientOnly || !MultiplayerWorld.AnyPlayerInTrackServer)
+            {
+                nextSpawnTime = Time.time + GetNextInterval();   // keep the cadence fresh
+                return;
+            }
         }
 
         if (Time.time >= nextSpawnTime)
@@ -150,6 +154,9 @@ public class BoulderSpawner : MonoBehaviour
         var script = boulder.GetComponent<BoulderObstacle>();
         if (script != null)
             script.Launch(scale, mass, launchVelocity, spinAxis, spinSpeed);
+
+        // Multiplayer host: stream this boulder (with its rolled scale) to the clients. No-op otherwise.
+        NpcReplicator.Track(boulder, NpcKind.Boulder, boulderPrefab, scale);
     }
 
     // Gizmo so you can visualize the spawn region in the Scene view

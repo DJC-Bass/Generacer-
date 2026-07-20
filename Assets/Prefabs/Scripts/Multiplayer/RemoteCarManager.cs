@@ -170,6 +170,8 @@ public class RemoteCarManager : MonoBehaviour
         foreach (var remote in PlayerRegistry.Remotes)
             if (!seen.Contains(remote.ClientId)) stale.Add(remote.ClientId);
         foreach (var id in stale) PlayerRegistry.RemoveRemote(id);
+
+        RefreshMarkers();
     }
 
     void OnClientDisconnected(ulong clientId)
@@ -249,7 +251,7 @@ public class RemoteCarManager : MonoBehaviour
                 DontDestroyOnLoad(stagingRoot);
             }
             go = Instantiate(prefab, stagingRoot.transform);
-            StripPuppet(go);
+            StripPuppet(go, keepColliders: true);   // SOLID puppet: players can bump each other
             go.transform.SetParent(null, false);
         }
         else
@@ -262,19 +264,61 @@ public class RemoteCarManager : MonoBehaviour
         }
 
         go.name = "RemoteCar_" + playerName;
-        go.tag = "Untagged";   // must never read as "Player" to tag lookups or triggers
+        // NOT "Player" (tag lookups, portals, kill floors must never grab a puppet) — but a real tag
+        // of its own so drones/projectiles/boulders can recognise remote players as players.
+        go.tag = "RemotePlayer";
         go.transform.SetPositionAndRotation(HiddenPose, Quaternion.identity);
         DontDestroyOnLoad(go); // lives across the hub/track areas; destroyed via the roster/teardown
         go.AddComponent<RemoteCarPuppet>();
+
+        // Phase 6: this car's own engine sound, driven by replicated speed (tuning copied off the
+        // prefab ASSET's CarEngineAudio — the puppet's instance was stripped), and the
+        // teammate/rival marker (labelled per-viewer by RefreshMarkers).
+        if (prefab != null)
+        {
+            var engineTemplate = prefab.GetComponentInChildren<CarEngineAudio>(true);
+            if (engineTemplate != null) go.AddComponent<RemoteCarAudio>().Configure(engineTemplate);
+        }
+        go.AddComponent<RemoteCarMarker>();
+
         go.SetActive(true);
         return go;
     }
 
-    /// <summary>Reduces a full player-car prefab clone to a pure visual: every script, collider,
-    /// rigidbody, audio source and camera goes; trails/particles are muted (they're driven by the
-    /// owner-only scripts that no longer exist). Runs while the clone is dormant under the inactive
-    /// staging root, so none of the removed components ever executes.</summary>
-    static void StripPuppet(GameObject go)
+    /// <summary>Re-labels every remote car for THIS viewer: "RIVAL" on the one opposing player the
+    /// rival system assigned to us, "TEAMMATE" on our own team's cars, nothing on the rest. Called
+    /// on roster changes and whenever the rival map updates — rival markers are inherently private
+    /// because each machine only ever labels its own rival.</summary>
+    public void RefreshMarkers()
+    {
+        int localTeam = NetworkSessionManager.Instance != null ? NetworkSessionManager.Instance.LocalTeam() : 0;
+        bool hasRival = MultiplayerScoring.TryGetMyRival(out ulong rivalId);
+
+        foreach (var remote in PlayerRegistry.Remotes)
+        {
+            if (remote.Car == null) continue;
+            var marker = remote.Car.GetComponent<RemoteCarMarker>();
+            if (marker == null) continue;
+
+            if (hasRival && remote.ClientId == rivalId)
+                marker.Show("RIVAL", new Color(1f, 0.35f, 0.25f));
+            else if (localTeam != 0 && remote.Team == localTeam)
+                marker.Show("TEAMMATE", new Color(0.35f, 0.9f, 1f));
+            else
+                marker.Hide();
+        }
+    }
+
+    /// <summary>Reduces a full prefab clone (player car, drone, boulder…) to a puppet: every script,
+    /// audio source and camera goes; trails/particles are muted (they're driven by the owner-only
+    /// scripts that no longer exist). With <paramref name="keepColliders"/> the colliders survive and
+    /// every Rigidbody becomes KINEMATIC — a solid, infinitely-massy obstacle the local physics can
+    /// bump against (player-vs-player contact, drones/boulders shoving the local car) while the
+    /// puppet itself is driven purely by RemoteCarPuppet's transform. Without it (projectiles, whose
+    /// hits are host-authoritative) colliders and rigidbodies are removed entirely. Runs while the
+    /// clone is dormant under an inactive staging root, so none of the removed components ever
+    /// executes.</summary>
+    internal static void StripPuppet(GameObject go, bool keepColliders)
     {
         // FIRST, replicate the "hidden until triggered" state the owner-only scripts would normally
         // establish — their Awake/OnEnable never runs on a puppet, so conditional visuals that are
@@ -290,10 +334,24 @@ public class RemoteCarManager : MonoBehaviour
             DestroyImmediate(cam);
         foreach (var source in go.GetComponentsInChildren<AudioSource>(true))
             DestroyImmediate(source);
-        foreach (var col in go.GetComponentsInChildren<Collider>(true))
-            DestroyImmediate(col);
-        foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true))
-            DestroyImmediate(rb);
+
+        if (keepColliders)
+        {
+            foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true))
+            {
+                rb.isKinematic = true;      // immovable by contacts; follows the puppet transform
+                rb.useGravity = false;
+                rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;   // fast contacts
+            }
+        }
+        else
+        {
+            foreach (var col in go.GetComponentsInChildren<Collider>(true))
+                DestroyImmediate(col);
+            foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true))
+                DestroyImmediate(rb);
+        }
+
         foreach (var trail in go.GetComponentsInChildren<TrailRenderer>(true))
             trail.emitting = false;
         foreach (var ps in go.GetComponentsInChildren<ParticleSystem>(true))

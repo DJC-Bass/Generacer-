@@ -305,6 +305,17 @@ public class MultiplayerLobbyUI : MonoBehaviour
     async void OnReadyPressed()
     {
         if (busy || Manager == null || Manager.Session == null) return;
+
+        // Once the game has started this button IS the entry door: each player enters the hub on
+        // their own accord (the round loop waits for the full room; mid-game joiners come through
+        // here too after filling a freed seat).
+        if (Manager.GameStarted)
+        {
+            SetStatus("ENTERING THE GAME...");
+            Manager.EnterStartedGame();
+            return;
+        }
+
         busy = true;
         try
         {
@@ -620,16 +631,22 @@ public class MultiplayerLobbyUI : MonoBehaviour
 
         bool ready = NetworkSessionManager.IsReady(session.CurrentPlayer);
         var readyLabel = readyButton.GetComponentInChildren<TextMeshProUGUI>();
-        if (readyLabel != null) readyLabel.text = ready ? "READY: YES" : "READY: NO";
 
         if (manager.GameStarted)
         {
             if (startButton != null) startButton.interactable = false;
-            SetStatus("STARTING — LOADING THE WORLD...");
+            // The game is live: the READY button becomes the door into the hub. The round loop
+            // won't begin until every seat is filled, so enter whenever you're set.
+            if (readyLabel != null) readyLabel.text = "ENTER GAME";
+            SetStatus(manager.WorldLaunched
+                ? "LOADING THE WORLD..."
+                : "GAME IN PROGRESS — PRESS ENTER GAME WHEN READY");
         }
-        else if (manager.IsSessionHost && startButton != null)
+        else
         {
-            startButton.interactable = manager.ReadyToStart(out _);
+            if (readyLabel != null) readyLabel.text = ready ? "READY: YES" : "READY: NO";
+            if (manager.IsSessionHost && startButton != null)
+                startButton.interactable = manager.ReadyToStart(out _);
         }
     }
 

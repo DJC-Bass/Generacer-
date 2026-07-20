@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
@@ -32,6 +33,8 @@ public class MultiplayerScoring : MonoBehaviour
     const string MsgSdAward = "GNRC_SD_AWARD";   // server → one client: {sdName}
     const string MsgScore = "GNRC_SCORE";        // server → all: {droneWins}
     const string MsgEnding = "GNRC_ENDING";      // server → all: {isDroneEnding, winningTeam}
+    const string MsgRivals = "GNRC_RIVALS";      // server → all: {count, [playerId, rivalId]...}
+    const string MsgRivalBonus = "GNRC_RIVAL_BONUS";   // server → one client: {credits} — beat your rival
 
     /// <summary>The SD pool first-place finishes draw from (mirrors ReturnPortalTrigger's).</summary>
     static readonly string[] SdPool = { "Fire SD", "Lightning SD", "Wind SD" };
@@ -42,11 +45,38 @@ public class MultiplayerScoring : MonoBehaviour
     /// loop stops scheduling rounds.</summary>
     public bool GameOverServer { get; private set; }
 
+    /// <summary>Credits for reaching the end portal BEFORE your assigned rival this round.</summary>
+    public int rivalBonusCredits = 100;
+
     // ---- Server state ----
     private readonly Dictionary<ulong, HashSet<string>> clientSds = new Dictionary<ulong, HashSet<string>>();
     private int claimedTeam;          // 1/2 once a first-place finish landed this round, else 0
     private ulong claimedByClient;
     private int droneWins;
+
+    // ---- Rival system (server truth; the full map is broadcast, each client uses its own entry) ----
+    private readonly Dictionary<ulong, ulong> rivalOf = new Dictionary<ulong, ulong>();
+    private readonly HashSet<ulong> finishedThisRound = new HashSet<ulong>();
+    private class RivalVacancy
+    {
+        public bool hasInherited;
+        public ulong inheritedRival;               // the leaver's old rival — the replacement inherits it
+        public readonly List<ulong> orphans = new List<ulong>();   // players whose rival was the leaver
+    }
+    private readonly List<RivalVacancy> vacancies = new List<RivalVacancy>();
+    private bool rivalsAssigned;
+
+    // ---- Client state (rivals) ----
+    private static bool hasMyRival;
+    private static ulong myRivalClientId;
+
+    /// <summary>This machine's assigned rival, if any. (clientId 0 is the host — a valid id — so
+    /// this is a try-pattern, not a sentinel.)</summary>
+    public static bool TryGetMyRival(out ulong clientId)
+    {
+        clientId = myRivalClientId;
+        return hasMyRival;
+    }
 
     // ---- Client state (SD reporting) ----
     private bool sdsDirty;
@@ -65,6 +95,8 @@ public class MultiplayerScoring : MonoBehaviour
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged += MarkSdsDirty;
         MarkSdsDirty();   // initial report (starting inventory holds no SDs, but make it explicit)
+        if (NetworkManager.Singleton != null)
+            NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnectedForRivals;
     }
 
     void OnDestroy()
@@ -73,6 +105,9 @@ public class MultiplayerScoring : MonoBehaviour
         UnregisterHandlers();
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged -= MarkSdsDirty;
+        if (NetworkManager.Singleton != null)
+            NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnectedForRivals;
+        hasMyRival = false;   // session over — no rival carries into the next game
     }
 
     void Update()
@@ -157,11 +192,29 @@ public class MultiplayerScoring : MonoBehaviour
         foreach (var sd in sds) set.Add(sd);
     }
 
-    /// <summary>A player finished the track. The FIRST one whose own sim says no AI beat them claims
-    /// the round for their team, and is awarded an SD their team doesn't hold yet.</summary>
+    /// <summary>A player finished the track. Since Phase 5, the AI racers live ONLY on the host, so
+    /// first place is judged against the SERVER's own AnyRacerFinishedAhead — the client's local
+    /// verdict is advisory (its flag mirrors the host's via the RACER_FIN broadcast anyway).</summary>
     void HandleFinish(ulong clientId, bool localFirstPlace)
     {
-        if (GameOverServer || !localFirstPlace || claimedTeam != 0) return;
+        if (GameOverServer) return;
+
+        // Rival bonus (independent of first place): finishing while your assigned rival hasn't
+        // finished this round = you beat them to the return portal → +100 credits.
+        if (!finishedThisRound.Contains(clientId))
+        {
+            if (rivalOf.TryGetValue(clientId, out ulong rival) && !finishedThisRound.Contains(rival))
+                SendRivalBonus(clientId);
+            finishedThisRound.Add(clientId);
+        }
+
+        bool serverFirstPlace = GameLoopManager.Instance == null
+            || !GameLoopManager.Instance.AnyRacerFinishedAhead;
+        if (localFirstPlace != serverFirstPlace)
+            Debug.Log($"[Scoring] Client {clientId} first-place verdict ({localFirstPlace}) disagrees " +
+                      $"with the server ({serverFirstPlace}) — server wins.");
+
+        if (!serverFirstPlace || claimedTeam != 0) return;
 
         var carManager = GetComponent<RemoteCarManager>();
         int team = carManager != null ? carManager.TeamOfServer(clientId) : 0;
@@ -204,11 +257,210 @@ public class MultiplayerScoring : MonoBehaviour
         return result;
     }
 
-    /// <summary>Server: fresh round — clear the first-place claim.</summary>
+    /// <summary>Server: fresh round — clear the first-place claim and the rival finish ledger.</summary>
     public void ResetRoundServer()
     {
         claimedTeam = 0;
         claimedByClient = 0;
+        finishedThisRound.Clear();
+    }
+
+    // -------------------------------------------------------
+    //  Rival system (server)
+    // -------------------------------------------------------
+
+    /// <summary>Server: assigns every player a random RIVAL from the opposing team, once the full
+    /// room is in the hub (called by MultiplayerWorld when the game loop begins). Each direction is
+    /// a random permutation of the opposing team, so no player is the rival OF two players on the
+    /// same side, and assignments need not be mutual. Waits briefly for any hello-roster stragglers
+    /// so every team is known.</summary>
+    public void AssignRivalsServer()
+    {
+        if (!IsServer || rivalsAssigned) return;
+        rivalsAssigned = true;
+        StartCoroutine(AssignRivalsWhenTeamsKnown());
+    }
+
+    IEnumerator AssignRivalsWhenTeamsKnown()
+    {
+        var carManager = GetComponent<RemoteCarManager>();
+        var nm = NetworkManager.Singleton;
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            bool allKnown = carManager != null && nm != null;
+            if (allKnown)
+                foreach (var id in nm.ConnectedClientsIds)
+                    if (carManager.TeamOfServer(id) == 0) { allKnown = false; break; }
+            if (allKnown) break;
+            yield return new WaitForSeconds(0.5f);
+        }
+        if (carManager == null || nm == null) yield break;
+
+        var teamOne = new List<ulong>();
+        var teamTwo = new List<ulong>();
+        foreach (var id in nm.ConnectedClientsIds)
+        {
+            int team = carManager.TeamOfServer(id);
+            if (team == 1) teamOne.Add(id);
+            else if (team == 2) teamTwo.Add(id);
+        }
+
+        rivalOf.Clear();
+        AssignRivalDirection(teamOne, teamTwo);
+        AssignRivalDirection(teamTwo, teamOne);
+        BroadcastRivals();
+        Debug.Log($"[Scoring] Rivals assigned ({rivalOf.Count} players paired).");
+    }
+
+    /// <summary>Gives each player in <paramref name="players"/> a rival from <paramref name="pool"/>
+    /// as a random permutation — injective, so nobody is the rival of two players on this side.</summary>
+    void AssignRivalDirection(List<ulong> players, List<ulong> pool)
+    {
+        if (players.Count == 0 || pool.Count == 0) return;
+        var shuffled = new List<ulong>(pool);
+        for (int i = shuffled.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+        }
+        for (int i = 0; i < players.Count; i++)
+            rivalOf[players[i]] = shuffled[i % shuffled.Count];
+    }
+
+    /// <summary>Server: a player left mid-game — their rival slot becomes a VACANCY: the next joiner
+    /// inherits the leaver's rival, and everyone whose rival was the leaver gets the joiner instead.
+    /// Until then those players simply have no rival (their marker disappears).</summary>
+    void OnClientDisconnectedForRivals(ulong leaverId)
+    {
+        if (!IsServer || !rivalsAssigned) return;
+
+        var vacancy = new RivalVacancy();
+        if (rivalOf.TryGetValue(leaverId, out ulong inherited))
+        {
+            vacancy.hasInherited = true;
+            vacancy.inheritedRival = inherited;
+            rivalOf.Remove(leaverId);
+        }
+        foreach (var kv in rivalOf)
+            if (kv.Value == leaverId) vacancy.orphans.Add(kv.Key);
+        foreach (var orphan in vacancy.orphans)
+            rivalOf.Remove(orphan);
+
+        vacancies.Add(vacancy);
+        BroadcastRivals();
+    }
+
+    /// <summary>Server: a replacement player entered the hub mid-game (called by MultiplayerWorld's
+    /// MarkReady). They fill the oldest vacancy: their rival = the leaver's old rival, and the
+    /// leaver's orphaned opponents get them as the new rival.</summary>
+    public void HandleJoinerServer(ulong joinerId)
+    {
+        if (!IsServer || !rivalsAssigned) return;
+        StartCoroutine(FillVacancyWhenTeamKnown(joinerId));
+    }
+
+    IEnumerator FillVacancyWhenTeamKnown(ulong joinerId)
+    {
+        var carManager = GetComponent<RemoteCarManager>();
+        for (int attempt = 0; attempt < 20; attempt++)
+        {
+            if (carManager != null && carManager.TeamOfServer(joinerId) != 0) break;
+            yield return new WaitForSeconds(0.5f);
+        }
+        if (carManager == null || carManager.TeamOfServer(joinerId) == 0) yield break;
+
+        RivalVacancy vacancy = vacancies.Count > 0 ? vacancies[0] : new RivalVacancy();
+        if (vacancies.Count > 0) vacancies.RemoveAt(0);
+
+        // The joiner's own rival: the leaver's old rival if they're still here and still opposing;
+        // otherwise a random opposing player.
+        ulong rival = vacancy.hasInherited ? vacancy.inheritedRival : 0;
+        if (!vacancy.hasInherited || !IsConnected(rival) || rival == joinerId
+            || carManager.TeamOfServer(rival) == carManager.TeamOfServer(joinerId))
+        {
+            if (!TryPickRandomOpposing(joinerId, out rival)) rival = 0;
+            else vacancy.hasInherited = true;
+        }
+        if (vacancy.hasInherited || rival != 0) rivalOf[joinerId] = rival;
+
+        // Everyone who lost the leaver as their rival now hunts the joiner instead.
+        foreach (var orphan in vacancy.orphans)
+            if (IsConnected(orphan)) rivalOf[orphan] = joinerId;
+
+        BroadcastRivals();
+        Debug.Log($"[Scoring] Joiner {joinerId} filled a rival vacancy.");
+    }
+
+    static bool IsConnected(ulong clientId)
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm == null) return false;
+        foreach (var id in nm.ConnectedClientsIds)
+            if (id == clientId) return true;
+        return false;
+    }
+
+    bool TryPickRandomOpposing(ulong ofClient, out ulong picked)
+    {
+        picked = 0;
+        var carManager = GetComponent<RemoteCarManager>();
+        var nm = NetworkManager.Singleton;
+        if (carManager == null || nm == null) return false;
+        int myTeam = carManager.TeamOfServer(ofClient);
+        var pool = new List<ulong>();
+        foreach (var id in nm.ConnectedClientsIds)
+            if (id != ofClient && carManager.TeamOfServer(id) != myTeam && carManager.TeamOfServer(id) != 0)
+                pool.Add(id);
+        if (pool.Count == 0) return false;
+        picked = pool[Random.Range(0, pool.Count)];
+        return true;
+    }
+
+    void BroadcastRivals()
+    {
+        using (var writer = new FastBufferWriter(512, Allocator.Temp, 8192))
+        {
+            writer.WriteValueSafe(rivalOf.Count);
+            foreach (var kv in rivalOf)
+            {
+                writer.WriteValueSafe(kv.Key);
+                writer.WriteValueSafe(kv.Value);
+            }
+            SendToRemoteClients(MsgRivals, writer);
+        }
+        ApplyRivals(new Dictionary<ulong, ulong>(rivalOf));   // host applies its own entry directly
+    }
+
+    void ApplyRivals(Dictionary<ulong, ulong> map)
+    {
+        hasMyRival = map.TryGetValue(LocalClientId, out myRivalClientId);
+        var carManager = GetComponent<RemoteCarManager>();
+        if (carManager != null) carManager.RefreshMarkers();
+        Debug.Log(hasMyRival
+            ? $"[Scoring] Your RIVAL is client {myRivalClientId}."
+            : "[Scoring] You currently have no rival.");
+    }
+
+    void SendRivalBonus(ulong clientId)
+    {
+        if (clientId == LocalClientId)
+        {
+            ApplyRivalBonus(rivalBonusCredits);
+            return;
+        }
+        var msg = Msg;
+        if (msg == null) return;
+        using var writer = new FastBufferWriter(sizeof(int), Allocator.Temp);
+        writer.WriteValueSafe(rivalBonusCredits);
+        msg.SendNamedMessage(MsgRivalBonus, clientId, writer, NetworkDelivery.ReliableSequenced);
+    }
+
+    static void ApplyRivalBonus(int credits)
+    {
+        if (PlayerInventory.Instance == null) return;
+        PlayerInventory.Instance.AddCredits(credits);
+        AudioManager.PlayKnockoffBounty();   // reward stinger
+        Debug.Log($"[Scoring] Beat your RIVAL to the finish — +{credits} credits!");
     }
 
     /// <summary>Server: score the round that just ended (called ONCE by MultiplayerWorld's loop,
@@ -350,6 +602,23 @@ public class MultiplayerScoring : MonoBehaviour
             reader.ReadValueSafe(out int winningTeam);
             ApplyEnding(isDroneEnding, winningTeam);
         });
+        msg.RegisterNamedMessageHandler(MsgRivals, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out int count);
+            var map = new Dictionary<ulong, ulong>(count);
+            for (int i = 0; i < count; i++)
+            {
+                reader.ReadValueSafe(out ulong player);
+                reader.ReadValueSafe(out ulong rival);
+                map[player] = rival;
+            }
+            ApplyRivals(map);
+        });
+        msg.RegisterNamedMessageHandler(MsgRivalBonus, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out int credits);
+            ApplyRivalBonus(credits);
+        });
     }
 
     void UnregisterHandlers()
@@ -361,6 +630,8 @@ public class MultiplayerScoring : MonoBehaviour
         msg.UnregisterNamedMessageHandler(MsgSdAward);
         msg.UnregisterNamedMessageHandler(MsgScore);
         msg.UnregisterNamedMessageHandler(MsgEnding);
+        msg.UnregisterNamedMessageHandler(MsgRivals);
+        msg.UnregisterNamedMessageHandler(MsgRivalBonus);
     }
 
     static void SendToRemoteClients(string messageName, FastBufferWriter writer)

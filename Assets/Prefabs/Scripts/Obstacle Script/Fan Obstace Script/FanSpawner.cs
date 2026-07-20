@@ -66,6 +66,14 @@ public class FanSpawner : MonoBehaviour
 
     void SpawnFans()
     {
+        // Multiplayer: fans are STATIC hazards, so they stay locally spawned on every machine â€” but
+        // every roll must derive from the round seed or the six clients get six different layouts.
+        System.Random seeded = MultiplayerWorld.IsMultiplayerGame ? MultiplayerWorld.DeriveRandom("fans") : null;
+        float NextRange(float min, float max) =>
+            seeded != null ? min + (float)seeded.NextDouble() * (max - min) : Random.Range(min, max);
+        int NextInt(int minInclusive, int maxExclusive) =>
+            seeded != null ? seeded.Next(minInclusive, maxExclusive) : Random.Range(minInclusive, maxExclusive);
+
         // Collect all sample points from all track edges
         var allTrackPoints = GatherTrackPoints();
         if (allTrackPoints.Count == 0) return;
@@ -74,16 +82,16 @@ public class FanSpawner : MonoBehaviour
         int skipCount = Mathf.RoundToInt(allTrackPoints.Count * startSkipFraction);
         int startIndex = Mathf.Min(skipCount, allTrackPoints.Count - 1);
 
-        // Direction from end portal back to entrance — fans drift this way
+        // Direction from end portal back to entrance ï¿½ fans drift this way
         Vector3 entranceDirection = -trackGenerator.transform.forward;
-        // Use track geometry instead — average direction from finish toward start
+        // Use track geometry instead ï¿½ average direction from finish toward start
         Vector3 driftBackward = (allTrackPoints[0].position
                                - allTrackPoints[allTrackPoints.Count - 1].position).normalized;
 
         for (int i = 0; i < fanCount; i++)
         {
             // Pick a random track point in the spawnable region
-            int pointIndex = Random.Range(startIndex, allTrackPoints.Count);
+            int pointIndex = NextInt(startIndex, allTrackPoints.Count);
             var trackPoint = allTrackPoints[pointIndex];
 
             // Pick a random offset from the track centerline
@@ -92,25 +100,25 @@ public class FanSpawner : MonoBehaviour
             Vector3 right = Vector3.Cross(Vector3.up, trackForward).normalized;
             if (right.sqrMagnitude < 0.0001f) right = Vector3.right;
 
-            float lateral = Random.Range(-lateralScatter, lateralScatter);
-            float vertical = Random.Range(-verticalScatter, verticalScatter);
+            float lateral = NextRange(-lateralScatter, lateralScatter);
+            float vertical = NextRange(-verticalScatter, verticalScatter);
 
             Vector3 spawnPos = trackPoint.position
                              + right * lateral
                              + Vector3.up * vertical;
 
-            // Random Y rotation only — fans always upright
-            Quaternion spawnRot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            // Random Y rotation only ï¿½ fans always upright
+            Quaternion spawnRot = Quaternion.Euler(0f, NextRange(0f, 360f), 0f);
 
             // Random scale within range
-            float fanScale = Random.Range(minScale, maxScale);
+            float fanScale = NextRange(minScale, maxScale);
 
             // Spawn
             GameObject fanInstance = Instantiate(fanPrefab, spawnPos, spawnRot, transform);
             fanInstance.transform.localScale = Vector3.one * fanScale;
             fanInstance.layer = obstacleLayer;
 
-            // Recursively set the layer on all children too — matters for
+            // Recursively set the layer on all children too ï¿½ matters for
             // fan blade meshes that have their own colliders
             SetLayerRecursive(fanInstance, obstacleLayer);
 
@@ -120,8 +128,8 @@ public class FanSpawner : MonoBehaviour
 
             fan.baseSpinSpeed = baseSpinSpeed;
 
-            // Some fans drift, some stay still — adds variety
-            if (Random.value < driftProbability)
+            // Some fans drift, some stay still ï¿½ adds variety
+            if (NextRange(0f, 1f) < driftProbability)
             {
                 fan.baseDriftSpeed = baseDriftSpeed;
                 fan.driftDirection = driftBackward;

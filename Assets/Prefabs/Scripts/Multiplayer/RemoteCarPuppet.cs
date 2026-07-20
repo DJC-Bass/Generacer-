@@ -33,6 +33,9 @@ public class RemoteCarPuppet : MonoBehaviour
     public float rotationTau = 0.10f;
     [Tooltip("Maximum seconds a state is projected forward — beyond this the car holds position.")]
     public float maxExtrapolation = 0.5f;
+    [Tooltip("Add gravity to the forward projection — for ballistic entities (boulders) whose " +
+             "velocity curves between updates. Player cars are hover-physics: leave false.")]
+    public bool projectGravity;
 
     private Vector3 basePos;
     private Quaternion baseRot = Quaternion.identity;
@@ -41,6 +44,9 @@ public class RemoteCarPuppet : MonoBehaviour
     private float stateTime;           // local Time.time when the state landed
     private ushort lastSequence;
     private bool hasState;
+
+    /// <summary>The last replicated linear velocity — RemoteCarAudio drives the engine rev off it.</summary>
+    public Vector3 CurrentVelocity => linearVelocity;
 
     /// <summary>Feeds a freshly received owner state. Out-of-order packets are dropped.</summary>
     public void ApplyState(ushort sequence, Vector3 position, Quaternion rotation,
@@ -71,7 +77,9 @@ public class RemoteCarPuppet : MonoBehaviour
 
         // Dead-reckon the state forward — leading by the blend's own tau so the exponential chase
         // doesn't trail a fast car (see class comment).
-        Vector3 targetPos = basePos + linearVelocity * (age + positionTau);
+        float lead = age + positionTau;
+        Vector3 targetPos = basePos + linearVelocity * lead;
+        if (projectGravity) targetPos += 0.5f * lead * lead * Physics.gravity;
         Quaternion targetRot = IntegrateRotation(baseRot, angularVelocity, age + rotationTau);
 
         if (Vector3.Distance(transform.position, targetPos) > snapDistance)

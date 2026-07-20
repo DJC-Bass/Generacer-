@@ -55,7 +55,9 @@ public class DroneProjectile : MonoBehaviour
         if (consumed) return;
         consumed = true;
 
-        // Check if we hit the player (walk up hierarchy for sub-colliders)
+        // Check if we hit a player (walk up hierarchy for sub-colliders). On the multiplayer host
+        // (the only place projectiles simulate) a REMOTE player's solid puppet counts too — the hit
+        // is routed to the victim's machine, where the pop-up lands on their real car.
         bool hitPlayer = false;
         Transform t = collision.transform;
         while (t != null)
@@ -63,6 +65,13 @@ public class DroneProjectile : MonoBehaviour
             if (t.CompareTag(playerTag))
             {
                 HitPlayer(t.gameObject);
+                hitPlayer = true;
+                break;
+            }
+            if (t.CompareTag("RemotePlayer"))
+            {
+                if (MultiplayerWorld.TryGetCarOwner(t, out ulong clientId, out bool isLocal) && !isLocal)
+                    NpcReplicator.SendHitToClient(clientId);
                 hitPlayer = true;
                 break;
             }
@@ -75,6 +84,43 @@ public class DroneProjectile : MonoBehaviour
 
         // Despawn on any collision regardless of what was hit
         Destroy(gameObject);
+    }
+
+    /// <summary>Applies a host-reported projectile hit to THIS machine's own car (the host detected
+    /// the contact against our puppet). Mirrors <see cref="HitPlayer"/> with the default tuning:
+    /// pop-up + momentum halt in normal play, the game-over exit during the hub Drone ending.</summary>
+    public static void ApplyRemoteHitToLocalPlayer()
+    {
+        var car = PlayerRegistry.LocalCar;
+        if (car == null) return;
+
+        AudioManager.PlayProjectileHitPlayer(car.transform.position, null);
+
+        var gm = GameLoopManager.Instance;
+        bool droneEndingHub = gm != null && gm.DroneEndingActive
+            && SceneManager.GetActiveScene().name == gm.hubSceneName;
+        if (droneEndingHub)
+        {
+            // Same multiplayer-aware game-over exit the local-hit path uses.
+            if (MultiplayerWorld.IsMultiplayerGame)
+            {
+                if (NetworkSessionManager.Instance != null)
+                    _ = NetworkSessionManager.Instance.LeaveSessionAsync();
+                MultiplayerWorld.Instance.TeardownToMenu("HIT IN THE DRONE ENDING");
+            }
+            return;
+        }
+
+        var prb = car.GetComponent<Rigidbody>();
+        if (prb == null) return;
+        Vector3 vel = prb.linearVelocity;
+        vel.x = 0f;
+        vel.z = 0f;
+        prb.linearVelocity = vel;
+        prb.AddForce(Vector3.up * 80f, ForceMode.VelocityChange);   // prefab-default pop-up force
+
+        var controller = car.GetComponent<CarController>();
+        if (controller != null) controller.ShortenSuspensionRayForPopUp();
     }
 
     void HitPlayer(GameObject player)

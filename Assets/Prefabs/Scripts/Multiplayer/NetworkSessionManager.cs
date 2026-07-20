@@ -109,12 +109,45 @@ public class NetworkSessionManager : MonoBehaviour
 
     void Update()
     {
-        // Phase 2 launch hook: once the host flags the game as started (Phase 1's StartGameAsync),
-        // every member — host and joiners alike — transitions from the lobby into the shared world.
-        if (!worldLaunched && InSession && GameStarted)
+        // Launch hook: only the HOST auto-enters the world when the started flag lands (they pressed
+        // the button). Everyone else enters ON THEIR OWN ACCORD via the lobby room's ENTER GAME
+        // button (EnterStartedGame) — so players arrive in the hub individually instead of all
+        // materialising on the spawn point at once. The round loop waits for the full room.
+        if (!worldLaunched && InSession && GameStarted && IsSessionHost)
         {
             worldLaunched = true;
             MultiplayerWorld.Launch();
+        }
+    }
+
+    /// <summary>True once this client has entered the shared world for the current session.</summary>
+    public bool WorldLaunched => worldLaunched;
+
+    /// <summary>Non-host: enter the already-started game (the lobby room's ENTER GAME button).
+    /// Also the mid-game join path — a player who filled a freed seat enters through here.</summary>
+    public void EnterStartedGame()
+    {
+        if (worldLaunched || !InSession || !GameStarted) return;
+        worldLaunched = true;
+        MultiplayerWorld.Launch();
+    }
+
+    /// <summary>Host: lock/unlock the lobby. The world locks it when the game loop begins (full
+    /// room) and unlocks it when a player leaves mid-game, so a replacement can join.</summary>
+    public async Task SetSessionLockedAsync(bool locked)
+    {
+        if (!IsSessionHost) return;
+        try
+        {
+            var host = Session.AsHost();
+            if (host.IsLocked == locked) return;
+            host.IsLocked = locked;
+            await host.SavePropertiesAsync();
+            Debug.Log($"[NetworkSession] Lobby {(locked ? "LOCKED" : "UNLOCKED")}.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[NetworkSession] Lock change failed: {e.Message}");
         }
     }
 
@@ -177,11 +210,8 @@ public class NetworkSessionManager : MonoBehaviour
             response.Approved = false;
             response.Reason = "No active session.";
         }
-        else if (!isHostSelf && GameStarted)
-        {
-            response.Approved = false;
-            response.Reason = "Game already started.";
-        }
+        // NOTE: a started game no longer refuses joins — the lobby LOCK gates mid-game entry
+        // (locked while the room is full, unlocked when a seat frees up).
         else if (Session != null && connected >= Session.MaxPlayers)
         {
             response.Approved = false;
@@ -364,16 +394,17 @@ public class NetworkSessionManager : MonoBehaviour
     //  Start / leave / teardown
     // -------------------------------------------------------
 
-    /// <summary>Host only: locks the lobby (no more joins) and flags the game as started. Phase 2's
-    /// shared-world load takes over from this property; Phase 1 stops at the flag.</summary>
+    /// <summary>Host only: flags the game as started. The host auto-enters the hub; other players
+    /// enter individually via ENTER GAME. Deliberately does NOT lock the lobby — the world locks it
+    /// once the full room is in the hub and the game loop begins (and unlocks on a mid-game leave,
+    /// so a replacement can join).</summary>
     public async Task StartGameAsync()
     {
         if (!IsSessionHost) return;
         var host = Session.AsHost();
-        host.IsLocked = true;
         host.SetProperty(SessionPropStarted, new SessionProperty("1", VisibilityPropertyOptions.Member));
         await host.SavePropertiesAsync();
-        Debug.Log("[NetworkSession] Game start flagged — Phase 2 loads the shared world from here.");
+        Debug.Log("[NetworkSession] Game start flagged — waiting for the full room in the hub.");
         SessionUpdated?.Invoke();
     }
 

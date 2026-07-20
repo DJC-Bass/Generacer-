@@ -180,13 +180,15 @@ public class DroneCar : MonoBehaviour
             rb.AddForce(Vector3.down * knockDownforce, ForceMode.Acceleration);
     }
 
-    /// <summary>Switches this drone into hub Drone-ending chase mode: it chases the player along the
-    /// ground and fires, with no path required. Called by the spawner instead of Initialize().</summary>
+    /// <summary>Switches this drone into hub Drone-ending chase mode: it chases a player along the
+    /// ground and fires, with no path required. Called by the spawner instead of Initialize().
+    /// Multiplayer (host sim): picks ONE RANDOM player and STICKS with them for this drone's whole
+    /// life — the swarm deliberately splits its attention across both teams (the per-entity sticky
+    /// random targeting from the design spec). Single-player: the local car, as ever.</summary>
     public void BeginChase()
     {
         chaseMode = true;
-        var p = PlayerRegistry.LocalCar;
-        if (p != null) chaseTarget = p.transform;
+        chaseTarget = MultiplayerWorld.PickStickyTarget(anyArea: true);
     }
 
     /// <summary>Drives along the ground toward the player (horizontal seek + downforce) and fires.
@@ -194,11 +196,13 @@ public class DroneCar : MonoBehaviour
     /// look; the downforce keeps it pressed onto the floor. The relentless hub-swarm behaviour.</summary>
     void ChasePlayer()
     {
+        // Sticky targeting: keep the picked player until they cease to exist (disconnect destroys
+        // their puppet) — only then pick a random replacement; idle if no players remain.
+        chaseTarget = MultiplayerWorld.ValidateStickyTarget(chaseTarget, anyArea: true);
         if (chaseTarget == null)
         {
-            var p = PlayerRegistry.LocalCar;
-            if (p == null) return;
-            chaseTarget = p.transform;
+            chaseTarget = MultiplayerWorld.PickStickyTarget(anyArea: true);
+            if (chaseTarget == null) return;
         }
 
         // Seek the player along the ground plane only (ignore the height difference).
@@ -363,6 +367,10 @@ public class DroneCar : MonoBehaviour
         if (projectile != null)
             projectile.Launch(direction, projectileSpeed);
 
+        // Multiplayer host: stream this projectile to the clients (visual-only puppets there;
+        // hits stay host-authoritative). No-op in single-player / on clients.
+        NpcReplicator.Track(proj, NpcKind.Projectile, projectilePrefab);
+
         // Prevent the projectile from colliding with THIS drone as it spawns
         var myCol = GetComponentInChildren<Collider>();
         var projCol = proj.GetComponent<Collider>();
@@ -408,7 +416,9 @@ public class DroneCar : MonoBehaviour
         Transform t = obj.transform;
         while (t != null)
         {
-            if (t.CompareTag(playerTagForShooting)) return true;
+            // Remote players' solid puppets carry the RemotePlayer tag — on the multiplayer host
+            // (the only place drones simulate) they're shoot-at-able exactly like the local player.
+            if (t.CompareTag(playerTagForShooting) || t.CompareTag("RemotePlayer")) return true;
             t = t.parent;
         }
         return false;
@@ -467,55 +477,72 @@ public class DroneCar : MonoBehaviour
     //  Player Contact Detection
     // -------------------------------------------------------
 
-    // Set true once the player hits this drone. Correction drops to the soft
+    // Set true once a player hits this drone. Correction drops to the soft
     // values permanently (no recovery) and downforce pulls the drone off-track.
     private bool playerHit = false;
+
+    // Who last shoved this drone (multiplayer bounty attribution): the local (host) player, or a
+    // remote player's clientId. Remote puppets are solid + tagged RemotePlayer, so on the host sim
+    // ANY player can physically knock a drone off — the bounty goes to whoever actually did it.
+    private bool lastHitByRemote;
+    private ulong lastHitClientId;
 
     // Guards the bounty so multiple colliders crossing the kill floor in one frame
     // (before this object is actually destroyed) can't pay out more than once.
     private bool bountyClaimed = false;
 
     /// <summary>
-    /// Called by the kill floor as this car is destroyed there. If the player
-    /// knocked it off the track (playerHit), awards its credit bounty to the player.
-    /// A car that fell on its own or finished the track never reaches here, so only
-    /// genuine player knock-offs pay out.
+    /// Called by the kill floor as this car is destroyed there. If a player knocked it off the track
+    /// (playerHit), awards its credit bounty to THAT player — the local inventory for the local
+    /// (host) player, or a bounty message to the remote player's machine.
     /// </summary>
     public void AwardKnockoffBounty()
     {
         if (bountyClaimed) return;
         bountyClaimed = true;
 
-        if (!playerHit) return;   // not knocked off by the player — no reward
-        if (PlayerInventory.Instance == null) return;
+        if (!playerHit) return;   // not knocked off by a player — no reward
 
+        if (lastHitByRemote)
+        {
+            NpcReplicator.SendBounty(lastHitClientId, creditReward);
+            Debug.Log($"[DroneCar] Remote player (client {lastHitClientId}) knocked this car off — " +
+                      $"bounty {creditReward} sent.");
+            return;
+        }
+
+        if (PlayerInventory.Instance == null) return;
         PlayerInventory.Instance.AddCredits(creditReward);
         AudioManager.PlayKnockoffBounty();   // 2D reward stinger
         Debug.Log($"[DroneCar] Player knocked this car into the kill floor — " +
                   $"awarded {creditReward} credits");
     }
 
-    void OnCollisionEnter(Collision collision)
-    {
-        if (IsPlayer(collision.collider))
-            playerHit = true;
-    }
+    void OnCollisionEnter(Collision collision) => RegisterPlayerContact(collision.collider);
+    void OnCollisionStay(Collision collision) => RegisterPlayerContact(collision.collider);
 
-    void OnCollisionStay(Collision collision)
+    void RegisterPlayerContact(Collider other)
     {
-        if (IsPlayer(collision.collider))
-            playerHit = true;
-    }
-
-    bool IsPlayer(Collider other)
-    {
-        // Walk up the hierarchy in case a wheel or sub-collider made contact
         Transform t = other.transform;
         while (t != null)
         {
-            if (t.CompareTag(playerTag)) return true;
+            if (t.CompareTag(playerTag))
+            {
+                playerHit = true;
+                lastHitByRemote = false;
+                return;
+            }
+            if (t.CompareTag("RemotePlayer"))
+            {
+                playerHit = true;
+                if (MultiplayerWorld.TryGetCarOwner(t, out ulong clientId, out bool isLocal) && !isLocal)
+                {
+                    lastHitByRemote = true;
+                    lastHitClientId = clientId;
+                }
+                return;
+            }
             t = t.parent;
         }
-        return false;
     }
 }

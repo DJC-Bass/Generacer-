@@ -49,15 +49,13 @@ public class BoulderObstacle : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         spawnTime = Time.time;
 
-        // Find the player once at spawn � homing checks this each frame.
-        // If the player is destroyed/replaced (e.g. after a scene reload), the
-        // reference becomes null and homing simply stops applying force.
-        var playerObj = PlayerRegistry.LocalCar;
-        if (playerObj != null)
-        {
-            playerTransform = playerObj.transform;
-            playerCar = playerObj.GetComponent<CarController>();
-        }
+        // Find the target once at spawn � homing checks this each frame. If the target is
+        // destroyed/replaced, the reference becomes null and homing simply stops applying force.
+        // Multiplayer (host sim): STICKY random in-track player, per the design spec — this boulder
+        // hunts that one player for its whole flight. Single-player: the local car, as ever.
+        playerTransform = MultiplayerWorld.PickStickyTarget(anyArea: false);
+        // Puppet targets have no CarController (null = ground-duration homing only, which is fine).
+        playerCar = playerTransform != null ? playerTransform.GetComponentInParent<CarController>() : null;
     }
 
     /// <summary>
@@ -117,6 +115,9 @@ public class BoulderObstacle : MonoBehaviour
     /// </summary>
     void ApplyHoming()
     {
+        // A boulder is ballistic: if its player left the track mid-flight it does NOT retarget —
+        // homing just cuts out and the arc continues naturally (drones are the retargeting entities).
+        playerTransform = MultiplayerWorld.ValidateStickyTarget(playerTransform, anyArea: false);
         if (playerTransform == null) return;
 
         // Full 3D direction from boulder to player (vertical included). Gravity is off

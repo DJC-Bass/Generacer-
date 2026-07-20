@@ -290,16 +290,147 @@ NetworkVariables — same authority model, zero editor setup).**
   gameplay needs that branch** — audited all `LoadScene` sites; the only unbranched one left is the
   legacy `ReturnToHub.cs`, which is referenced by nothing (dead).
 
-**Phase 5 — Server-simulated AI & obstacles**
-- Drones, challengers, boulders, lightning, fans: spawn **server-side only** as NetworkObjects (drones
-  reuse the Phase 3 extrapolation sync — they're fast too). All their random rolls happen on the server.
-- Sticky targeting: on spawn the server picks a random player **currently in the track** and keeps that
-  reference for the entity's lifespan; if the target leaves/disconnects, retarget a random remaining track
-  player, or despawn if none remain.
+**Phase 5 — Server-simulated AI & obstacles — ✅ CODE-COMPLETE 2026-07-20 (compiles 0 errors; on the
+message layer like everything else — no NetworkObjects). PLUS the player-collision request (below).**
+- **`Multiplayer/NpcReplicator.cs` (new, on the MultiplayerWorld object)** — host-simulated entities
+  streamed to clients. The HOST runs the one true sim (the existing DroneCar/Boulder/projectile
+  scripts, untouched physics); every spawn registers via `NpcReplicator.Track(go, kind, prefab,
+  scale)` (no-op in SP/on clients, so spawners call it unconditionally) and streams typed state:
+  **drones/challengers 15 Hz, projectiles 20 Hz, boulders 8 Hz — with GRAVITY-aware extrapolation**
+  (`RemoteCarPuppet.projectGravity`: ballistic arcs curve between updates). Client puppets are built
+  by PREFAB NAME from `RegisterPrefab` calls each spawner makes on every machine (registering a drone
+  prefab auto-registers its projectile prefab — clients have no other path to it); spawns that beat
+  the track-scene load park and retry when states arrive. Despawns replicate on destroy (kill floor,
+  lifetime, scene unload); `ClearRoundPuppets` sweeps at round end. **Bandwidth note:** worst case
+  (~30 boulders + ~20 drones + projectiles) ≈ 100–200 KB/s host upstream at 5 remote clients — fine
+  on a decent connection, revisit rates if a weak host stutters.
+- **Spawner gating** (`MultiplayerWorld.IsClientOnly` + `AnyPlayerInTrackServer`): DroneCarSpawner
+  (+ChallengerCarSpawner — same script), BoulderSpawner, LightningSpawner idle on clients; host-side
+  boulder/lightning also idle while nobody is racing. **DroneCarSpawner also needed a phase fix: it
+  gated on `Phase.InTrack`, which NEVER occurs in the multiplayer puppet loop — track drones had
+  silently never spawned in MP.** Lightning is EVENT-replicated (host rolls point+column height →
+  `SpawnStrikeAt(point, height)` runs identically on every machine — same hazard, per-client contact
+  damage stays local and consistent). Fans stay locally spawned everywhere but all their rolls now
+  derive from `DeriveRandom("fans")` (they'd silently diverged per client before).
+- **Sticky random targeting per the spec** (`MultiplayerWorld.PickStickyTarget(anyArea)` /
+  `ValidateStickyTarget`): pool = players **currently in the track** (server `inTrackNow` +
+  local car/remote puppets), `anyArea: true` for the hub ending swarm. Chase drones stick until the
+  target CEASES TO EXIST (disconnect destroys the puppet) → then retarget randomly, idle if none.
+  Boulders stick for their whole flight; if their player leaves the track mid-arc the homing just cuts
+  out (ballistic — deliberately no retarget). **The "swarm splitting between players" the user saw in
+  testing is now the DESIGNED behaviour, properly:** before, each machine ran its own private swarm
+  chasing its own local player (the split was an artifact of two overlapping local sims); now ONE
+  host swarm exists, every machine sees the SAME drones, and each drone deliberately hunts one
+  randomly chosen player.
+- **Server-truth first place (closes Phase 4's interim semantics):** AI racers exist only on the host,
+  so its `AnyRacerFinishedAhead` is THE verdict — broadcast on rising edge (`GNRC_RACER_FIN`) so every
+  client's local flag (credits bonus + finish reports) mirrors it, and `MultiplayerScoring.HandleFinish`
+  now judges by the SERVER flag (client verdict logged if it disagrees).
+- **Host-authoritative per-player effects:** projectiles collide with remote players' solid puppets
+  (tag `RemotePlayer`, added to TagManager) → `GNRC_NPC_HIT` to the victim → `DroneProjectile.
+  ApplyRemoteHitToLocalPlayer()` (pop-up + momentum halt, or the multiplayer-safe game-over exit in
+  the hub drone ending). Knockoff bounties are ATTRIBUTED: `DroneCar` records who last shoved it
+  (local tag vs RemotePlayer → clientId via `MultiplayerWorld.TryGetCarOwner`) and the kill floor
+  payout goes to that player (`GNRC_BOUNTY` for remotes) — so ANY player can knock drones off, not
+  just the host.
+- **PLAYER-vs-PLAYER COLLISION (user request, 2026-07-20):** remote player puppets are now SOLID —
+  `StripPuppet(go, keepColliders: true)` keeps colliders and turns every Rigidbody KINEMATIC
+  (ContinuousSpeculative) instead of destroying them, and puppets carry the new **`RemotePlayer` tag**
+  (never "Player": portals/kill floors/tag lookups still can't grab them). Cars bump instead of
+  phasing; a kinematic puppet is infinitely massy, so each machine's car bounces off the other's
+  puppet (standard casual-racer soft collision — with ~100 ms latency both sides feel their own
+  bounce). Drone/boulder puppets are solid the same way (they shove the local car like the real sim);
+  projectile puppets stay collider-less (hits are host-authoritative). **Consequence handled:** all
+  players spawned on the SAME authored pose — now a formation offset (3 abreast, rows behind, keyed by
+  sorted-clientId index) applies at hub capture, portal entry and hub return so nobody materialises
+  inside a teammate. The old ReturnToHubLocally per-client boulder cleanup was REMOVED (boulders are
+  shared now — a returning player must not delete them).
+- **Two-instance checks:** track drones spawn (~60 s into a round) and BOTH machines see the same
+  groups; drone projectiles hit either player (pop-up on the victim's screen); a client ramming a
+  drone knocks it off and gets the bounty; boulders/lightning identical on both screens; fans
+  identical; drone-ending swarm = same drones on both machines, attention split between players;
+  players physically bump; spawn-in is a staggered formation, no overlap launch.
 
-**Phase 6 — Multiplayer UX & polish**
-- Team SD tally HUD, teammate markers, drone-wins counter, round scoreboard.
-- Remote cars' `CarEngineAudio` driven off replicated speed (the all-3D audio design anticipated this).
+**STAGED ENTRY & MID-GAME JOINING (user flow change, 2026-07-20 — replaces the original
+"everyone auto-launches on START GAME"):**
+- **Host presses START GAME → only the HOST auto-enters the hub.** The lobby is NOT locked at start
+  anymore (`StartGameAsync` no longer sets `IsLocked`; NGO approval no longer rejects started games).
+  Every other player's READY button becomes **ENTER GAME** (`NetworkSessionManager.EnterStartedGame`)
+  — they enter the hub individually, on their own accord, which also ends the everyone-materialises-
+  at-once spawn-point choke (on top of the Phase 5 formation offsets).
+- **The game loop does NOT begin until every seat the lobby allows is in the hub**: the server round
+  loop waits (no timeout) until `readyClients.Count >= Session.MaxPlayers` (2 × team size — two teams
+  of one waits for the 2nd player; two teams of two waits for all four). Then it **LOCKS the lobby**
+  and starts the rounds.
+- **Mid-game joining:** a player leaving mid-game (server `OnClientDisconnected`) **UNLOCKS** the
+  lobby; a replacement joins through the normal lobby flow, presses ENTER GAME, and on hub arrival
+  `MarkReady` (a) **syncs them into the round in progress** — a targeted ROUND_START now carries the
+  TRUE remaining time (the message gained a `remaining` float; joiners load the same seed/track, get
+  the portal, and their timer matches) — and (b) **re-locks** once the room is full again. Rounds keep
+  running throughout; the loop never re-waits after it has begun.
+- **Two-instance checks:** host starts alone → hub idle, no countdown/portal; second player ENTER GAME
+  → loop begins + lobby shows locked; kill the client mid-game → lobby unlocks; rejoin → synced into
+  the live round with the matching timer → lobby re-locks.
+
+**Phase 6 — Multiplayer UX & polish — ✅ CODE-COMPLETE 2026-07-20 for the USER-SCOPED subset only:
+teammate markers, remote engine audio, and the RIVAL system. Explicitly OUT by user decision: team SD
+tally HUD / drone-wins counter / scoreboard ("players keep track of the wins on their own").**
+- **`Multiplayer/RemoteCarMarker.cs` (new)** — floating label over remote cars: code-built 3D
+  TextMeshPro, billboarded to the camera each LateUpdate. `RemoteCarManager.RefreshMarkers()` labels
+  per-VIEWER: **"TEAMMATE"** (cyan) over your own team's cars, **"RIVAL"** (red-orange) over the one
+  opposing player assigned to YOU — rival markers are inherently private because each machine only
+  labels its own rival. Refreshes on roster changes and rival-map updates.
+- **`Multiplayer/RemoteCarAudio.cs` (new)** — engine audio for puppets, driven off replicated speed
+  (the all-3D audio groundwork's payoff). The prefab's own `CarEngineAudio` TUNING (unique clip,
+  pitch/volume curves, 3D settings) is copied off the prefab ASSET at puppet build (the instance's
+  component is stripped), and the identical speed→pitch/volume mapping runs from
+  `RemoteCarPuppet.CurrentVelocity` (horizontal only, eased, global-SFX-scaled).
+- **RIVAL system (in `MultiplayerScoring`):** when the game loop begins (full room), the server gives
+  every player a random rival FROM THE OPPOSING TEAM — each direction is a random permutation, so
+  assignments are injective (nobody is the rival of two players on a side) but not necessarily
+  mutual. **Reward:** reaching the end portal while your rival hasn't finished that round ⇒
+  **+100 credits** (`rivalBonusCredits`; `GNRC_RIVAL_BONUS` to the finisher, reward stinger; a
+  per-round `finishedThisRound` ledger on the server decides — if the rival never finishes at all,
+  you still beat them). **Replacement:** a mid-game leaver creates a VACANCY (their orphaned
+  opponents lose their rival — marker disappears — and their old rival is remembered); the next
+  joiner inherits it exactly per the spec: joiner's rival = the leaver's old rival (validated,
+  random-opposing fallback), and everyone whose rival was the leaver gets the joiner. Full map
+  broadcast via `GNRC_RIVALS`; clients read their own entry (`TryGetMyRival` — a try-pattern because
+  clientId 0 is the HOST, not a sentinel). Assignment waits briefly for hello-roster stragglers.
+- **Two-instance checks (1v1 = mutual rivals by construction):** RIVAL marker over each other's cars
+  + engine audio audible/revving on approach; finish first → +100 on top of completion credits, and
+  the rival finishing second gets nothing; leave with a 3rd instance joining → the newcomer inherits
+  the rival slot and markers update on both sides.
+
+**VOICE CHAT (user feature, 2026-07-20 — ✅ CODE-COMPLETE, compiles 0 errors). DIY on the
+custom-message layer — deliberately NOT Vivox (no dashboard service dependency).**
+- **`Multiplayer/VoiceChat.cs` (new, on the MultiplayerWorld object):** Unity `Microphone` capture at
+  16 kHz mono → 40 ms frames → **RMS voice-activity gate** (threshold + 0.35 s hangover; silence costs
+  ZERO bandwidth, ~32 KB/s only while talking) → PCM16 frames over `GNRC_VOICE` (Unreliable), host
+  relays. Playback = per-sender ring buffers feeding **streaming AudioClips** (audio-thread
+  `PCMReaderCallback`, zero-fill on underrun), volume scaled by the global SFX level.
+- **Two channels:** PROXIMITY (default, open mic) — the voice source is attached to the sender's
+  PUPPET CAR, spatialBlend 1, linear rolloff to ~90 units, so voices come out of cars with distance
+  falloff exactly like the engines; relayed to everyone, distance decides who hears. **TEAM (LB
+  toggles)** — `Gamepad.leftShoulder` flips team-direct mode (menu-move tick as feedback; suppressed
+  while menus open): frames flagged team are relayed by the host ONLY to the sender's teammates
+  (hello-roster teams) and play 2D. LB again = back to proximity-only, per the spec.
+- **Team-speaker list:** while teammates (INCLUDING yourself) are team-talking, their names stack in
+  the upper-left (code-built overlay canvas, sortingOrder 140 — under the HUDs; position tunable via
+  `speakerListOffset`, default below the SD HUD), each line appearing while speaking and vanishing
+  ~0.4 s after (`speakerLinger`).
+- **Settings (BOTH menus' AUDIO panels, persisted in `GameSettings`, polled live each second so
+  changes apply mid-game):** MICROPHONE device cycler ("Default" + `Microphone.devices`; unplugged
+  saved device falls back to Default), MUTE MY MIC (capture stops entirely), MUTE PLAYERS (no
+  playback of anyone). Main Menu = three new `BuildOptionRow`s under the sliders (panel grown to
+  760×440, nav rewired to a 5-row chain); Start Menu = new `BuildCyclerRow` helper matching its
+  slider-row styling.
+- **Testing caveats:** two instances on ONE machine share the microphone — expect feedback/echo
+  (test with a headset, or MUTE MY MIC on one instance); Multiplayer Play Mode virtual players may
+  not get mic access at all — real two-machine testing is the honest check. No echo cancellation /
+  noise suppression (raw PCM walkie-talkie quality — if it ever matters, that's the point to
+  reconsider Vivox). Keyboard players have no team-toggle binding yet (LB is gamepad-only, matching
+  the project's controller-first inputs).
 
 **Phase 7 — Testing (throughout, not at the end)**
 - Multiplayer Play Mode virtual players from Phase 3 onward; Unity Transport network simulator for
@@ -675,21 +806,20 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 ---
 
 ## Exact next steps for a fresh agent
-1. **Phases 0–4 are DONE in code** (full detail per phase in the roadmap section; everything compiles
+1. **Phases 0–5 are DONE in code** (full detail per phase in the roadmap section; everything compiles
    0-errors via `dotnet build Assembly-CSharp.csproj`; still ZERO editor asset setup beyond filling
-   `multiplayerCars`). Two-instance runtime checklist: the Phase 2/3 world+puppet checks plus the
-   Phase 4 scoring checks (SD award to the first-place finisher only, kill-floor wipes shrinking the
-   team SD aggregate, two timed-out rounds ⇒ drone swarm on BOTH machines, 3 distinct team SDs +
-   a claimed round ⇒ victory banner on both, green for winners / red for losers).
-2. Then **Phase 5 (server-simulated AI & obstacles)** — drones/challengers/boulders/lightning become
-   HOST-simulated and streamed (the RemoteCarPuppet extrapolation is reusable for drones), with the
-   user's **sticky random targeting**: entity picks a random player from the in-track pool
-   (`PlayerRegistry` + the server's area sets) and keeps it for its lifespan (retarget on leave,
-   despawn if none). That also makes first-place SERVER-judged (one shared AnyRacerFinishedAhead)
-   instead of per-client, closing Phase 4's interim semantics.
-3. Deferred smaller items: MP drone-ending secret escape (ClipperEnding) — the ending's hub portal is
-   currently inert in MP; remote-car presentation pass (wheel spin, engine audio off replicated speed,
-   flames/SD VFX from replicated events, nameplates) + team SD tally HUD = **Phase 6**.
+   `multiplayerCars` — note the **`RemotePlayer` tag was added to ProjectSettings/TagManager.asset**,
+   which the editor picks up automatically). Two-instance runtime checklist: the cumulative Phase 2–4
+   checks plus Phase 5's (same drones/boulders/lightning/fans on both screens, projectile hits and
+   drone-knockoff bounties working for BOTH players, one shared ending swarm splitting its attention,
+   players bumping instead of phasing, staggered formation spawns).
+2. **Phase 6 is DONE for its user-scoped subset** (teammate/rival markers, remote engine audio, the
+   rival system — see its roadmap entry). Explicitly NOT wanted: score HUDs (players track wins
+   themselves). Still-deferred oddments if ever requested: puppet wheel spin, flames/SD VFX from
+   replicated events, nameplates with player names, MP drone-ending secret escape (ClipperEnding),
+   remote knockback on the SHOVED player's own screen, WindowsAudio possibly reacting to a puppet.
+3. **Phase 7 (testing)** is really "keep doing the two-instance runs with Network Simulator latency" —
+   the critical scenarios list lives in the Phase 7 roadmap entry, plus each phase's own checks.
 2. **Assign the 8 empty AudioLibrary slots** and, if desired, give distinct clips to the placeholder-shared
    pairs listed above.
 3. **Verify component wiring in the editor** (GUIDs match the `.meta`s, so they should bind — confirm no

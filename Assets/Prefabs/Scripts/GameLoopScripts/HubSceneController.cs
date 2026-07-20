@@ -165,6 +165,12 @@ public class HubSceneController : MonoBehaviour
             yield break;
         }
 
+        // Multiplayer (Phase 5): ONE host-simulated swarm replicated to everyone — each drone picks
+        // a random player and sticks with them, so the swarm splits its attention across both teams
+        // and every machine sees the SAME drones. Clients render the replicated puppets only.
+        NpcReplicator.RegisterPrefab(droneCarPrefab);
+        if (MultiplayerWorld.IsClientOnly) yield break;
+
         float baseInterval = 1f / Mathf.Max(0.1f, droneEndingSpawnRate);
         for (int i = 0; i < droneEndingMaxDrones; i++)
         {
@@ -193,6 +199,9 @@ public class HubSceneController : MonoBehaviour
 
         var dc = drone.GetComponent<DroneCar>();
         if (dc != null) dc.BeginChase();
+
+        // Multiplayer host: stream this ending-swarm drone to the clients. No-op otherwise.
+        NpcReplicator.Track(drone, NpcKind.Drone, droneCarPrefab);
     }
 
     static void SetLayerRecursively(GameObject go, int layer)
