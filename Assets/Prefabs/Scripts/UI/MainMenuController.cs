@@ -282,12 +282,16 @@ public class MainMenuController : MonoBehaviour
         sfxSlider   = BuildAudioRow(go.transform, "SFX",   -95f, InitialSfx(),   OnSfxChanged,   out sfxValueText);
 
         // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceChat) ----
+        // Smaller value text + a wider box so long microphone device names fit without bleeding.
         var micLabels = BuildMicrophoneOptions(out int micStart);
-        var micSel = BuildOptionRow(go.transform, "MICROPHONE",  -180f, micLabels, micStart, OnMicDeviceChanged);
+        var micSel = BuildOptionRow(go.transform, "MICROPHONE",  -180f, micLabels, micStart, OnMicDeviceChanged,
+                                    selectorWidth: 450f, valueFontSize: 22f);
         var muteSelfSel = BuildOptionRow(go.transform, "MUTE MY MIC", -250f,
-            new List<string> { "Off", "On" }, GameSettings.VoiceMuteSelf ? 1 : 0, i => GameSettings.VoiceMuteSelf = i == 1);
+            new List<string> { "Off", "On" }, GameSettings.VoiceMuteSelf ? 1 : 0, i => GameSettings.VoiceMuteSelf = i == 1,
+            selectorWidth: 450f, valueFontSize: 24f);
         var mutePlayersSel = BuildOptionRow(go.transform, "MUTE PLAYERS", -320f,
-            new List<string> { "Off", "On" }, GameSettings.VoiceMuteOthers ? 1 : 0, i => GameSettings.VoiceMuteOthers = i == 1);
+            new List<string> { "Off", "On" }, GameSettings.VoiceMuteOthers ? 1 : 0, i => GameSettings.VoiceMuteOthers = i == 1,
+            selectorWidth: 450f, valueFontSize: 24f);
 
         // Up/Down chains all five rows (wrapping); Left/Right adjusts the focused row's value.
         SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, micSel, muteSelfSel, mutePlayersSel });
@@ -408,9 +412,11 @@ public class MainMenuController : MonoBehaviour
     }
 
     /// <summary>One labelled option row: "LABEL   &lt;  value  &gt;". Returns the cycler. Positioned manually
-    /// (top-left origin, y grows downward), matching the audio rows.</summary>
+    /// (top-left origin, y grows downward), matching the audio rows. The optional width/font overrides
+    /// let the audio rows fit long values (microphone device names) without bleeding off the box.</summary>
     OptionSelector BuildOptionRow(Transform panel, string label, float y, IList<string> options,
-                                  int startIndex, System.Action<int> onChanged)
+                                  int startIndex, System.Action<int> onChanged,
+                                  float selectorWidth = 380f, float valueFontSize = 0f)
     {
         var lbl = NewText(panel, label + "Label", 32f, TextAlignmentOptions.MidlineLeft);
         lbl.text = label;
@@ -423,8 +429,17 @@ public class MainMenuController : MonoBehaviour
         var sel = CreateOptionSelector(panel, options, startIndex, onChanged);
         var srt = (RectTransform)sel.transform;
         srt.anchorMin = srt.anchorMax = srt.pivot = new Vector2(0f, 1f);
-        srt.sizeDelta = new Vector2(380f, 50f);
+        srt.sizeDelta = new Vector2(selectorWidth, 50f);
         srt.anchoredPosition = new Vector2(310f, y);
+
+        // Optional smaller value text + ellipsis so an over-long value never bleeds off the box.
+        var valueLabel = sel.transform.Find("Value") != null
+            ? sel.transform.Find("Value").GetComponent<TextMeshProUGUI>() : null;
+        if (valueLabel != null)
+        {
+            if (valueFontSize > 0f) valueLabel.fontSize = valueFontSize;
+            valueLabel.overflowMode = TextOverflowModes.Ellipsis;
+        }
 
         return sel;
     }

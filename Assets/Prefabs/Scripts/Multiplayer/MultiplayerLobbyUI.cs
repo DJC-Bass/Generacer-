@@ -180,7 +180,10 @@ public class MultiplayerLobbyUI : MonoBehaviour
         SetPanels(false, false, false, false, true);
         WireRoomNavigation();
         RefreshRoom();
-        Focus(readyButton != null ? readyButton.gameObject : null);
+        // ENTER GAME (if visible) is the natural landing spot; otherwise the team switcher.
+        Focus(readyButton != null && readyButton.gameObject.activeSelf
+            ? readyButton.gameObject
+            : switchTeamButton != null ? switchTeamButton.gameObject : null);
     }
 
     void Exit()
@@ -302,28 +305,13 @@ public class MultiplayerLobbyUI : MonoBehaviour
         finally { busy = false; }
     }
 
-    async void OnReadyPressed()
+    void OnEnterGamePressed()
     {
-        if (busy || Manager == null || Manager.Session == null) return;
-
-        // Once the game has started this button IS the entry door: each player enters the hub on
-        // their own accord (the round loop waits for the full room; mid-game joiners come through
-        // here too after filling a freed seat).
-        if (Manager.GameStarted)
-        {
-            SetStatus("ENTERING THE GAME...");
-            Manager.EnterStartedGame();
-            return;
-        }
-
-        busy = true;
-        try
-        {
-            bool ready = NetworkSessionManager.IsReady(Manager.Session.CurrentPlayer);
-            await Manager.SetLocalPlayerPropertyAsync(NetworkSessionManager.PlayerPropReady, ready ? "0" : "1");
-        }
-        catch (Exception e) { FailStatus(e); }
-        finally { busy = false; }
+        if (busy || Manager == null || !Manager.GameStarted) return;
+        // Each player enters the hub on their own accord (the round loop waits for the full room;
+        // mid-game joiners come through here too after filling a freed seat).
+        SetStatus("ENTERING THE GAME...");
+        Manager.EnterStartedGame();
     }
 
     async void OnStartGamePressed()
@@ -475,6 +463,13 @@ public class MultiplayerLobbyUI : MonoBehaviour
         return panel;
     }
 
+    /// <summary>Width of the lobby row buttons — extended rightward well past the standard buttons
+    /// so the name section has real room (the panel stays left-anchored like every other screen).</summary>
+    const float BrowserRowWidth = 980f;
+    /// <summary>Width of the player-count section on the right of each lobby row — ALWAYS visible;
+    /// only the name section ellipsizes.</summary>
+    const float BrowserCountWidth = 170f;
+
     GameObject BuildBrowserPanel()
     {
         var panel = NewPanel("MultiplayerBrowser");
@@ -486,6 +481,42 @@ public class MultiplayerLobbyUI : MonoBehaviour
         browserBackButton = MakeButton("BACK", column, () => { AudioManager.PlayMenuBack(); ShowRoot(); });
         WireBrowserNavigation();
         return panel;
+    }
+
+    /// <summary>A lobby row: ONE button with TWO sections — the lobby name on the left (ellipsized
+    /// when long, so it can never bleed) and its own right-hand column showing current/max players,
+    /// which is always fully visible. Text matches the standard buttons (size + auto-caps).</summary>
+    Button MakeBrowserRow(string lobbyName, string countText, UnityEngine.Events.UnityAction onClick)
+    {
+        var row = MakeButton("LobbyRow", browserListParent, onClick, widthOverride: BrowserRowWidth);
+
+        // MakeButton built a single centred fill label — repurpose it as the NAME section.
+        float countFraction = BrowserCountWidth / BrowserRowWidth;
+        var nameLabel = row.GetComponentInChildren<TextMeshProUGUI>();
+        if (nameLabel != null)
+        {
+            nameLabel.text = lobbyName;
+            nameLabel.alignment = TextAlignmentOptions.MidlineLeft;
+            nameLabel.overflowMode = TextOverflowModes.Ellipsis;
+            var nrt = nameLabel.rectTransform;
+            nrt.anchorMin = new Vector2(0f, 0f);
+            nrt.anchorMax = new Vector2(1f - countFraction, 1f);
+            nrt.offsetMin = new Vector2(24f, 0f);
+            nrt.offsetMax = new Vector2(-10f, 0f);
+        }
+
+        // The players column: "current/max", right-aligned in its reserved section.
+        var countLabel = SettingsUI.NewText(row.transform, "Players", owner.buttonFontSize * 0.82f,
+                                            TextAlignmentOptions.MidlineRight);
+        countLabel.color = owner.buttonTextColor;
+        var crt = countLabel.rectTransform;
+        crt.anchorMin = new Vector2(1f - countFraction, 0f);
+        crt.anchorMax = new Vector2(1f, 1f);
+        crt.offsetMin = Vector2.zero;
+        crt.offsetMax = new Vector2(-24f, 0f);
+        countLabel.text = countText;
+
+        return row;
     }
 
     GameObject BuildRoomPanel()
@@ -511,7 +542,15 @@ public class MultiplayerLobbyUI : MonoBehaviour
         carLE.preferredWidth = owner.buttonSize.x; carLE.minWidth = owner.buttonSize.x;
         carLE.preferredHeight = owner.buttonSize.y; carLE.minHeight = owner.buttonSize.y;
 
-        readyButton = MakeButton("READY: NO", column, OnReadyPressed);
+        // Make the DISPLAYED default the REAL selection. The cycler only writes SelectedCarStore in
+        // its change callback, so without this a player who never touched it saw the first car's name
+        // but spawned the scene's default prefab (until they cycled away and back).
+        OnCarChanged(carCycler.Index);
+
+        // No READY mechanic: the host starts whenever they like and enters immediately; this button
+        // is hidden until then, when it appears for CLIENTS as their individual door into the hub.
+        readyButton = MakeButton("ENTER GAME", column, OnEnterGamePressed);
+        readyButton.gameObject.SetActive(false);
         startButton = MakeButton("START GAME", column, OnStartGamePressed);
         leaveButton = MakeButton("LEAVE LOBBY", column, OnLeavePressed);
 
@@ -555,7 +594,8 @@ public class MultiplayerLobbyUI : MonoBehaviour
         bool host = Manager != null && Manager.IsSessionHost;
         if (startButton != null) startButton.gameObject.SetActive(host);
 
-        var items = new List<Selectable> { switchTeamButton, carCycler, readyButton };
+        var items = new List<Selectable> { switchTeamButton, carCycler };
+        if (readyButton != null && readyButton.gameObject.activeSelf) items.Add(readyButton);   // ENTER GAME (clients, post-start)
         if (host) items.Add(startButton);
         items.Add(leaveButton);
         SettingsUI.WireVerticalWrap(items);
@@ -578,21 +618,15 @@ public class MultiplayerLobbyUI : MonoBehaviour
         {
             foreach (var info in sessions)
             {
-                string teamSize = "?";
-                if (info.Properties != null &&
-                    info.Properties.TryGetValue(NetworkSessionManager.SessionPropTeamSize, out var p))
-                    teamSize = p.Value;
-
                 string name = string.IsNullOrEmpty(info.Name) ? "LOBBY" : info.Name;
-                if (name.Length > 20) name = name.Substring(0, 20);
                 int playerCount = info.MaxPlayers - info.AvailableSlots;
-                string label = $"{name}   {playerCount}/{info.MaxPlayers}   ({teamSize} PER TEAM)";
 
                 string id = info.Id;
-                var row = MakeButton(label, browserListParent, () => OnJoinByIdPressed(id, name));
+                // Two-section row: name (ellipsized) + its own always-visible players column.
+                // (No per-team note — there are always two teams.)
+                var row = MakeBrowserRow(name, $"{playerCount}/{info.MaxPlayers}",
+                                         () => OnJoinByIdPressed(id, name));
                 row.transform.SetSiblingIndex(browserListParent.childCount - 2);   // above BACK
-                var text = row.GetComponentInChildren<TextMeshProUGUI>();
-                if (text != null) text.fontSize = 28f;
                 browserRows.Add(row);
             }
         }
@@ -629,24 +663,26 @@ public class MultiplayerLobbyUI : MonoBehaviour
         teamTwoList.text = two.ToString() + FreeSlotLines(cap - manager.CountTeam(2));
         if (unassigned.Length > 0) teamOneList.text += "\nUNASSIGNED:\n" + unassigned;
 
-        bool ready = NetworkSessionManager.IsReady(session.CurrentPlayer);
-        var readyLabel = readyButton.GetComponentInChildren<TextMeshProUGUI>();
+        // ENTER GAME appears only for CLIENTS once the host has started (and vanishes once used);
+        // pre-start there's nothing to press — the host starts whenever they're ready.
+        bool showEnter = manager.GameStarted && !manager.IsSessionHost && !manager.WorldLaunched;
+        if (readyButton != null && readyButton.gameObject.activeSelf != showEnter)
+        {
+            readyButton.gameObject.SetActive(showEnter);
+            WireRoomNavigation();
+            if (showEnter) Focus(readyButton.gameObject);   // land the client straight on the door
+        }
 
         if (manager.GameStarted)
         {
             if (startButton != null) startButton.interactable = false;
-            // The game is live: the READY button becomes the door into the hub. The round loop
-            // won't begin until every seat is filled, so enter whenever you're set.
-            if (readyLabel != null) readyLabel.text = "ENTER GAME";
             SetStatus(manager.WorldLaunched
                 ? "LOADING THE WORLD..."
                 : "GAME IN PROGRESS — PRESS ENTER GAME WHEN READY");
         }
-        else
+        else if (manager.IsSessionHost && startButton != null)
         {
-            if (readyLabel != null) readyLabel.text = ready ? "READY: YES" : "READY: NO";
-            if (manager.IsSessionHost && startButton != null)
-                startButton.interactable = manager.ReadyToStart(out _);
+            startButton.interactable = manager.ReadyToStart(out _);
         }
     }
 
@@ -658,7 +694,6 @@ public class MultiplayerLobbyUI : MonoBehaviour
         string line = name;
         if (p.Id == session.Host) line += " (HOST)";
         if (!string.IsNullOrEmpty(car)) line += "  [" + car + "]";
-        line += NetworkSessionManager.IsReady(p) ? "  ✓ READY" : "  ...";
         if (session.CurrentPlayer != null && p.Id == session.CurrentPlayer.Id) line = "▸ " + line;
         return line;
     }
@@ -719,14 +754,16 @@ public class MultiplayerLobbyUI : MonoBehaviour
         return go.transform;
     }
 
-    Button MakeButton(string label, Transform parent, UnityEngine.Events.UnityAction onClick)
+    Button MakeButton(string label, Transform parent, UnityEngine.Events.UnityAction onClick,
+                      float widthOverride = 0f)
     {
         var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button));
         go.transform.SetParent(parent, false);
         go.GetComponent<Image>().color = Color.white;   // ColorBlock states provide the real colours
 
+        float width = widthOverride > 0f ? widthOverride : owner.buttonSize.x;
         var le = go.AddComponent<LayoutElement>();
-        le.preferredWidth = owner.buttonSize.x; le.minWidth = owner.buttonSize.x;
+        le.preferredWidth = width; le.minWidth = width;
         le.preferredHeight = owner.buttonSize.y; le.minHeight = owner.buttonSize.y;
 
         var btn = go.GetComponent<Button>();

@@ -371,6 +371,27 @@ message layer like everything else — no NetworkObjects). PLUS the player-colli
 - **Two-instance checks:** host starts alone → hub idle, no countdown/portal; second player ENTER GAME
   → loop begins + lobby shows locked; kill the client mid-game → lobby unlocks; rejoin → synced into
   the live round with the matching timer → lobby re-locks.
+- **UI cleanup (2026-07-20, pre-real-machine testing):** (1) Main Menu AUDIO voice rows: smaller value
+  text (22/24) + selector boxes widened to 450 + ELLIPSIS so long microphone names never bleed
+  (Start Menu cyclers got the ellipsis + a small font drop too; `BuildOptionRow` gained optional
+  width/font params). (2) Lobby BROWSER stays LEFT-anchored like every other screen (a brief
+  centring experiment was reverted by user request); lobby rows extend rightward to 980
+  (`BrowserRowWidth`; `MakeButton` gained `widthOverride`) and are **TWO-SECTION buttons**
+  (`MakeBrowserRow`): the lobby NAME on the left (MidlineLeft, ELLIPSIZED when long, can never
+  bleed) + a dedicated always-visible right column (`BrowserCountWidth` 170) showing "current/max"
+  players — no per-team note (there are always two teams). Text matches REFRESH/BACK (uniform size +
+  auto-caps via SettingsUI.NewText).
+  (2b) **Car-cycler default fix:** the room's CAR cycler now applies its DISPLAYED initial value as
+  the REAL selection at build (`OnCarChanged(carCycler.Index)` right after creation) — previously
+  `SelectedCarStore` was only written by the change callback, so a player who never touched the
+  cycler saw the first car's name but spawned the scene's default prefab (the cycle-away-and-back
+  workaround). Pattern note: any code-built cycler/slider whose initial value implies state must
+  apply that state explicitly — construction does not fire onChanged (by design, see Gotchas).
+  (3) **READY mechanic REMOVED** — `ReadyToStart` now only checks team validity (host starts whenever);
+  the room's ready button is gone, replaced by a hidden **ENTER GAME** button that appears (and grabs
+  focus + rewires nav) for CLIENTS once the game starts, disappearing after use; player rows no longer
+  show ready markers. The `ready` player property/`IsReady` helper remain in NetworkSessionManager but
+  are vestigial.
 
 **Phase 6 — Multiplayer UX & polish — ✅ CODE-COMPLETE 2026-07-20 for the USER-SCOPED subset only:
 teammate markers, remote engine audio, and the RIVAL system. Explicitly OUT by user decision: team SD

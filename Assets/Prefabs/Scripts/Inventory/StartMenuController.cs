@@ -421,8 +421,13 @@ public class StartMenuController : MonoBehaviour
         lbl.text = label; lbl.color = cfg.buttonTextColor;
         Stretch(lbl.rectTransform, new Vector2(0f, 0f), new Vector2(0.38f, 1f), new Vector2(10f, 0f), Vector2.zero);
 
-        var sel = SettingsUI.OptionCycler(row.transform, Theme(), cfg.buttonFontSize * 0.7f, options, startIndex, onChanged);
+        var sel = SettingsUI.OptionCycler(row.transform, Theme(), cfg.buttonFontSize * 0.6f, options, startIndex, onChanged);
         Stretch((RectTransform)sel.transform, new Vector2(0.40f, 0.1f), new Vector2(1f, 0.9f), Vector2.zero, new Vector2(-10f, 0f));
+
+        // Ellipsis so an over-long value (microphone device names) never bleeds off the box.
+        var valueLabel = sel.transform.Find("Value") != null
+            ? sel.transform.Find("Value").GetComponent<TextMeshProUGUI>() : null;
+        if (valueLabel != null) valueLabel.overflowMode = TextOverflowModes.Ellipsis;
 
         return sel;
     }

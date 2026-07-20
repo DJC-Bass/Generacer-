@@ -371,8 +371,10 @@ public class NetworkSessionManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>True when the lobby can launch: every member has a team, no team is over the size
-    /// rule, and everyone is ready. Outs a short reason for the UI when it can't.</summary>
+    /// <summary>True when the lobby can launch: every member has a team and no team is over the size
+    /// rule. There is NO ready-up requirement — the host starts whenever they like, and everyone else
+    /// enters the hub on their own accord (the game loop itself waits for the full room). Outs a
+    /// short reason for the UI when it can't.</summary>
     public bool ReadyToStart(out string reason)
     {
         reason = "";
@@ -384,7 +386,6 @@ public class NetworkSessionManager : MonoBehaviour
             if (t == 1) one++;
             else if (t == 2) two++;
             else { reason = "A PLAYER HAS NO TEAM"; return false; }
-            if (!IsReady(p)) { reason = "WAITING FOR PLAYERS TO READY UP"; return false; }
         }
         if (one > TeamSize || two > TeamSize) { reason = "A TEAM IS OVER THE SIZE LIMIT"; return false; }
         return true;
