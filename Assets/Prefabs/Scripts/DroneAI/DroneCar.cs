@@ -123,6 +123,10 @@ public class DroneCar : MonoBehaviour
 
     void FixedUpdate()
     {
+        // Round preload (multiplayer): the track — and its pre-spawned drones — exist but are FROZEN
+        // until the hub portal spawns. No movement, no path progress, no burst-fire timers.
+        if (MultiplayerWorld.TrackFrozen) return;
+
         if (finished) return;
 
         // Hub Drone-ending swarm: ignore the path and home in on the player.

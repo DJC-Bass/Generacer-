@@ -157,7 +157,8 @@ public class MultiplayerWorld : MonoBehaviour
 
     // ---- Named messages (server → clients unless noted) ----
     const string MsgReady = "GNRC_READY";            // client → server: hub loaded, ready for rounds
-    const string MsgRoundStart = "GNRC_ROUND_START"; // {round, seed}
+    const string MsgRoundStart = "GNRC_ROUND_START"; // PRELOAD: {round, seed, live, remaining} — load + freeze
+    const string MsgRoundGo = "GNRC_ROUND_GO";       // GO: {remaining} — portal spawns, track unfreezes, timers start
     const string MsgRoundEnd = "GNRC_ROUND_END";     // {reason: 0 timeout, 1 all racers left}
     const string MsgArea = "GNRC_AREA";              // client → server: {inTrack}
     const string MsgRacerFin = "GNRC_RACER_FIN";     // an AI racer crossed the finish — first place forfeit
@@ -172,9 +173,24 @@ public class MultiplayerWorld : MonoBehaviour
     private Vector3 hubSpawnPos;
     private Quaternion hubSpawnRot;
     private bool inTrackLocally;
-    private bool roundActive;
+    private bool roundActive;        // the round is LIVE (portal up, timers running)
+    private bool roundLoaded;        // the track is (pre)loaded for this round — set before roundActive
+    private bool loadingTrack;       // the async load/generation is still in flight
+    private float pendingGoRemaining = -1f;   // a GO arrived mid-load — apply when the load settles
     private int roundNumber;
     private bool teleporting;
+
+    // ---- Loading screen ("ROADING") ----
+    private GameObject loadingCanvas;
+    private RectTransform loadingFill;
+
+    /// <summary>True between a round's PRELOAD and its GO: the track exists but is FROZEN — host AI
+    /// (DroneCar) holds still and no round/AI timing advances until the hub portal spawns.</summary>
+    public static bool TrackFrozen { get; private set; }
+
+    /// <summary>True once this round's track is (pre)loaded locally — the spawners' cue to do their
+    /// heavy spawning early (frozen) instead of at portal time.</summary>
+    public static bool RoundLoadedLocally => Instance != null && Instance.roundLoaded;
     private GameObject trackSpeedometerRoot;   // TrackScene's own speed HUD — shown only while in the track area
     private readonly List<(Light light, bool wasEnabled)> hubLights = new List<(Light, bool)>();
     private readonly List<(Light light, bool wasEnabled)> trackLights = new List<(Light, bool)>();
@@ -210,7 +226,11 @@ public class MultiplayerWorld : MonoBehaviour
 
     void OnDestroy()
     {
-        if (Instance == this) Instance = null;
+        if (Instance == this)
+        {
+            Instance = null;
+            TrackFrozen = false;   // never leak a freeze into single-player / the next session
+        }
     }
 
     void BeginSession()
@@ -263,10 +283,12 @@ public class MultiplayerWorld : MonoBehaviour
             NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
 
         CurrentRoundSeed = 0;
+        TrackFrozen = false;
         GameLoopManager.RemoteDriven = false;
         GameLoopManager.RemoteTrackSeed = 0;
         GameLoopManager.EndRun();
         if (PlayerInventory.Instance != null) PlayerInventory.Instance.ResetToStarting();
+        if (loadingCanvas != null) Destroy(loadingCanvas);
 
         Debug.Log($"[MultiplayerWorld] Teardown to menu: {reason}");
         SceneManager.LoadScene(MainMenuSceneName);   // single-mode load also clears the additive track
@@ -518,27 +540,164 @@ public class MultiplayerWorld : MonoBehaviour
     //  Round lifecycle (client side — applied from messages; the host applies locally too)
     // -------------------------------------------------------
 
-    void ApplyRoundStart(int round, int seed, float remaining)
+    /// <summary>PRELOAD: load + generate the track NOW (behind the ROADING screen, during the hub
+    /// countdown — the least-crucial moment) and keep it FROZEN. The heavy work — scene load, track
+    /// generation, the zero-delay drone groups — all lands here instead of at portal-spawn time, so
+    /// the portal/boost-gate appear later without a lag spike. `live` = a mid-game joiner being
+    /// synced into an already-running round: unfreeze immediately after the load with the true
+    /// remaining time.</summary>
+    void ApplyRoundPreload(int round, int seed, bool live, float remaining)
     {
-        if (!begun || roundActive) return;
-        var manager = GameLoopManager.Instance;
-        if (manager != null && manager.GameEnded) return;   // an ending has taken over — no more rounds
+        if (!begun || roundLoaded || roundActive) return;
+        var glm = GameLoopManager.Instance;
+        if (glm != null && glm.GameEnded) return;   // an ending has taken over — no more rounds
+
         roundNumber = round;
-        roundActive = true;
+        roundLoaded = true;
+        TrackFrozen = true;
+        pendingGoRemaining = live ? remaining : -1f;
         CurrentRoundSeed = seed;
         GameLoopManager.RemoteTrackSeed = seed;
+        if (glm != null) glm.RemotePrepareRound(round, glm.roundDuration);   // state set, timers held
 
+        Debug.Log($"[MultiplayerWorld] Round {round} preloading (seed {seed}) — track generates now, frozen until the portal.");
+        StartCoroutine(LoadTrackRoutine(glm != null ? glm.trackSceneName : "TrackScene"));
+    }
+
+    IEnumerator LoadTrackRoutine(string trackName)
+    {
+        loadingTrack = true;
+        ShowLoadingScreen();
+
+        var op = SceneManager.LoadSceneAsync(trackName, LoadSceneMode.Additive);
+        while (op != null && !op.isDone)
+        {
+            SetLoadingProgress(op.progress / 0.9f * 0.85f);   // async load maps to 0..85%
+            yield return null;
+        }
+
+        // Generation + the zero-delay spawner bursts run in the next frames' Start/Update — the bar
+        // rides through them so the (single-frame) generation hitch happens behind the screen.
+        SetLoadingProgress(0.9f);
+        yield return null;
+        yield return null;
+        SetLoadingProgress(0.97f);
+        yield return null;
+        SetLoadingProgress(1f);
+        yield return null;
+
+        HideLoadingScreen();
+        loadingTrack = false;
+
+        // A GO (or live mid-join sync) arrived while we were loading — apply it now.
+        if (pendingGoRemaining >= 0f)
+        {
+            float remaining = pendingGoRemaining;
+            pendingGoRemaining = -1f;
+            ApplyRoundGo(remaining);
+        }
+    }
+
+    /// <summary>GO: the hub countdown ended — the portal/boost gate spawn (no load hitch: the track
+    /// already exists), the track UNFREEZES, and the round + AI timers officially start.</summary>
+    void ApplyRoundGo(float remaining)
+    {
+        if (!begun || !roundLoaded || roundActive) return;
+        if (loadingTrack) { pendingGoRemaining = remaining; return; }   // apply the moment the load settles
+
+        roundActive = true;
+        TrackFrozen = false;
         var glm = GameLoopManager.Instance;
-        if (glm != null) glm.RemoteBeginRound(round, remaining);   // fires OnPortalShouldSpawn
+        if (glm != null) glm.RemoteBeginRound(roundNumber, remaining);   // fires OnPortalShouldSpawn
+        Debug.Log($"[MultiplayerWorld] Round {roundNumber} LIVE — portal up, {remaining:F0}s on the clock.");
+    }
 
-        Debug.Log($"[MultiplayerWorld] Round {round} started (seed {seed}) — loading the track area.");
-        SceneManager.LoadSceneAsync(glm != null ? glm.trackSceneName : "TrackScene", LoadSceneMode.Additive);
+    // -------------------------------------------------------
+    //  "ROADING" loading screen (code-built overlay + progress bar)
+    // -------------------------------------------------------
+
+    void EnsureLoadingScreen()
+    {
+        if (loadingCanvas != null) return;
+
+        loadingCanvas = new GameObject("RoadingCanvas");
+        DontDestroyOnLoad(loadingCanvas);
+        var canvas = loadingCanvas.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 500;   // above everything, including the victory banner (400)
+        var scaler = loadingCanvas.AddComponent<UnityEngine.UI.CanvasScaler>();
+        scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        var bg = new GameObject("Background", typeof(RectTransform));
+        bg.transform.SetParent(loadingCanvas.transform, false);
+        var bgImage = bg.AddComponent<UnityEngine.UI.Image>();
+        bgImage.color = new Color(0.02f, 0.03f, 0.05f, 0.97f);
+        var bgrt = bgImage.rectTransform;
+        bgrt.anchorMin = Vector2.zero; bgrt.anchorMax = Vector2.one;
+        bgrt.offsetMin = Vector2.zero; bgrt.offsetMax = Vector2.zero;
+
+        var title = new GameObject("Title", typeof(RectTransform));
+        title.transform.SetParent(loadingCanvas.transform, false);
+        var titleText = title.AddComponent<TMPro.TextMeshProUGUI>();
+        titleText.text = "ROADING";
+        titleText.fontSize = 130f;
+        titleText.fontStyle = TMPro.FontStyles.Bold;
+        titleText.alignment = TMPro.TextAlignmentOptions.Center;
+        titleText.color = Color.white;
+        var trt = titleText.rectTransform;
+        trt.anchorMin = trt.anchorMax = trt.pivot = new Vector2(0.5f, 0.5f);
+        trt.sizeDelta = new Vector2(1200f, 200f);
+        trt.anchoredPosition = new Vector2(0f, 60f);
+
+        var barBack = new GameObject("BarBack", typeof(RectTransform));
+        barBack.transform.SetParent(loadingCanvas.transform, false);
+        var barBackImage = barBack.AddComponent<UnityEngine.UI.Image>();
+        barBackImage.color = new Color(1f, 1f, 1f, 0.12f);
+        var brt = barBackImage.rectTransform;
+        brt.anchorMin = brt.anchorMax = brt.pivot = new Vector2(0.5f, 0.5f);
+        brt.sizeDelta = new Vector2(820f, 26f);
+        brt.anchoredPosition = new Vector2(0f, -90f);
+
+        var fill = new GameObject("Fill", typeof(RectTransform));
+        fill.transform.SetParent(barBack.transform, false);
+        var fillImage = fill.AddComponent<UnityEngine.UI.Image>();
+        fillImage.color = new Color(0.90f, 0.45f, 0.12f, 1f);   // the menus' orange accent
+        loadingFill = fillImage.rectTransform;
+        loadingFill.anchorMin = new Vector2(0f, 0f);
+        loadingFill.anchorMax = new Vector2(0f, 1f);   // anchorMax.x is driven by progress
+        loadingFill.offsetMin = Vector2.zero;
+        loadingFill.offsetMax = Vector2.zero;
+    }
+
+    void ShowLoadingScreen()
+    {
+        EnsureLoadingScreen();
+        SetLoadingProgress(0f);
+        loadingCanvas.SetActive(true);
+    }
+
+    void SetLoadingProgress(float t)
+    {
+        if (loadingFill != null)
+            loadingFill.anchorMax = new Vector2(Mathf.Clamp01(t), 1f);
+    }
+
+    void HideLoadingScreen()
+    {
+        if (loadingCanvas != null) loadingCanvas.SetActive(false);
     }
 
     void ApplyRoundEnd(byte reason)
     {
-        if (!begun || !roundActive) return;
+        if (!begun || (!roundActive && !roundLoaded)) return;
         roundActive = false;
+        roundLoaded = false;
+        TrackFrozen = false;
+        pendingGoRemaining = -1f;
+        loadingTrack = false;
+        HideLoadingScreen();
 
         if (inTrackLocally) ReturnToHubLocally(notifyServer: false);
 
@@ -620,17 +779,22 @@ public class MultiplayerWorld : MonoBehaviour
         var glm = GameLoopManager.Instance;
         while (begun)
         {
-            float countdown = glm != null
-                ? UnityEngine.Random.Range(glm.minPortalCountdown, glm.maxPortalCountdown)
-                : UnityEngine.Random.Range(10f, 20f);
-            yield return new WaitForSeconds(countdown);
-
+            // PRELOAD first: the track loads/generates on every machine NOW (behind the ROADING
+            // screen, frozen) — then the hub countdown runs, comfortably covering the load. The
+            // portal/boost gate spawn at GO with zero load hitch.
             int seed = UnityEngine.Random.Range(1, 999999);
             enteredThisRound.Clear();
             inTrackNow.Clear();
             var scoring = GetComponent<MultiplayerScoring>();
             if (scoring != null) scoring.ResetRoundServer();   // fresh first-place claim
-            BroadcastRoundStart(roundNumber + 1, seed);
+            BroadcastRoundPreload(roundNumber + 1, seed);
+
+            float countdown = glm != null
+                ? UnityEngine.Random.Range(glm.minPortalCountdown, glm.maxPortalCountdown)
+                : UnityEngine.Random.Range(10f, 20f);
+            yield return new WaitForSeconds(countdown);
+
+            BroadcastRoundGo();
 
             // Round runs for the configured duration, or ends early once at least one player raced
             // and every player who entered the track has left it (per the multiplayer design).
@@ -682,7 +846,9 @@ public class MultiplayerWorld : MonoBehaviour
         // Mid-game joiner (a freed seat was refilled): catch them up on the round in progress so
         // they get the portal + the same track instead of idling until the next round…
         if (roundActive)
-            SendRoundStartTo(clientId, roundNumber, CurrentRoundSeed, serverRoundRemaining);
+            SendRoundPreloadTo(clientId, roundNumber, CurrentRoundSeed, live: true, serverRoundRemaining);
+        else if (roundLoaded)
+            SendRoundPreloadTo(clientId, roundNumber, CurrentRoundSeed, live: false, 0f);
 
         // …give them the vacant RIVAL slot (they inherit the leaver's rival; the leaver's orphaned
         // opponents get them)…
@@ -733,8 +899,14 @@ public class MultiplayerWorld : MonoBehaviour
         {
             reader.ReadValueSafe(out int round);
             reader.ReadValueSafe(out int seed);
+            reader.ReadValueSafe(out bool live);
             reader.ReadValueSafe(out float remaining);
-            ApplyRoundStart(round, seed, remaining);
+            ApplyRoundPreload(round, seed, live, remaining);
+        });
+        msg.RegisterNamedMessageHandler(MsgRoundGo, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out float remaining);
+            ApplyRoundGo(remaining);
         });
         msg.RegisterNamedMessageHandler(MsgRoundEnd, (sender, reader) =>
         {
@@ -772,39 +944,53 @@ public class MultiplayerWorld : MonoBehaviour
         var msg = Msg;
         if (msg == null) return;
         msg.UnregisterNamedMessageHandler(MsgRoundStart);
+        msg.UnregisterNamedMessageHandler(MsgRoundGo);
         msg.UnregisterNamedMessageHandler(MsgRoundEnd);
         msg.UnregisterNamedMessageHandler(MsgReady);
         msg.UnregisterNamedMessageHandler(MsgArea);
         msg.UnregisterNamedMessageHandler(MsgRacerFin);
     }
 
-    void BroadcastRoundStart(int round, int seed)
+    void BroadcastRoundPreload(int round, int seed)
     {
-        var glm = GameLoopManager.Instance;
-        float remaining = glm != null ? glm.roundDuration : 300f;
-        using (var writer = new FastBufferWriter(sizeof(int) * 2 + sizeof(float), Allocator.Temp))
+        using (var writer = new FastBufferWriter(sizeof(int) * 2 + sizeof(bool) + sizeof(float), Allocator.Temp))
         {
             writer.WriteValueSafe(round);
             writer.WriteValueSafe(seed);
-            writer.WriteValueSafe(remaining);
+            writer.WriteValueSafe(false);   // not live — load + freeze until GO
+            writer.WriteValueSafe(0f);
             SendToRemoteClients(MsgRoundStart, writer);
         }
-        ApplyRoundStart(round, seed, remaining);   // the host applies directly rather than relying on loopback
+        ApplyRoundPreload(round, seed, live: false, remaining: 0f);   // host applies directly
     }
 
-    /// <summary>Targeted round sync for a MID-GAME joiner: the round already started for everyone
-    /// else — send them the same round/seed with the TRUE time remaining, so they load the identical
-    /// track, get the portal, and their timer matches.</summary>
-    void SendRoundStartTo(ulong clientId, int round, int seed, float remaining)
+    void BroadcastRoundGo()
+    {
+        var glm = GameLoopManager.Instance;
+        float remaining = glm != null ? glm.roundDuration : 300f;
+        using (var writer = new FastBufferWriter(sizeof(float), Allocator.Temp))
+        {
+            writer.WriteValueSafe(remaining);
+            SendToRemoteClients(MsgRoundGo, writer);
+        }
+        ApplyRoundGo(remaining);
+    }
+
+    /// <summary>Targeted round sync for a MID-GAME joiner: same round + seed as everyone else, with
+    /// `live` set if the round is already running (their track loads, then unfreezes immediately with
+    /// the TRUE time remaining so their timer matches).</summary>
+    void SendRoundPreloadTo(ulong clientId, int round, int seed, bool live, float remaining)
     {
         var nm = NetworkManager.Singleton;
         if (nm == null || nm.CustomMessagingManager == null || clientId == nm.LocalClientId) return;
-        using var writer = new FastBufferWriter(sizeof(int) * 2 + sizeof(float), Allocator.Temp);
+        using var writer = new FastBufferWriter(sizeof(int) * 2 + sizeof(bool) + sizeof(float), Allocator.Temp);
         writer.WriteValueSafe(round);
         writer.WriteValueSafe(seed);
+        writer.WriteValueSafe(live);
         writer.WriteValueSafe(remaining);
         nm.CustomMessagingManager.SendNamedMessage(MsgRoundStart, clientId, writer, NetworkDelivery.ReliableSequenced);
-        Debug.Log($"[MultiplayerWorld] Synced mid-game joiner {clientId} into round {round} ({remaining:F0}s left).");
+        Debug.Log($"[MultiplayerWorld] Synced mid-game joiner {clientId} into round {round} " +
+                  $"({(live ? $"live, {remaining:F0}s left" : "preloading")}).");
     }
 
     void BroadcastRoundEnd(byte reason)

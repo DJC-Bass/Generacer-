@@ -172,16 +172,29 @@ public class GameLoopManager : MonoBehaviour
     //  works unmodified in multiplayer.
     // -------------------------------------------------------
 
-    /// <summary>Server said a round started: set the round state and spawn the portal everywhere.</summary>
+    /// <summary>Server said the round is PRELOADING: the track loads/generates NOW (during the hub
+    /// countdown, the least-crucial moment) but stays frozen — round state is set so the TrackScene's
+    /// Start-time consumers (RoundObstacleSelector's RoundNumber read, spawner elapsed maths) see the
+    /// new round, while the phase stays HubCountdown so nothing ticks and no portal spawns yet.</summary>
+    public void RemotePrepareRound(int roundNumber, float roundDuration)
+    {
+        if (!RemoteDriven) return;
+        RoundNumber = roundNumber;
+        CurrentPhase = Phase.HubCountdown;          // frozen: the puppet timer only ticks in HubPortalActive
+        RoundTimeRemaining = roundDuration;         // elapsed reads as 0 until the round goes live
+        playerFirstPlaceThisRound = false;
+        roundOutcomeCounted = false;
+        AnyRacerFinishedAhead = false;
+        Debug.Log($"[GameLoop] (remote) Round {roundNumber} preloading — track generating, timers held");
+    }
+
+    /// <summary>Server said the round is LIVE: spawn the portal everywhere and start the timer.</summary>
     public void RemoteBeginRound(int roundNumber, float roundDuration)
     {
         if (!RemoteDriven) return;
         RoundNumber = roundNumber;
         CurrentPhase = Phase.HubPortalActive;
         RoundTimeRemaining = roundDuration;
-        playerFirstPlaceThisRound = false;
-        roundOutcomeCounted = false;
-        AnyRacerFinishedAhead = false;
         Debug.Log($"[GameLoop] (remote) Round {roundNumber} — portal active, {roundDuration:F0}s round timer");
         OnPortalShouldSpawn?.Invoke();
     }

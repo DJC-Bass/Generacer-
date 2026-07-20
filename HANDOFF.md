@@ -453,6 +453,31 @@ custom-message layer — deliberately NOT Vivox (no dashboard service dependency
   reconsider Vivox). Keyboard players have no team-toggle binding yet (LB is gamepad-only, matching
   the project's controller-first inputs).
 
+**ROUND PRELOAD/GO SPLIT + "ROADING" SCREEN (user perf request, 2026-07-20 — ✅ compiles 0 errors).**
+The track used to load AT portal-spawn time — a big hitch right as the hub portal/boost gate appeared.
+The round now has two server messages instead of one:
+- **PRELOAD** (`GNRC_ROUND_START`, now `{round, seed, live, remaining}`) fires at the TOP of the round
+  cycle (right after the post-round delay): every machine async-loads the TrackScene behind a
+  code-built **"ROADING" screen** (full overlay, sortingOrder 500, orange progress bar — async load
+  maps to 0–85%, the synchronous generation hitch rides behind the 90–100% settle frames), generates,
+  and lets spawners do their heavy work — **but FROZEN**: new `MultiplayerWorld.TrackFrozen` halts
+  `DroneCar.FixedUpdate` (no movement/path progress/burst timers), and
+  `GameLoopManager.RemotePrepareRound` sets round state while keeping phase `HubCountdown` so the
+  round timer holds at full (spawner "elapsed" reads 0 — delayed groups wait naturally, zero-delay
+  drone groups spawn immediately during the freeze). `DroneCarSpawner`'s MP gate is now
+  `MultiplayerWorld.RoundLoadedLocally` (was phase-based). Boulder/lightning idle anyway
+  (`AnyPlayerInTrackServer` false while the portal is down).
+- **GO** (`GNRC_ROUND_GO {remaining}`) fires when the hub countdown ends: portal/boost gate spawn
+  (ZERO load hitch — the track already exists), `TrackFrozen` clears, `RemoteBeginRound` starts the
+  round timer. A GO landing on a still-loading client is parked (`pendingGoRemaining`) and applied the
+  moment the load settles. Mid-game joiner sync reuses PRELOAD with `live: true` + true remaining
+  (load → unfreeze immediately); a joiner during the countdown gets a plain preload.
+- Round end / teardown clear all of it (`roundLoaded`, `TrackFrozen`, pending GO, the screen);
+  `OnDestroy` clears the static so a freeze can never leak into single-player.
+- **Checks:** portal/gate spawn with no hitch (the hitch moved behind the ROADING screen at round
+  top); drones visible standing frozen on the track if you look; timers/Drone-Target-Finish pacing
+  measured from PORTAL spawn, not scene load; mid-join both during countdown and mid-round.
+
 **Phase 7 — Testing (throughout, not at the end)**
 - Multiplayer Play Mode virtual players from Phase 3 onward; Unity Transport network simulator for
   100–200 ms latency + loss. Critical scenarios: two cars passing at combined 1200 mph, portal teleports

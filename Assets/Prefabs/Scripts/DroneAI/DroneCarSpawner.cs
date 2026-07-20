@@ -56,11 +56,12 @@ public class DroneCarSpawner : MonoBehaviour
         float elapsed = GameLoopManager.Instance.roundDuration
                       - GameLoopManager.Instance.RoundTimeRemaining;
 
-        // "Racing" phase differs by mode: single-player flips to InTrack when the player enters; the
-        // multiplayer puppet loop keeps HubPortalActive for the whole round (per-player presence
-        // isn't a global phase) — the round being active IS the racing window.
+        // "Racing" window differs by mode: single-player flips to InTrack when the player enters; in
+        // multiplayer the spawner runs as soon as the round's track is (pre)loaded — zero-delay
+        // groups do their heavy spawning DURING the preload freeze (DroneCar holds still until GO),
+        // and delayed groups wait naturally because elapsed stays 0 while the timer is held.
         bool racing = MultiplayerWorld.IsMultiplayerGame
-            ? GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.HubPortalActive
+            ? MultiplayerWorld.RoundLoadedLocally
             : GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.InTrack;
         if (!racing) return;
         if (elapsed < spawnDelay) return;
