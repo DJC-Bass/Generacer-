@@ -20,7 +20,7 @@ using UnityEngine.InputSystem;
 ///    yourself) are team-talking, their names stack in the upper-left of the screen (below the SD
 ///    HUD), appearing while speaking and vanishing when they stop.
 ///
-/// Capture: Unity Microphone at 16 kHz mono, chopped into 40 ms frames, gated by a simple RMS
+/// Capture: Unity Microphone at 16 kHz mono, chopped into 30 ms frames, gated by a simple RMS
 /// voice-activity detector (plus hangover) so silence costs zero bandwidth (~32 KB/s only WHILE
 /// talking). Playback: per-sender ring buffers feeding streaming AudioClips (audio-thread reads,
 /// zero-fill on underrun). The host relays frames — proximity to everyone else, team to the sender's
@@ -35,12 +35,15 @@ public class VoiceChat : MonoBehaviour
     const string MsgVoice = "GNRC_VOICE";   // {senderId, mode, sampleCount, pcm16 bytes}
 
     const int SampleRate = 16000;
-    const int FrameSamples = 640;           // 40 ms per frame ⇒ ~25 packets/s while talking
+    // 30 ms per frame ⇒ ~33 packets/s while talking. MUST stay small enough that the PCM16 payload
+    // (2 bytes/sample) + the 11-byte header fits NGO's Unreliable single-packet cap of 1264 bytes —
+    // 640 samples (1291 B) overflowed it and every voice frame threw instead of sending.
+    const int FrameSamples = 480;
     const byte ModeProximity = 0;
     const byte ModeTeam = 1;
 
     [Header("Voice Activity Detection")]
-    [Tooltip("RMS level a 40 ms frame must exceed to count as speech.")]
+    [Tooltip("RMS level a 30 ms frame must exceed to count as speech.")]
     public float vadThreshold = 0.02f;
     [Tooltip("Seconds transmission continues after the level drops (so words aren't clipped).")]
     public float vadHangover = 0.35f;

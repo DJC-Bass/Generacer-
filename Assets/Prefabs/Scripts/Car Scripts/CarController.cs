@@ -323,6 +323,10 @@ public class CarController : MonoBehaviour
     private float trailKickTimer;      // >0 forces the trail on for an external boost (BoostGate), no real turbo
 
     public bool IsTurboActive => turboTimer > 0f;
+    /// <summary>True on any frame a rear tire is actually laying a turbo skid mark (a boost — real
+    /// turbo, BoostGate kick or loop — AND that wheel grounded). Replicated to remote puppets so they
+    /// can mirror the trail; see RemoteCarEffects.</summary>
+    public bool TurboTrailsActive { get; private set; }
     /// <summary>True while the car is in the drift state (throttle + brake held).</summary>
     public bool IsDrifting => isDrifting;
     /// <summary>True while the car is past vertical on a loop (drives the camera FOV kick).</summary>
@@ -1199,13 +1203,14 @@ public class CarController : MonoBehaviour
         }
         trailsWereAirborne = IsAirborne;
 
-        UpdateOneTrail(trailRL, 2);   // rear-left  wheel index
-        UpdateOneTrail(trailRR, 3);   // rear-right wheel index
+        bool emitL = UpdateOneTrail(trailRL, 2);   // rear-left  wheel index
+        bool emitR = UpdateOneTrail(trailRR, 3);   // rear-right wheel index
+        TurboTrailsActive = emitL || emitR;        // replicated so remote puppets mirror the trail
     }
 
-    void UpdateOneTrail(TrailRenderer tr, int wheelIndex)
+    bool UpdateOneTrail(TrailRenderer tr, int wheelIndex)
     {
-        if (tr == null) return;
+        if (tr == null) return false;
 
         // Emit only while "boosting" — a real turbo, an external boost's trail kick (BoostGate), or
         // the loop speed-multiplier state (IsLoopGravityCut, the same flag that drives the loop FOV
@@ -1224,6 +1229,7 @@ public class CarController : MonoBehaviour
         }
 
         tr.emitting = emit;
+        return emit;
     }
 
     // -------------------------------------------------------

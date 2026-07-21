@@ -24,6 +24,10 @@ public class JetFlames : MonoBehaviour
     private CarController car;
     private float timer;
 
+    /// <summary>True while the flare is showing (a jump within the last <see cref="flameDuration"/>
+    /// seconds). Replicated to remote puppets so they flare too; see RemoteCarEffects.</summary>
+    public bool IsFlaring => timer > 0f;
+
     void Awake()
     {
         car = GetComponentInParent<CarController>();

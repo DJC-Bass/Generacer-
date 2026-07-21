@@ -42,6 +42,12 @@ public class RemoteCarManager : MonoBehaviour
     private ushort sendSequence;
     private GameObject stagingRoot;   // inactive parent: puppet Awakes are deferred until after the strip
 
+    // Cached sources for our OWN car's replicated effect state (turbo trails, jet flare), rebuilt
+    // whenever the local car changes (respawn / scene load). The SD state comes from the singleton.
+    private GameObject cachedEffectCar;
+    private CarController cachedCarController;
+    private JetFlames[] cachedJetFlames;
+
     // Host bookkeeping: the authoritative roster it rebroadcasts.
     private readonly Dictionary<ulong, (string name, string car, int team)> hostRoster =
         new Dictionary<ulong, (string, string, int)>();
@@ -201,13 +207,39 @@ public class RemoteCarManager : MonoBehaviour
         writer.WriteValueSafe(car.transform.rotation);
         writer.WriteValueSafe(linVel);
         writer.WriteValueSafe(angVel);
+        writer.WriteValueSafe(ComputeEffectFlags(car));   // turbo trails / jet flare / active SD
 
         if (IsServer) SendToRemoteClients(MsgCar, writer, NetworkDelivery.Unreliable);
         else msg.SendNamedMessage(MsgCar, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
     }
 
+    /// <summary>Reads our own car's live visual state (is a rear tire laying a turbo mark, is the jet
+    /// flame flaring, which SD ability is active) into the one byte the CAR stream carries. Component
+    /// lookups are cached and only redone when the local car instance changes (respawn / scene load).</summary>
+    byte ComputeEffectFlags(GameObject car)
+    {
+        if (car != cachedEffectCar)
+        {
+            cachedEffectCar = car;
+            cachedCarController = car.GetComponentInChildren<CarController>(true);
+            cachedJetFlames = car.GetComponentsInChildren<JetFlames>(true);
+        }
+
+        bool turbo = cachedCarController != null && cachedCarController.TurboTrailsActive;
+
+        bool flame = false;
+        if (cachedJetFlames != null)
+            foreach (var jf in cachedJetFlames)
+                if (jf != null && jf.IsFlaring) { flame = true; break; }
+
+        string sd = (SDAbilityController.Instance != null && SDAbilityController.Instance.IsActive)
+            ? SDAbilityController.Instance.ActiveSD : null;
+
+        return RemoteCarEffects.Encode(turbo, flame, sd);
+    }
+
     void HandleCarState(ulong senderId, ushort sequence, Vector3 pos, Quaternion rot,
-                        Vector3 linVel, Vector3 angVel)
+                        Vector3 linVel, Vector3 angVel, byte effectFlags)
     {
         // Host: relay every client's stream to the other clients (senderId travels in the payload).
         if (IsServer && senderId != LocalClientId)
@@ -219,6 +251,7 @@ public class RemoteCarManager : MonoBehaviour
             writer.WriteValueSafe(rot);
             writer.WriteValueSafe(linVel);
             writer.WriteValueSafe(angVel);
+            writer.WriteValueSafe(effectFlags);
             SendToRemoteClients(MsgCar, writer, NetworkDelivery.Unreliable, excludeClientId: senderId);
         }
 
@@ -227,7 +260,7 @@ public class RemoteCarManager : MonoBehaviour
         var remote = PlayerRegistry.FindRemote(senderId);
         if (remote == null || remote.Car == null) return;   // roster hasn't landed yet
         var puppet = remote.Car.GetComponent<RemoteCarPuppet>();
-        if (puppet != null) puppet.ApplyState(sequence, pos, rot, linVel, angVel);
+        if (puppet != null) puppet.ApplyState(sequence, pos, rot, linVel, angVel, effectFlags);
     }
 
     // -------------------------------------------------------
@@ -238,6 +271,10 @@ public class RemoteCarManager : MonoBehaviour
     {
         var prefab = PlayerRegistry.CarPrefabFor(carName);
         GameObject go;
+
+        // Captured (before the strip destroys their scripts) so RemoteCarEffects can re-drive them.
+        List<GameObject> capturedFlames = null;
+        List<KeyValuePair<string, ParticleSystem>> capturedSds = null;
 
         if (prefab != null)
         {
@@ -251,6 +288,7 @@ public class RemoteCarManager : MonoBehaviour
                 DontDestroyOnLoad(stagingRoot);
             }
             go = Instantiate(prefab, stagingRoot.transform);
+            CapturePlayerVisuals(go, out capturedFlames, out capturedSds);   // read JetFlames/SDAbilityVFX before strip
             StripPuppet(go, keepColliders: true);   // SOLID puppet: players can bump each other
             go.transform.SetParent(null, false);
         }
@@ -272,13 +310,16 @@ public class RemoteCarManager : MonoBehaviour
         go.AddComponent<RemoteCarPuppet>();
 
         // Phase 6: this car's own engine sound, driven by replicated speed (tuning copied off the
-        // prefab ASSET's CarEngineAudio — the puppet's instance was stripped), and the
-        // teammate/rival marker (labelled per-viewer by RefreshMarkers).
+        // prefab ASSET's CarEngineAudio — the puppet's instance was stripped), and the replicated
+        // visual flourishes (turbo trails, jet flare, SD burst) driven off the effect byte.
         if (prefab != null)
         {
             var engineTemplate = prefab.GetComponentInChildren<CarEngineAudio>(true);
             if (engineTemplate != null) go.AddComponent<RemoteCarAudio>().Configure(engineTemplate);
+
+            go.AddComponent<RemoteCarEffects>().Configure(prefab, capturedFlames, capturedSds);
         }
+        // Teammate/rival marker (labelled per-viewer by RefreshMarkers).
         go.AddComponent<RemoteCarMarker>();
 
         go.SetActive(true);
@@ -394,6 +435,39 @@ public class RemoteCarManager : MonoBehaviour
         }
     }
 
+    /// <summary>Records the flame GameObjects and each SD's particle system BEFORE the strip destroys
+    /// their scripts, so <see cref="RemoteCarEffects"/> can re-drive them from replicated state. The
+    /// flame set resolves exactly as <see cref="HideConditionalVisuals"/> and JetFlames do — the
+    /// assigned <c>flames</c> list, or every direct child when it's empty.</summary>
+    static void CapturePlayerVisuals(GameObject go, out List<GameObject> flames,
+                                     out List<KeyValuePair<string, ParticleSystem>> sds)
+    {
+        flames = new List<GameObject>();
+        sds = new List<KeyValuePair<string, ParticleSystem>>();
+
+        foreach (var jet in go.GetComponentsInChildren<JetFlames>(true))
+        {
+            if (jet.flames != null && jet.flames.Length > 0)
+            {
+                foreach (var flame in jet.flames)
+                    if (flame != null) flames.Add(flame);
+            }
+            else
+            {
+                foreach (Transform child in jet.transform)
+                    flames.Add(child.gameObject);
+            }
+        }
+
+        foreach (var vfx in go.GetComponentsInChildren<SDAbilityVFX>(true))
+        {
+            if (vfx.effects == null) continue;
+            foreach (var e in vfx.effects)
+                if (e.particleSystem != null)
+                    sds.Add(new KeyValuePair<string, ParticleSystem>(e.sdItemName, e.particleSystem));
+        }
+    }
+
     // -------------------------------------------------------
     //  Messaging plumbing
     // -------------------------------------------------------
@@ -432,7 +506,8 @@ public class RemoteCarManager : MonoBehaviour
             reader.ReadValueSafe(out Quaternion rot);
             reader.ReadValueSafe(out Vector3 linVel);
             reader.ReadValueSafe(out Vector3 angVel);
-            HandleCarState(id, sequence, pos, rot, linVel, angVel);
+            reader.ReadValueSafe(out byte effectFlags);
+            HandleCarState(id, sequence, pos, rot, linVel, angVel, effectFlags);
         });
     }
 

@@ -260,7 +260,9 @@ public class NpcReplicator : MonoBehaviour
             if (puppet.go == null) return;
         }
         var sync = puppet.go.GetComponent<RemoteCarPuppet>();
-        if (sync != null) sync.ApplyState(seq, pos, rot, linVel, angVel);
+        // NPCs (drones/boulders/projectiles) carry no player effect flags — 0, and they have no
+        // RemoteCarEffects component to consume them anyway.
+        if (sync != null) sync.ApplyState(seq, pos, rot, linVel, angVel, 0);
     }
 
     void HandleDespawn(ushort id)

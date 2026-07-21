@@ -45,12 +45,25 @@ public class RemoteCarPuppet : MonoBehaviour
     private ushort lastSequence;
     private bool hasState;
 
+    // Sibling effects driver (turbo trails / jet flare / SD burst), resolved lazily — it's added to
+    // this GameObject AFTER this component, so it isn't there yet at our Awake.
+    private RemoteCarEffects effects;
+    private bool effectsResolved;
+    RemoteCarEffects Effects
+    {
+        get
+        {
+            if (!effectsResolved) { effects = GetComponent<RemoteCarEffects>(); effectsResolved = true; }
+            return effects;
+        }
+    }
+
     /// <summary>The last replicated linear velocity — RemoteCarAudio drives the engine rev off it.</summary>
     public Vector3 CurrentVelocity => linearVelocity;
 
     /// <summary>Feeds a freshly received owner state. Out-of-order packets are dropped.</summary>
     public void ApplyState(ushort sequence, Vector3 position, Quaternion rotation,
-                           Vector3 linVel, Vector3 angVel)
+                           Vector3 linVel, Vector3 angVel, byte effectFlags)
     {
         if (hasState && !IsNewer(sequence, lastSequence)) return;   // stale/out-of-order packet
 
@@ -61,12 +74,16 @@ public class RemoteCarPuppet : MonoBehaviour
         angularVelocity = angVel;
         stateTime = Time.time;
 
+        var fx = Effects;
         if (!hasState || Vector3.Distance(transform.position, position) > snapDistance)
         {
             // First state, or a teleport-sized jump (portal): appear there, no blending.
             transform.SetPositionAndRotation(position, baseRot);
             hasState = true;
+            if (fx != null) fx.ClearTrails();   // don't streak a trail ribbon across the teleport
         }
+
+        if (fx != null) fx.ApplyFlags(effectFlags);
     }
 
     void Update()
@@ -85,6 +102,8 @@ public class RemoteCarPuppet : MonoBehaviour
         if (Vector3.Distance(transform.position, targetPos) > snapDistance)
         {
             transform.SetPositionAndRotation(targetPos, targetRot);
+            var fx = Effects;
+            if (fx != null) fx.ClearTrails();   // extrapolated past a teleport — don't streak
             return;
         }
 

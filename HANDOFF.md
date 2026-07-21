@@ -229,6 +229,26 @@ introduces its own object then.
   and each `SDAbilityVFX.effects` particle-system GameObject deactivated (stopping the system alone
   isn't enough — the owner-side `Hide()` deactivates the OBJECT). Any future conditional car accessory
   needs a line there too.
+- **Remote effect replication (2026-07-21):** puppets now MIRROR the owner's turbo tire trails, jet-jump
+  flame flare, and per-SD activation burst (previously each player saw only their own). New
+  `Multiplayer/RemoteCarEffects.cs` on every player puppet drives all three off **one extra byte on the
+  existing 30 Hz CAR stream** — bit 0 turbo-trail-emitting, bit 1 flame-flaring, bits 2-3 a 2-bit SD
+  index over a canonical `{none, Fire, Wind, Lightning}` order (`RemoteCarEffects.Encode`). LEVEL-triggered
+  (owner's *current* state, not edge events), so a dropped Unreliable packet self-heals on the next of
+  ~30/s. Payload is now 63 B (was 62) — far under the 1264 Unreliable cap; `FastBufferWriter(80)` unchanged.
+  Owner side: `RemoteCarManager.ComputeEffectFlags` reads `CarController.TurboTrailsActive` (new — set in
+  `UpdateTurboTrails`, true while a rear tire actually lays a mark), `JetFlames.IsFlaring` (new), and
+  `SDAbilityController.Instance.ActiveSD`, caching the component lookups until the local car instance
+  changes. Puppet side: `RemoteCarManager.CapturePlayerVisuals` records the flame GameObjects + each SD's
+  particle system from the INSTANCE **before** the strip (same resolution as `HideConditionalVisuals`),
+  and `Configure` rebuilds the two rear-tire `TrailRenderer`s the owner's CarController makes at runtime
+  (they aren't in the prefab) using tuning + rear-wheel offsets read off the prefab's CarController.
+  `ApplyState` gained a `byte effectFlags` param → `RemoteCarEffects.ApplyFlags`; **trails are Cleared on
+  every snap** (teleport/area-change) AND on the flame rising edge (a jump — matches the owner breaking
+  its trail when airborne) so no ribbon streaks across the gap. Flame visuals are Cone MESHES so
+  SetActive alone shows them (mirrors `JetFlames.SetFlames`); SD systems get SetActive+`Play(true)`
+  (mirrors `SDAbilityVFX`). NPC puppets pass `effectFlags: 0` (no `RemoteCarEffects` component). Any new
+  replicated car effect: add a bit in `RemoteCarEffects` + a source read in `ComputeEffectFlags`.
 - **Phase 3 boundaries:** puppet wheels don't spin / no engine audio / no nameplates (Phase 6 gives
   remotes a speed-driven audio+visual pass); drones still chase the LOCAL player per client (Phase 5
   moves AI server-side with the sticky random targeting from the registry pool); no car-to-car
@@ -426,9 +446,12 @@ tally HUD / drone-wins counter / scoreboard ("players keep track of the wins on 
 **VOICE CHAT (user feature, 2026-07-20 — ✅ CODE-COMPLETE, compiles 0 errors). DIY on the
 custom-message layer — deliberately NOT Vivox (no dashboard service dependency).**
 - **`Multiplayer/VoiceChat.cs` (new, on the MultiplayerWorld object):** Unity `Microphone` capture at
-  16 kHz mono → 40 ms frames → **RMS voice-activity gate** (threshold + 0.35 s hangover; silence costs
-  ZERO bandwidth, ~32 KB/s only while talking) → PCM16 frames over `GNRC_VOICE` (Unreliable), host
-  relays. Playback = per-sender ring buffers feeding **streaming AudioClips** (audio-thread
+  16 kHz mono → **30 ms frames (480 samples — the PCM16 payload + 11 B header MUST fit NGO's
+  Unreliable single-packet cap of 1264 B; the original 40 ms/640-sample frames were 1291 B and every
+  send THREW an OverflowException — voice dead, console spam while talking. Never enlarge frames past
+  ~620 samples; `ReliableFragmentedSequenced` is the WRONG fix for voice — head-of-line blocking)** →
+  **RMS voice-activity gate** (threshold + 0.35 s hangover; silence costs ZERO bandwidth, ~32 KB/s
+  only while talking) → PCM16 frames over `GNRC_VOICE` (Unreliable), host relays. Playback = per-sender ring buffers feeding **streaming AudioClips** (audio-thread
   `PCMReaderCallback`, zero-fill on underrun), volume scaled by the global SFX level.
 - **Two channels:** PROXIMITY (default, open mic) — the voice source is attached to the sender's
   PUPPET CAR, spatialBlend 1, linear rolloff to ~90 units, so voices come out of cars with distance
