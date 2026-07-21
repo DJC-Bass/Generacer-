@@ -31,6 +31,7 @@ public class MultiplayerScoring : MonoBehaviour
     const string MsgFinish = "GNRC_FINISH";      // client → server: {localFirstPlace}
     const string MsgSds = "GNRC_SDS";            // client → server: {count, names...} (distinct SD names held)
     const string MsgSdAward = "GNRC_SD_AWARD";   // server → one client: {sdName}
+    const string MsgFirstBonus = "GNRC_FIRST_BONUS";   // server → one client: {credits} — first across the portal
     const string MsgScore = "GNRC_SCORE";        // server → all: {droneWins}
     const string MsgEnding = "GNRC_ENDING";      // server → all: {isDroneEnding, winningTeam}
     const string MsgRivals = "GNRC_RIVALS";      // server → all: {count, [playerId, rivalId]...}
@@ -200,11 +201,31 @@ public class MultiplayerScoring : MonoBehaviour
         if (GameOverServer) return;
 
         // Rival bonus (independent of first place): finishing while your assigned rival hasn't
-        // finished this round = you beat them to the return portal → +100 credits.
+        // finished this round = you beat them to the return portal → +100 credits. (First place vs the
+        // DRONES is a separate reward — a player can be "first place" here yet still have had their
+        // rival reach the portal a moment earlier, in which case the +100 correctly went to the rival.)
         if (!finishedThisRound.Contains(clientId))
         {
-            if (rivalOf.TryGetValue(clientId, out ulong rival) && !finishedThisRound.Contains(rival))
-                SendRivalBonus(clientId);
+            if (rivalOf.TryGetValue(clientId, out ulong rival))
+            {
+                if (!finishedThisRound.Contains(rival))
+                {
+                    SendRivalBonus(clientId);
+                    Debug.Log($"[Scoring] RIVAL BONUS: client {clientId} beat their rival ({rival}) to the " +
+                              $"portal — +{rivalBonusCredits} credits.");
+                }
+                else
+                {
+                    Debug.Log($"[Scoring] No rival bonus for client {clientId}: their rival ({rival}) already " +
+                              $"reached the portal this round (the rival earned the +{rivalBonusCredits}).");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[Scoring] No rival bonus for client {clientId}: NO rival is assigned to them. " +
+                                 "Rivals are assigned only once the full room's game loop begins with BOTH teams " +
+                                 "present — check the '[Scoring] Rival pairing' logs from game start.");
+            }
             finishedThisRound.Add(clientId);
         }
 
@@ -227,6 +248,11 @@ public class MultiplayerScoring : MonoBehaviour
         claimedTeam = team;
         claimedByClient = clientId;
         Debug.Log($"[Scoring] Client {clientId} finished FIRST — round claimed for team {team}.");
+
+        // First across the portal (before the drones AND every other player) — the ONE player who wins
+        // the first-place credit bonus this round. Unconditional for the claimant; the SD award below is
+        // separate and may be skipped if the team already holds the full set.
+        SendFirstPlaceBonus(clientId);
 
         // Award one SD the TEAM doesn't collectively hold (duplicates across teams are fine).
         var teamSet = TeamDistinctSds(team);
@@ -309,7 +335,14 @@ public class MultiplayerScoring : MonoBehaviour
         AssignRivalDirection(teamOne, teamTwo);
         AssignRivalDirection(teamTwo, teamOne);
         BroadcastRivals();
-        Debug.Log($"[Scoring] Rivals assigned ({rivalOf.Count} players paired).");
+
+        Debug.Log($"[Scoring] Rivals assigned ({rivalOf.Count} players paired; " +
+                  $"team1={teamOne.Count}, team2={teamTwo.Count}).");
+        if (rivalOf.Count == 0)
+            Debug.LogWarning("[Scoring] NO rivals were paired — one team is empty, so nobody can earn the " +
+                             "rival bonus. Both teams need at least one player (a 1v1 pairs mutually).");
+        foreach (var kv in rivalOf)
+            Debug.Log($"[Scoring] Rival pairing: client {kv.Key} hunts client {kv.Value}.");
     }
 
     /// <summary>Gives each player in <paramref name="players"/> a rival from <paramref name="pool"/>
@@ -516,6 +549,30 @@ public class MultiplayerScoring : MonoBehaviour
         msg.SendNamedMessage(MsgSdAward, clientId, writer, NetworkDelivery.ReliableSequenced);
     }
 
+    /// <summary>Grants the first-place credit bonus to the one player who reached the portal first this
+    /// round. The amount is the server's GameLoopManager value, so all machines agree.</summary>
+    void SendFirstPlaceBonus(ulong clientId)
+    {
+        int bonus = GameLoopManager.Instance != null ? GameLoopManager.Instance.firstPlaceBonusCredits : 200;
+        if (clientId == LocalClientId)
+        {
+            ApplyFirstPlaceBonus(bonus);
+            return;
+        }
+        var msg = Msg;
+        if (msg == null) return;
+        using var writer = new FastBufferWriter(sizeof(int), Allocator.Temp);
+        writer.WriteValueSafe(bonus);
+        msg.SendNamedMessage(MsgFirstBonus, clientId, writer, NetworkDelivery.ReliableSequenced);
+    }
+
+    static void ApplyFirstPlaceBonus(int credits)
+    {
+        if (PlayerInventory.Instance == null || credits <= 0) return;
+        PlayerInventory.Instance.AddCredits(credits);
+        Debug.Log($"[Scoring] First to the portal — +{credits} first-place bonus.");
+    }
+
     void BroadcastScore()
     {
         using (var writer = new FastBufferWriter(sizeof(int), Allocator.Temp))
@@ -591,6 +648,11 @@ public class MultiplayerScoring : MonoBehaviour
             reader.ReadValueSafe(out string sdName);
             ApplySdAward(sdName);
         });
+        msg.RegisterNamedMessageHandler(MsgFirstBonus, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out int credits);
+            ApplyFirstPlaceBonus(credits);
+        });
         msg.RegisterNamedMessageHandler(MsgScore, (sender, reader) =>
         {
             reader.ReadValueSafe(out int wins);
@@ -628,6 +690,7 @@ public class MultiplayerScoring : MonoBehaviour
         msg.UnregisterNamedMessageHandler(MsgFinish);
         msg.UnregisterNamedMessageHandler(MsgSds);
         msg.UnregisterNamedMessageHandler(MsgSdAward);
+        msg.UnregisterNamedMessageHandler(MsgFirstBonus);
         msg.UnregisterNamedMessageHandler(MsgScore);
         msg.UnregisterNamedMessageHandler(MsgEnding);
         msg.UnregisterNamedMessageHandler(MsgRivals);

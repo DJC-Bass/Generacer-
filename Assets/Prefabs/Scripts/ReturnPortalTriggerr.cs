@@ -117,20 +117,29 @@ public class ReturnPortalTrigger : MonoBehaviour
         int completion = manager != null ? manager.trackCompletionCredits : 200;
         int firstPlaceBonus = manager != null ? manager.firstPlaceBonusCredits : 200;
 
-        // Tell the loop this round was a player win (so it isn't scored for the drones, and can
-        // clinch the game at 3 SDs). Anything other than first place is left to count as a drone win.
-        if (firstPlace && manager != null) manager.NotifyPlayerFirstPlace();
+        // Multiplayer: the first-place bonus + SD are SERVER-authoritative and go to the SINGLE player
+        // who reaches the portal before the drones AND every other player (MultiplayerScoring grants
+        // them to that one claimant). Here `firstPlace` only means this client beat the DRONES — several
+        // players can each do that, so awarding the bonus locally would hand it to all of them. Every
+        // finisher still banks the flat completion credit; the bonus + SD are left to the server.
+        bool awardFirstPlaceLocally = firstPlace && !MultiplayerWorld.IsMultiplayerGame;
 
-        int reward = completion + (firstPlace ? firstPlaceBonus : 0);
+        // Tell the loop this round was a player win (so it isn't scored for the drones, and can
+        // clinch the game at 3 SDs). Single-player only — MP scores the round on the server.
+        if (awardFirstPlaceLocally && manager != null) manager.NotifyPlayerFirstPlace();
+
+        int reward = completion + (awardFirstPlaceLocally ? firstPlaceBonus : 0);
         inventory.AddCredits(reward);
 
-        Debug.Log(firstPlace
+        Debug.Log(awardFirstPlaceLocally
             ? $"[ReturnPortal] First place! Awarded {reward} credits " +
               $"({completion} completion + {firstPlaceBonus} first-place bonus)"
-            : $"[ReturnPortal] Track complete. Awarded {reward} credits (completion only)");
+            : $"[ReturnPortal] Track complete. Awarded {reward} credits (completion" +
+              (firstPlace && MultiplayerWorld.IsMultiplayerGame ? "; first-place bonus + SD are server-decided)" : " only)"));
 
-        // First place also grants one random equippable SD the player doesn't own yet.
-        if (firstPlace && grantSdLocally) AwardFirstPlaceItem(inventory);
+        // First place also grants one random equippable SD the player doesn't own yet (single-player;
+        // in MP the server awards the team-validated SD to the one claimant).
+        if (awardFirstPlaceLocally && grantSdLocally) AwardFirstPlaceItem(inventory);
         return firstPlace;
     }
 

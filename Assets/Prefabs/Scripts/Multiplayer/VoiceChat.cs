@@ -49,8 +49,15 @@ public class VoiceChat : MonoBehaviour
     public float vadHangover = 0.35f;
 
     [Header("Proximity Playback")]
-    [Tooltip("3D falloff distance for proximity voice coming out of the car (units).")]
-    public float proximityMaxDistance = 90f;
+    [Tooltip("Distance (units ≈ metres) within which proximity voice from a car plays at FULL volume; " +
+             "it only starts fading past this.")]
+    public float proximityMinDistance = 100f;
+    [Tooltip("Distance (units ≈ metres) at which proximity voice from a car has faded to silence " +
+             "(linear falloff from the min distance).")]
+    public float proximityMaxDistance = 200f;
+    [Tooltip("Volume multiplier applied to ALL incoming voice, on TOP of the global SFX volume. " +
+             "1 = exactly follow the SFX slider; 2 = twice as loud, etc.")]
+    public float voiceVolume = 1f;
 
     [Header("Team-Speaker List (upper-left)")]
     [Tooltip("Screen offset of the speaker list from the top-left corner (below the SD HUD).")]
@@ -316,7 +323,7 @@ public class VoiceChat : MonoBehaviour
         {
             voice.lastTeamSpeak = Time.unscaledTime;
             if (voice.team == null) voice.team = new VoiceStream();
-            if (voice.team.Source == null) voice.team.Attach(gameObject, spatial: false, proximityMaxDistance);
+            if (voice.team.Source == null) voice.team.Attach(gameObject, spatial: false, proximityMinDistance, proximityMaxDistance);
             voice.team.Enqueue(samples);
         }
         else
@@ -326,14 +333,14 @@ public class VoiceChat : MonoBehaviour
             var remote = PlayerRegistry.FindRemote(senderId);
             if (remote == null || remote.Car == null) return;   // no car to speak from — drop
             if (voice.proximity == null) voice.proximity = new VoiceStream();
-            if (voice.proximity.Source == null) voice.proximity.Attach(remote.Car, spatial: true, proximityMaxDistance);
+            if (voice.proximity.Source == null) voice.proximity.Attach(remote.Car, spatial: true, proximityMinDistance, proximityMaxDistance);
             voice.proximity.Enqueue(samples);
         }
     }
 
     void UpdatePlaybackVolumes()
     {
-        float sfx = AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 1f;
+        float sfx = (AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 1f) * voiceVolume;
         foreach (var voice in voices.Values)
         {
             if (voice.proximity?.Source != null) voice.proximity.Source.volume = sfx;
@@ -410,7 +417,7 @@ public class VoiceChat : MonoBehaviour
         private int readPos, writePos, buffered;
         private readonly object gate = new object();
 
-        public void Attach(GameObject host, bool spatial, float maxDistance)
+        public void Attach(GameObject host, bool spatial, float minDistance, float maxDistance)
         {
             Source = host.AddComponent<AudioSource>();
             var clip = AudioClip.Create("VoiceStream", SampleRate, 1, SampleRate, true, OnPcmRead);
@@ -419,7 +426,7 @@ public class VoiceChat : MonoBehaviour
             Source.playOnAwake = false;
             Source.spatialBlend = spatial ? 1f : 0f;
             Source.rolloffMode = AudioRolloffMode.Linear;
-            Source.minDistance = 4f;
+            Source.minDistance = minDistance;   // full volume within this radius (2D team stream ignores it)
             Source.maxDistance = maxDistance;
             Source.dopplerLevel = 0f;
             Source.Play();

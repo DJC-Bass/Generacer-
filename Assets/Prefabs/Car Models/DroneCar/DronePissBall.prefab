@@ -156,3 +156,11 @@ MonoBehaviour:
   maxLifetime: 4
   popUpForce: 20
   playerTag: Player
+  mainMenuSceneName: MainMenu
+  audio3D:
+    spatialBlend: 1
+    volume: 0.9
+    minDistance: 8
+    maxDistance: 200
+    rolloffMode: 1
+    dopplerLevel: 0

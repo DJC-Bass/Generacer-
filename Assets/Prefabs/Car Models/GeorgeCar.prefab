@@ -1648,7 +1648,7 @@ MonoBehaviour:
   fullVolume: 0.9
   responsiveness: 6
   spatialBlend: 1
-  maxDistance: 60
+  maxDistance: 100
 --- !u!114 &1512984234070739777
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -278,6 +278,27 @@ NetworkVariables — same authority model, zero editor setup).**
   inventory. *Interim semantics until Phase 5:* "before any AI" is the finisher's OWN sim's
   `AnyRacerFinishedAhead` (drones are still per-client), and claims are client-trusted (cheating
   accepted per the movement-authority decision).
+- **First-place BONUS now server-authoritative too (2026-07-21):** previously the first-place credit
+  bonus was self-awarded by every client in `AwardCompletionCredits` on its LOCAL `!AnyRacerFinishedAhead`
+  (beat the drones) — so several players who each beat the drones each banked it. Now exactly ONE player
+  per round wins the first-place bonus + SD: the single claimant (`claimedByClient` — first finish the
+  server processes with `serverFirstPlace` while `claimedTeam == 0`, i.e. before the drones AND every
+  other player). `AwardCompletionCredits` gates the local first-place bonus + `NotifyPlayerFirstPlace` on
+  `!MultiplayerWorld.IsMultiplayerGame` (every finisher still banks the flat COMPLETION credit locally),
+  and `HandleFinish` sends the claimant `GNRC_FIRST_BONUS{credits}` (server's `firstPlaceBonusCredits`,
+  so all machines agree) right when it claims — unconditional for the claimant, independent of the SD
+  award (which can be skipped when the team already holds all three). Non-winning finishers get
+  completion + any rival bonus only. Single-player path unchanged. The host-instant-vs-client-latency
+  claim ordering is unchanged (accepted) — it now governs the bonus and the SD identically.
+- **HUB round clock (2026-07-21):** `GameLoopScripts/HubRoundClock.cs` — a hub-world digital screen that
+  shows the live round's TIME REMAINING as MM:SS:mm (minutes : seconds : hundredths), off
+  `GameLoopManager.RoundTimeRemaining` (holds at full `roundDuration` during the pre-round load, ticks
+  down at GO; SP + MP, and in MP it's the display-only server-driven puppet timer, so it's purely a
+  visual). Attach to the Digital Clock prefab (`Assets/Prefabs/Objects/HubWorld/Digital Clock.blend`);
+  assign a positioned TextMeshPro child to `display`, or leave empty to auto-create one aligned via the
+  `screen*` fields. Tunables: `digitColor` (red LED default), `separator` (":" default; "/" for
+  MM/SS/mm), `idleText`. "mm" is hundredths (2-digit) — switch `Format` to a 3-digit SSS for true ms.
+  NOT NetworkObject-driven — every machine reads its own GameLoopManager, no sync needed.
 - **Round lifecycle** (server loop in MultiplayerWorld, extended): round start clears the claim →
   round runs (portal for all, individual entry/exit, per-player deaths/finishes as before) → round end
   broadcast (everyone teleports home FIRST) → **`EvaluateRoundServer()` runs ONCE**: claimed team ⇒
