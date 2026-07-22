@@ -14,17 +14,22 @@ public class CameraFollow : MonoBehaviour
     public bool rearView;
 
     [Header("Position Settings")]
-    public Vector3 offset = new Vector3(0f, 3f, -7f);  // Behind and above the car
+    public Vector3 offset = new Vector3(0f, 2.5f, -7f);  // Behind and above the car
+    [Tooltip("Target-local point the camera frames AROUND, instead of the target's pivot. Left at zero " +
+             "for the player car; the spectator TVs set it to the filmed car's visual centre so car models " +
+             "with off-centre pivots all frame consistently. A world-space offset from the target's origin " +
+             "(already scaled), rotated by the target each frame.")]
+    public Vector3 focusLocalOffset = Vector3.zero;
     [Tooltip("Lazy-Susan YAW lag: how slowly the camera's heading orbits to follow the car's. " +
              "The offset DISTANCE is always maintained — only the orbit angle eases. " +
              "0 = locked behind the car; higher = lazier.")]
-    public float positionSmoothTime = 0.15f;
+    public float positionSmoothTime = 0.5f;
     [Tooltip("PITCH lag: how slowly the camera's nose-up/down position follows the car " +
              "(climbs/dives). 0 = instant; higher = lazier.")]
-    public float pitchSmoothTime = 0.15f;
+    public float pitchSmoothTime = 0.25f;
     [Tooltip("ROLL lag: how slowly the camera's bank position follows the car (banking/loops). " +
              "0 = instant; higher = lazier.")]
-    public float rollSmoothTime = 0.15f;
+    public float rollSmoothTime = 0.25f;
 
     [Header("Rotation Settings")]
     public float rotationSmoothTime = 0.1f;   // How fast the camera's aim eases onto the car
@@ -50,15 +55,15 @@ public class CameraFollow : MonoBehaviour
              "Raise it if the offset is higher or you don't mind the clip.")]
     public float maxSwivelPitchDownAngle = 25f;
     [Tooltip("Lag easing INTO the swivel while the stick is held. 0 = instant.")]
-    public float swivelSmoothTime = 0.12f;
+    public float swivelSmoothTime = 1f;
     [Tooltip("Lag easing BACK to neutral — on release, and when the car goes airborne. 0 = instant.")]
-    public float swivelReturnSmoothTime = 0.25f;
+    public float swivelReturnSmoothTime = 0.5f;
     [Tooltip("When a swivel starts, Rotation Smooth Time is taken out of the aim over this many seconds " +
              "rather than being cut straight to 0, so whatever aim lag had built up closes smoothly " +
              "instead of snapping (most visible starting a swivel mid-corner). 0 = cut instantly. " +
              "Handing the standard easing BACK at neutral needs no ramp — by then the aim is unsmoothed " +
              "and already sitting on its target, so there's nothing to jump.")]
-    public float swivelAimEaseTime = 0.15f;
+    public float swivelAimEaseTime = 1f;
     [Tooltip("Stick deflection below this is ignored, so a resting stick never nudges the camera. " +
              "Measured on the stick's overall push, not per-axis, so it can't skew a diagonal.")]
     public float swivelDeadzone = 0.15f;
@@ -314,7 +319,8 @@ public class CameraFollow : MonoBehaviour
         // the lag rather than fighting it — and because it's a pure rotation, the distance survives
         // it too: the camera swings around the car on a sphere, never toward or away from it.
         Vector3 orbitOffset = SwivelRotation * EffectiveOffset;
-        transform.position = target.position + smoothedRot * orbitOffset;
+        Vector3 focus = target.position + target.rotation * focusLocalOffset;
+        transform.position = focus + smoothedRot * orbitOffset;
     }
 
     /// <summary>
@@ -385,7 +391,8 @@ public class CameraFollow : MonoBehaviour
         // identical angle pans its view the same way on screen.
         Vector3 lookForward = target.rotation * (SwivelRotation * Vector3.forward);
 
-        Vector3 lookTarget = target.position
+        Vector3 focus = target.position + target.rotation * focusLocalOffset;
+        Vector3 lookTarget = focus
                            + lookForward * (lookAheadDistance * lookSign)
                            + camUp * 1.5f;
 

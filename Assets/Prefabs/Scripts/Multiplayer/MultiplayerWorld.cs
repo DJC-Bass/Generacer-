@@ -56,7 +56,7 @@ public class MultiplayerWorld : MonoBehaviour
     /// <summary>Where the track area lives relative to the hub. -35 km keeps the whole generated
     /// track (which spans up to ~28 km forward from its origin) clear of the hub while staying inside
     /// the float-precision envelope the single-player tracks already occupy (~30 km ⇒ mm-scale).</summary>
-    public static readonly Vector3 TrackAreaOffset = new Vector3(0f, 0f, -35000f);
+    public static readonly Vector3 TrackAreaOffset = new Vector3(0f, 0f, -100000f);
 
     /// <summary>The server-rolled seed for the current round (0 between rounds). Every per-round
     /// random decision on every client must derive from this (see <see cref="DeriveRandom"/>).</summary>

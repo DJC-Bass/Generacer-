@@ -19,18 +19,18 @@ public class GameLoopManager : MonoBehaviour
 
     [Header("Round Settings")]
     [Tooltip("Minimum countdown before portal spawns (seconds).")]
-    public float minPortalCountdown = 10f;
+    public float minPortalCountdown = 20f;
     [Tooltip("Maximum countdown before portal spawns (seconds).")]
-    public float maxPortalCountdown = 20f;
+    public float maxPortalCountdown = 40f;
     [Tooltip("Total time the player has from portal-spawn to track completion.")]
-    public float roundDuration = 300f;
+    public float roundDuration = 400f;
     [Tooltip("Brief pause before the next round's countdown starts after a round ends.")]
     public float postRoundDelay = 2f;
 
     [Header("Rewards")]
     [Tooltip("Credits granted when the player completes the track (reaches the End Portal). " +
              "Tweak for balancing.")]
-    public int trackCompletionCredits = 200;
+    public int trackCompletionCredits = 400;
     [Tooltip("Extra credits granted on top of the completion reward if the player reaches " +
              "the End Portal before any AI car (drone/challenger) finishes — i.e. first place. " +
              "Tweak for balancing.")]

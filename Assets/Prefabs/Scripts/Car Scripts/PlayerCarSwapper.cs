@@ -60,9 +60,11 @@ public class PlayerCarSwapper : MonoBehaviour
         car.tag = playerTag;
         PlayerRegistry.SetLocalCar(car);   // register before anything can race the tag lookup
 
-        // Re-point every follow camera (main + rear view) at the new car.
+        // Re-point every follow camera (main + rear view) at the new car — but NOT the hub spectator
+        // TVs' cameras (they follow remote puppets and re-target themselves each frame).
         foreach (var cam in FindObjectsByType<CameraFollow>(FindObjectsSortMode.None))
-            cam.target = car.transform;
+            if (cam.GetComponentInParent<HubSpectatorTV>() == null)
+                cam.target = car.transform;
 
         Debug.Log($"[PlayerCarSwapper] Spawned selected car '{prefab.name}'.");
     }

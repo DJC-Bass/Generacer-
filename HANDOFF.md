@@ -299,6 +299,57 @@ NetworkVariables — same authority model, zero editor setup).**
   `screen*` fields. Tunables: `digitColor` (red LED default), `separator` (":" default; "/" for
   MM/SS/SSS), `idleText` ("00:00:000"). NOT NetworkObject-driven — every machine reads its own
   GameLoopManager, no sync needed.
+- **HUB spectator TVs (2026-07-21):** `Multiplayer/HubSpectatorTV.cs` — a hub TV bound to a TEAM that
+  cycles every `cycleSeconds` (5) through that team's players CURRENTLY in the track, showing a chase-cam
+  view of each. A remote's literal camera can't cross the wire (video streaming), so it stands up a LOCAL
+  `Camera`+`RenderTexture` and points a **reused `CameraFollow`** (swivel off — so its Position/Pitch/Roll
+  /Rotation Smooth Times all apply; FOV-kick/swivel/barrier-audio are inert on a script-less puppet with a
+  kinematic RB) at the racer's puppet. The RT is drawn onto the assigned `screenRenderer`'s
+  `screenMaterialIndex` slot via a runtime URP/Unlit material; STANDBY (single-player, or no teammate
+  racing) restores the authored screen material, so SP/idle looks exactly as built. Cycling is tracked by
+  clientId (list reordering doesn't jump); a racer returning to the hub drops out immediately; 1 racer →
+  shown solo until a teammate joins. **"In track" signal:** a new **bit 4** on the car-state byte
+  (`RemoteCarManager.AreaInTrackFlag`, set from `MultiplayerWorld.InTrackLocally`) → stored on
+  `PlayerRegistry.RemotePlayer.InTrack` — reliable regardless of track length (position alone isn't). Setup:
+  add to each TV, set `team` (1/2) + drag the screen face Renderer in. Costs 2 extra camera renders (tune
+  `renderWidth/Height`). Markers billboard to the hub main camera, so they read off-axis in the TV view.
+- **Spectator TV orientation + framing (2026-07-21):** first look showed the feed sampled 90° off (car
+  hugging an edge, top-down look) because the screen mesh's UVs are rotated. Texture scale/offset can't
+  rotate (no U/V swap), so added `Multiplayer/Resources/HubScreen.shader` (URP unlit; `_UVRotation` about
+  centre, keeps `_BaseMap_ST` so the flips still work) — in a **Resources** folder so `Shader.Find`
+  survives build stripping. New `uvQuarterTurns` (0-3, live) rotates in 90° steps; combine with
+  `flipVertical/Horizontal` for any of the 8 orientations. `flipVertical/Horizontal/uvQuarterTurns` all
+  re-apply live via `ApplyScreenTransform`. Also added `matchPlayerCamera` (default on): at rig build it
+  copies `Camera.main`'s `CameraFollow` (offset, 4 smooth times, look-ahead, roll-blend, baseFOV) onto the
+  spectator follow so the TV frames the car like its driver's view. Set `renderWidth:Height` to the screen
+  quad's aspect to avoid stretch.
+- **Spectator TV fit controls (2026-07-21):** driver's view read more zoomed-in than the TV because the
+  driver's FOV widens with speed/loops while the spectator was pinned to a static FOV, and the screen mesh
+  UVs sub-sample the render. Added: `fieldOfView` is now the **live zoom knob** (no longer copied by
+  `matchPlayerCamera`; applied each frame via `follow.baseFOV`) — raise it to show more actual scene;
+  `uvScale` (Vector2) + `uvOffset` (Vector2) **scale/pan the projected image** on the glass (new
+  `_UVScale`/`_UVOffset` in HubScreen.shader, applied after the rotation) to fit the render to the visible
+  screen. All live-tunable via `ApplyScreenTransform`. Rule of thumb: UV-scale-out reveals more only if the
+  mesh crops the render; if it just shows borders the render is too tight → widen `fieldOfView` instead.
+  Also `nearClip`/`farClip` (0.3 / 20000 defaults, live-applied) — big far plane so distant track/loops
+  aren't culled from the feed.
+- **Spectator TV bounds auto-framing (2026-07-22):** a car whose model differs from the tuned-against one
+  framed wrong (esp. off-centre pivots → "not framed at all"). NOT a host/client difference — the rig is
+  identical and the offset isn't per-car; it was the CAR being filmed. Fix: `HubSpectatorTV.FrameCar`
+  aims at each car's CENTRE OF GRAVITY and sets the follow distance from its bounds, so every model frames
+  the same. **CoM source (2026-07-22 revision):** the visual-bounds centre wasn't effective — cars define
+  their CoM as a child object named **"CenterOfMass"** (CarController feeds it to `Rigidbody.centerOfMass`)
+  which survives the puppet strip; `FindCenterOfMass` targets it directly (fallback: `rb.centerOfMass`,
+  then bounds centre). `ComputeLocalBounds` now also covers SkinnedMeshRenderers. Mechanism: new
+  `CameraFollow.focusLocalOffset` (target-local point the rig frames around; **zero for the player
+  camera — unchanged**) is set to the car's CoM; `follow.offset` = the tuned
+  angle (`offset` direction) × a distance computed from the car's bounding-sphere radius so it fills
+  `boundsFillFraction` (0.7) of the vertical FOV. Bounds via `ComputeLocalBounds` — rotation-independent
+  (mesh corners → root-local), skips inactive (hidden flames/SD), TMP label, trails/particles; cached per
+  car. `matchPlayerCamera` no longer copies offset (bounds-driven now); target stays the actual puppet so
+  cycle cuts still auto-realign and the FOV path (kinematic RB) still works. Also fixed a latent bug:
+  `PlayerCarSwapper` re-pointed EVERY `CameraFollow` (incl. spectator cams) at the local car on swap — now
+  skips any under a `HubSpectatorTV`.
 - **Round lifecycle** (server loop in MultiplayerWorld, extended): round start clears the claim →
   round runs (portal for all, individual entry/exit, per-player deaths/finishes as before) → round end
   broadcast (everyone teleports home FIRST) → **`EvaluateRoundServer()` runs ONCE**: claimed team ⇒

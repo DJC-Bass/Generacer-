@@ -7,18 +7,18 @@ public class DroneCarSpawner : MonoBehaviour
     public TrackGenerator trackGenerator;
 
     [Header("Timing")]
-    public float spawnDelay = 60f;
-    public float targetFinishTime = 240f;
+    public float spawnDelay = 0f;
+    public float targetFinishTime = 330f;
 
     [Header("Group Composition")]
-    public int groupCount = 4;
+    public int groupCount = 24;
     public int minGroupSize = 2;
     public int maxGroupSize = 6;
-    public float intraGroupSpacing = 6f;
+    public float intraGroupSpacing = 12f;
 
     [Header("Spawn Region")]
     [Range(0f, 1f)] public float minSpawnFraction = 0.1f;
-    [Range(0f, 1f)] public float maxSpawnFraction = 0.7f;
+    [Range(0f, 1f)] public float maxSpawnFraction = 0.2f;
 
     [Header("Layer")]
     [Tooltip("Layer assigned to each spawned drone and ALL of its children. Keeps drones " +

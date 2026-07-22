@@ -42,6 +42,7 @@ public static class PlayerRegistry
         public string CarName;
         public int Team;         // 1 or 2 (0 = unknown)
         public GameObject Car;   // the local puppet driven by RemoteCarPuppet
+        public bool InTrack;     // is this player currently in the TrackScene? (bit on the car-state stream)
     }
 
     private static readonly List<RemotePlayer> remotes = new List<RemotePlayer>();

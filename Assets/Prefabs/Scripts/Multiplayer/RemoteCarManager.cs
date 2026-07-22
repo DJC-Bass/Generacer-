@@ -213,9 +213,13 @@ public class RemoteCarManager : MonoBehaviour
         else msg.SendNamedMessage(MsgCar, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
     }
 
+    /// <summary>Bit 4 of the state byte: is the owner currently in the TrackScene? Rides alongside the
+    /// RemoteCarEffects bits (0-3) on the same byte; the hub spectator TVs read it to show only racers.</summary>
+    const byte AreaInTrackFlag = 0x10;
+
     /// <summary>Reads our own car's live visual state (is a rear tire laying a turbo mark, is the jet
-    /// flame flaring, which SD ability is active) into the one byte the CAR stream carries. Component
-    /// lookups are cached and only redone when the local car instance changes (respawn / scene load).</summary>
+    /// flame flaring, which SD ability is active, are we in the track) into the one byte the CAR stream
+    /// carries. Component lookups are cached and only redone when the local car instance changes.</summary>
     byte ComputeEffectFlags(GameObject car)
     {
         if (car != cachedEffectCar)
@@ -235,7 +239,10 @@ public class RemoteCarManager : MonoBehaviour
         string sd = (SDAbilityController.Instance != null && SDAbilityController.Instance.IsActive)
             ? SDAbilityController.Instance.ActiveSD : null;
 
-        return RemoteCarEffects.Encode(turbo, flame, sd);
+        byte flags = RemoteCarEffects.Encode(turbo, flame, sd);
+        if (MultiplayerWorld.Instance != null && MultiplayerWorld.Instance.InTrackLocally)
+            flags |= AreaInTrackFlag;   // bit 4: "I'm in the track" — for the hub spectator TVs
+        return flags;
     }
 
     void HandleCarState(ulong senderId, ushort sequence, Vector3 pos, Quaternion rot,
@@ -258,7 +265,9 @@ public class RemoteCarManager : MonoBehaviour
         if (senderId == LocalClientId) return;   // our own relayed echo — nothing to drive
 
         var remote = PlayerRegistry.FindRemote(senderId);
-        if (remote == null || remote.Car == null) return;   // roster hasn't landed yet
+        if (remote == null) return;
+        remote.InTrack = (effectFlags & AreaInTrackFlag) != 0;   // bit 4: which area they're in (hub TVs read this)
+        if (remote.Car == null) return;                          // roster hasn't landed yet
         var puppet = remote.Car.GetComponent<RemoteCarPuppet>();
         if (puppet != null) puppet.ApplyState(sequence, pos, rot, linVel, angVel, effectFlags);
     }
