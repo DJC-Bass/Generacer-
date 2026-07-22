@@ -217,7 +217,13 @@ public class NpcReplicator : MonoBehaviour
             kind = kind, prefabKey = prefabKey, scale = scale, spawnPos = pos, spawnRot = rot,
         };
         clientPuppets[id] = puppet;
-        TryCreatePuppet(puppet);
+
+        // A boulder's spawn position is a half-buried point on the ground (the launch origin, often
+        // inside track scenery). Building the puppet there would render it stuck half-buried until the
+        // first state lands. Defer boulders to the first STATE — it carries the launch velocity, so the
+        // puppet appears already in flight (RemoteCarPuppet snaps gravity puppets to their projection).
+        // Drones/projectiles spawn in the open and moving, so they build immediately.
+        if (kind != NpcKind.Boulder) TryCreatePuppet(puppet);
     }
 
     void TryCreatePuppet(ClientPuppet puppet)

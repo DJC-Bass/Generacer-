@@ -392,6 +392,11 @@ public class RemoteCarManager : MonoBehaviour
                 rb.isKinematic = true;      // immovable by contacts; follows the puppet transform
                 rb.useGravity = false;
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;   // fast contacts
+                // The puppet is driven purely by RemoteCarPuppet's transform writes; physics
+                // interpolation would keep managing the transform for RENDERING and decouple the
+                // visible mesh from the collider (mesh moves, collider lags at the old spot —
+                // "invisible boulders" you still bump). Puppets do their own smoothing, so turn it off.
+                rb.interpolation = RigidbodyInterpolation.None;
             }
         }
         else

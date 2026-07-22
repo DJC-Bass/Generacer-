@@ -433,7 +433,7 @@ public class MultiplayerWorld : MonoBehaviour
             rb.linearVelocity = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
-        car.transform.SetPositionAndRotation(
+        TeleportCar(rb, car.transform,
             ApplySpawnFormation(generator.CarSpawnPosition, generator.CarSpawnRotation),
             generator.CarSpawnRotation);
 
@@ -469,7 +469,7 @@ public class MultiplayerWorld : MonoBehaviour
                 rb.linearVelocity = Vector3.zero;
                 rb.angularVelocity = Vector3.zero;
             }
-            car.transform.SetPositionAndRotation(ApplySpawnFormation(hubSpawnPos, hubSpawnRot), hubSpawnRot);
+            TeleportCar(rb, car.transform, ApplySpawnFormation(hubSpawnPos, hubSpawnRot), hubSpawnRot);
         }
 
         inTrackLocally = false;
@@ -478,6 +478,24 @@ public class MultiplayerWorld : MonoBehaviour
         // (Phase 5 note: boulders are now HOST-simulated for everyone — a returning player must NOT
         // destroy them; the old per-client boulder cleanup that lived here is gone deliberately.)
         if (notifyServer) SendAreaToServer(false);
+    }
+
+    /// <summary>Teleports the local car cleanly. The car's rigidbody uses INTERPOLATE (smooths the
+    /// 50 Hz physics for rendering — see CarController); a plain transform set leaves interpolation's
+    /// pose-history at the pre-teleport spot, so it render-smears across the ~35 km area jump. The
+    /// suspension raycast and follow camera then sample that smeared pose, so the car "keeps falling"
+    /// even though the world already switched areas. Pushing the pose into the physics engine
+    /// (SyncTransforms) and toggling interpolation off/on — which CLEARS the history — makes it instant.</summary>
+    static void TeleportCar(Rigidbody rb, Transform car, Vector3 pos, Quaternion rot)
+    {
+        car.SetPositionAndRotation(pos, rot);
+        Physics.SyncTransforms();
+        if (rb != null && rb.interpolation != RigidbodyInterpolation.None)
+        {
+            var mode = rb.interpolation;
+            rb.interpolation = RigidbodyInterpolation.None;
+            rb.interpolation = mode;
+        }
     }
 
     /// <summary>Since puppets are SOLID (kinematic colliders), players can't all be placed on the

@@ -350,6 +350,43 @@ NetworkVariables — same authority model, zero editor setup).**
   cycle cuts still auto-realign and the FOV path (kinematic RB) still works. Also fixed a latent bug:
   `PlayerCarSwapper` re-pointed EVERY `CameraFollow` (incl. spectator cams) at the local car on swap — now
   skips any under a `HubSpectatorTV`.
+- **Boulder spawn-flash fix (2026-07-22):** clients saw LavaBoulders flash half-buried inside track scenery
+  for a frame before "disappearing" (launching). Cause: `NpcReplicator.HandleSpawn` built the boulder
+  puppet at its raw spawn position — the launch origin, a half-buried point on the ground (the reliable
+  SPAWN arrives before the boulder has velocity, and the puppet has no velocity until its first STATE, so
+  it sat frozen at the buried spot; the host never shows this because its real rigidbody launches out via
+  physics immediately). Fix: (1) `HandleSpawn` now DEFERS boulders (only) to their first STATE, which
+  carries the launch velocity; drones/projectiles still build on spawn. (2) `RemoteCarPuppet` snaps
+  `projectGravity` puppets to the **projected** flight position (`pos + v·τ + ½τ²g`, matching the first
+  Update's lead) instead of the raw point, so a boulder pops in already airborne.
+- **Puppet collider/visual decoupling fix (2026-07-22):** after the above, clients reported the boulder
+  MESH moved but the COLLIDER stayed behind ("invisible objects you still bump into" at the old spot). Root
+  cause: the LavaBoulder rigidbody has **Interpolate** on, and `StripPuppet` set kinematic/gravity/collision
+  mode but NOT interpolation — so physics interpolation kept managing the transform for rendering while
+  `RemoteCarPuppet` drove it by `transform.position`, decoupling the rendered mesh from the physics collider.
+  Fix: `StripPuppet`'s keepColliders branch now sets `rb.interpolation = None` (puppets do their own
+  extrapolation/smoothing; the collider must track the transform exactly). Applies to ALL solid puppets
+  (players/drones/boulders), so it also tightens player-vs-player contact accuracy. **Gotcha for future
+  puppet work:** any transform-driven kinematic puppet must have rigidbody interpolation OFF.
+- **Player-car judder fix (2026-07-22):** the host's car vibrated up/down more than the client's, worst on
+  turns/drifts. The hover suspension runs in `FixedUpdate` (framerate-independent — identical physics
+  everywhere, ζ≈0.70 mild bob), but every car prefab had **Rigidbody Interpolate = None**, so the rendered
+  transform only moved on 50 Hz physics steps and was sampled unevenly at other framerates — reads as
+  vertical vibration, worst on the host (hosting load → lower/variable fps) and when the suspension is most
+  active. Fix: `CarController.Start` sets `rb.interpolation = Interpolate` (in code, so every car incl. new
+  ones gets it; overrides the prefab value). Textbook pairing with `CameraFollow` running in LateUpdate =
+  smooth follow at any framerate. NOTE the two interpolation rules are OPPOSITE by design: the REAL car is
+  physics-driven ⇒ **Interpolate**; a PUPPET is transform-driven ⇒ **None**. If the *physics* bob itself is
+  still too much, that's suspension tuning — raise `springDamper` (16 → ~23 = critical), not interpolation.
+- **Teleport regression from the judder fix (2026-07-22):** enabling car Interpolate broke the hub↔track
+  portal — players "kept falling" while the skybox/music had already switched. Cause: teleporting an
+  **Interpolate** rigidbody via a plain `transform.SetPositionAndRotation` leaves interpolation's pose
+  HISTORY at the pre-teleport spot, so it render-smears across the ~35 km area jump; the suspension raycast
+  and follow camera then sample that smeared pose → reads as falling. Fix: new `MultiplayerWorld.TeleportCar`
+  — sets the pose, `Physics.SyncTransforms()`, then toggles `rb.interpolation` off→on to **clear the
+  history** (instant jump). Routed BOTH `EnterTrackLocally` (portal in) and `ReturnToHubLocally` (portal
+  out / kill floor / LRA abort / return portal) through it; all MP exit paths funnel through those two.
+  **Gotcha:** any future transform-teleport of an interpolated body needs the same history-clear.
 - **Round lifecycle** (server loop in MultiplayerWorld, extended): round start clears the claim →
   round runs (portal for all, individual entry/exit, per-player deaths/finishes as before) → round end
   broadcast (everyone teleports home FIRST) → **`EvaluateRoundServer()` runs ONCE**: claimed team ⇒

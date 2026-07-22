@@ -77,8 +77,14 @@ public class RemoteCarPuppet : MonoBehaviour
         var fx = Effects;
         if (!hasState || Vector3.Distance(transform.position, position) > snapDistance)
         {
-            // First state, or a teleport-sized jump (portal): appear there, no blending.
-            transform.SetPositionAndRotation(position, baseRot);
+            // First state, or a teleport-sized jump (portal): appear there, no blending. Gravity puppets
+            // (boulders) LAUNCH the instant they spawn, so snap to the same projected flight position the
+            // first Update would compute (lead = positionTau) — otherwise a boulder pops in at its raw
+            // ground spawn point, half-buried in the track scenery, until the projection lifts it out.
+            Vector3 snapPos = position;
+            if (projectGravity)
+                snapPos += linVel * positionTau + 0.5f * positionTau * positionTau * Physics.gravity;
+            transform.SetPositionAndRotation(snapPos, baseRot);
             hasState = true;
             if (fx != null) fx.ClearTrails();   // don't streak a trail ribbon across the teleport
         }
