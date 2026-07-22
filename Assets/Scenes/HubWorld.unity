@@ -1861,6 +1861,10 @@ PrefabInstance:
       value: Rear View Camera
       objectReference: {fileID: 0}
     - target: {fileID: 2205724438326543802, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: m_Antialiasing
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 2205724438326543802, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: m_RenderPostProcessing
       value: 1
       objectReference: {fileID: 0}
@@ -5549,6 +5553,10 @@ PrefabInstance:
     - target: {fileID: 6678529128030201846, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7257370594124252478, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: m_Antialiasing
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 7257370594124252478, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_RenderPostProcessing
