@@ -291,14 +291,14 @@ NetworkVariables — same authority model, zero editor setup).**
   completion + any rival bonus only. Single-player path unchanged. The host-instant-vs-client-latency
   claim ordering is unchanged (accepted) — it now governs the bonus and the SD identically.
 - **HUB round clock (2026-07-21):** `GameLoopScripts/HubRoundClock.cs` — a hub-world digital screen that
-  shows the live round's TIME REMAINING as MM:SS:mm (minutes : seconds : hundredths), off
+  shows the live round's TIME REMAINING as MM:SS:SSS (minutes : seconds : milliseconds), off
   `GameLoopManager.RoundTimeRemaining` (holds at full `roundDuration` during the pre-round load, ticks
   down at GO; SP + MP, and in MP it's the display-only server-driven puppet timer, so it's purely a
   visual). Attach to the Digital Clock prefab (`Assets/Prefabs/Objects/HubWorld/Digital Clock.blend`);
   assign a positioned TextMeshPro child to `display`, or leave empty to auto-create one aligned via the
   `screen*` fields. Tunables: `digitColor` (red LED default), `separator` (":" default; "/" for
-  MM/SS/mm), `idleText`. "mm" is hundredths (2-digit) — switch `Format` to a 3-digit SSS for true ms.
-  NOT NetworkObject-driven — every machine reads its own GameLoopManager, no sync needed.
+  MM/SS/SSS), `idleText` ("00:00:000"). NOT NetworkObject-driven — every machine reads its own
+  GameLoopManager, no sync needed.
 - **Round lifecycle** (server loop in MultiplayerWorld, extended): round start clears the claim →
   round runs (portal for all, individual entry/exit, per-player deaths/finishes as before) → round end
   broadcast (everyone teleports home FIRST) → **`EvaluateRoundServer()` runs ONCE**: claimed team ⇒

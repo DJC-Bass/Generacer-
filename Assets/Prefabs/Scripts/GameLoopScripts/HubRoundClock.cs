@@ -2,8 +2,8 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// HUB-world digital countdown clock. Shows the current round's TIME REMAINING as MM:SS:mm
-/// (minutes : seconds : hundredths-of-a-second), counting down, so players standing in the hub can see
+/// HUB-world digital countdown clock. Shows the current round's TIME REMAINING as MM:SS:SSS
+/// (minutes : seconds : milliseconds), counting down, so players standing in the hub can see
 /// how much time is left in the TrackScene round.
 ///
 /// It reads <see cref="GameLoopManager.RoundTimeRemaining"/>, which counts down while the round is live
@@ -28,11 +28,11 @@ public class HubRoundClock : MonoBehaviour
     [Tooltip("Colour of the digits (a bright colour reads well on the dark screen).")]
     public Color digitColor = new Color(1f, 0.25f, 0.2f);   // red LED look
 
-    [Tooltip("Separator between MM, SS and mm. \":\" is the classic clock look; set to \"/\" for MM/SS/mm.")]
+    [Tooltip("Separator between the fields. \":\" is the classic clock look; set to \"/\" for MM/SS/SSS.")]
     public string separator = ":";
 
     [Tooltip("Shown when there's no round timer yet (main menu / before the loop starts).")]
-    public string idleText = "00:00:00";
+    public string idleText = "00:00:000";
 
     [Header("Auto-created screen (ignored once Display is assigned)")]
     [Tooltip("Local position of the auto-created text relative to this object — push it onto the face.")]
@@ -77,17 +77,15 @@ public class HubRoundClock : MonoBehaviour
         return tmp;
     }
 
-    /// <summary>Formats seconds as MM:SS:mm — minutes, seconds, and hundredths-of-a-second, each padded
-    /// to 2 digits (minutes grow past 2 digits only for rounds longer than 100 minutes). "mm" is
-    /// hundredths (00–99), which is what a 2-digit field can hold; swap to a 3-digit SSS if you want
-    /// true milliseconds.</summary>
+    /// <summary>Formats seconds as MM:SS:SSS — minutes and seconds padded to 2 digits, milliseconds to
+    /// 3 (000–999). Minutes grow past 2 digits only for rounds longer than 100 minutes.</summary>
     static string Format(float seconds, string sep)
     {
         if (seconds < 0f) seconds = 0f;
-        int centis = Mathf.FloorToInt(seconds * 100f);
-        int m = centis / 6000;
-        int s = (centis / 100) % 60;
-        int cs = centis % 100;
-        return $"{m:00}{sep}{s:00}{sep}{cs:00}";
+        int millis = Mathf.FloorToInt(seconds * 1000f);
+        int m = millis / 60000;
+        int s = (millis / 1000) % 60;
+        int ms = millis % 1000;
+        return $"{m:00}{sep}{s:00}{sep}{ms:000}";
     }
 }
