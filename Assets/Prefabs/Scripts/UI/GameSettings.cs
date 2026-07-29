@@ -37,7 +37,19 @@ public static class GameSettings
         set { PlayerPrefs.SetFloat(SfxKey, Mathf.Clamp01(value)); PlayerPrefs.Save(); }
     }
 
-    // ---- Voice chat (read live by VoiceChat each second, so menu changes apply mid-game) ----
+    const string VoiceVolKey = "audio.voiceVolume";
+
+    /// <summary>Persisted VOICE-CHAT volume (0..1) — the loudness of OTHER players' incoming voices,
+    /// independent of the SFX slider AND of your own mic. <see cref="VoiceService"/> maps it onto Vivox's
+    /// per-CHANNEL volume (remote participants, local playback only), −50..+50, so ≈0.5 = neutral,
+    /// &gt;0.5 boosts quiet remote mics and &lt;0.5 quietens them. Defaults to 0.5 (neutral).</summary>
+    public static float VoiceVolume
+    {
+        get => Mathf.Clamp01(PlayerPrefs.GetFloat(VoiceVolKey, 0.5f));
+        set { PlayerPrefs.SetFloat(VoiceVolKey, Mathf.Clamp01(value)); PlayerPrefs.Save(); }
+    }
+
+    // ---- Voice chat (read live by VoiceService each second, so menu changes apply mid-game) ----
 
     const string VoiceMicKey        = "voice.micDevice";
     const string VoiceMuteSelfKey   = "voice.muteSelf";

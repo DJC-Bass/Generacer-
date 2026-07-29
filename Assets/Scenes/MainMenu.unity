@@ -299,6 +299,8 @@ MonoBehaviour:
     prefab: {fileID: 7691608266234520637, guid: 21ae06aa7322b6f48b0fa497995f421c, type: 3}
   - name: ROGER
     prefab: {fileID: 9203637246216865349, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+  - name: MELODY
+    prefab: {fileID: 8532916333885019441, guid: be8664261047f1240b9714a842a2f2c6, type: 3}
 --- !u!4 &206949370
 Transform:
   m_ObjectHideFlags: 0

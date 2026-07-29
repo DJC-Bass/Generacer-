@@ -552,38 +552,57 @@ tally HUD / drone-wins counter / scoreboard ("players keep track of the wins on 
   the rival finishing second gets nothing; leave with a 3rd instance joining → the newcomer inherits
   the rival slot and markers update on both sides.
 
-**VOICE CHAT (user feature, 2026-07-20 — ✅ CODE-COMPLETE, compiles 0 errors). DIY on the
-custom-message layer — deliberately NOT Vivox (no dashboard service dependency).**
-- **`Multiplayer/VoiceChat.cs` (new, on the MultiplayerWorld object):** Unity `Microphone` capture at
-  16 kHz mono → **30 ms frames (480 samples — the PCM16 payload + 11 B header MUST fit NGO's
-  Unreliable single-packet cap of 1264 B; the original 40 ms/640-sample frames were 1291 B and every
-  send THREW an OverflowException — voice dead, console spam while talking. Never enlarge frames past
-  ~620 samples; `ReliableFragmentedSequenced` is the WRONG fix for voice — head-of-line blocking)** →
-  **RMS voice-activity gate** (threshold + 0.35 s hangover; silence costs ZERO bandwidth, ~32 KB/s
-  only while talking) → PCM16 frames over `GNRC_VOICE` (Unreliable), host relays. Playback = per-sender ring buffers feeding **streaming AudioClips** (audio-thread
-  `PCMReaderCallback`, zero-fill on underrun), volume scaled by the global SFX level.
-- **Two channels:** PROXIMITY (default, open mic) — the voice source is attached to the sender's
-  PUPPET CAR, spatialBlend 1, linear rolloff to ~90 units, so voices come out of cars with distance
-  falloff exactly like the engines; relayed to everyone, distance decides who hears. **TEAM (LB
-  toggles)** — `Gamepad.leftShoulder` flips team-direct mode (menu-move tick as feedback; suppressed
-  while menus open): frames flagged team are relayed by the host ONLY to the sender's teammates
-  (hello-roster teams) and play 2D. LB again = back to proximity-only, per the spec.
-- **Team-speaker list:** while teammates (INCLUDING yourself) are team-talking, their names stack in
-  the upper-left (code-built overlay canvas, sortingOrder 140 — under the HUDs; position tunable via
-  `speakerListOffset`, default below the SD HUD), each line appearing while speaking and vanishing
-  ~0.4 s after (`speakerLinger`).
-- **Settings (BOTH menus' AUDIO panels, persisted in `GameSettings`, polled live each second so
-  changes apply mid-game):** MICROPHONE device cycler ("Default" + `Microphone.devices`; unplugged
-  saved device falls back to Default), MUTE MY MIC (capture stops entirely), MUTE PLAYERS (no
-  playback of anyone). Main Menu = three new `BuildOptionRow`s under the sliders (panel grown to
-  760×440, nav rewired to a 5-row chain); Start Menu = new `BuildCyclerRow` helper matching its
-  slider-row styling.
-- **Testing caveats:** two instances on ONE machine share the microphone — expect feedback/echo
-  (test with a headset, or MUTE MY MIC on one instance); Multiplayer Play Mode virtual players may
-  not get mic access at all — real two-machine testing is the honest check. No echo cancellation /
-  noise suppression (raw PCM walkie-talkie quality — if it ever matters, that's the point to
-  reconsider Vivox). Keyboard players have no team-toggle binding yet (LB is gamepad-only, matching
-  the project's controller-first inputs).
+**VOICE CHAT — now on UNITY VIVOX (migrated 2026-07-23 from the DIY system; ✅ compiles 0 errors).**
+Package `com.unity.services.vivox` 16.11.0 (modern `Unity.Services.Vivox`/`VivoxService.Instance` API).
+Vivox owns capture, encode, echo-cancel/noise-suppression, transport (its OWN voice servers — NOT the
+NGO host relay) and 3-D spatialization, so the whole class of DIY problems is gone.
+- **PREREQUISITE (external, one-time):** Vivox must be ENABLED for the project in the Unity Cloud
+  Dashboard (Services → Vivox); it auto-provisions credentials tied to the existing UGS project. Without
+  it, `InitializeAsync`/`LoginAsync` throw — every call in `VoiceService` is guarded so it degrades to
+  "no voice" (with a clear warning) rather than crashing.
+- **`Multiplayer/VoiceService.cs` (new, PERSISTENT self-bootstrapped singleton — like AudioManager, via
+  `[RuntimeInitializeOnLoadMethod]`).** NOT match-scoped, because the AUDIO-panel mic picker needs
+  Vivox's device list and Vivox can only enumerate devices AFTER `InitializeAsync`. So: Vivox inits
+  EARLY at boot (UGS `InitializeAsync` + anonymous sign-in — same auth `NetworkSessionManager` uses —
+  then `VivoxService.Instance.InitializeAsync()`); LOGIN + channel joins happen only when a match begins.
+- **Two channels (design preserved):** PROXIMITY = a Vivox POSITIONAL channel `prox_<sessionId>` joined
+  by everyone; each client reports only ITS OWN car position ~10 Hz via `Set3DPosition(LocalCar, chan)`
+  and Vivox mixes the falloff (`Channel3DProperties` audible/MAX **400** / conversational/MIN **200**,
+  `LinearByDistance`). No per-puppet AudioSources anymore. TEAM = a 2-D GROUP channel
+  `team_<sessionId>_<team>` joined only by that team. You stay JOINED to both (always HEAR proximity +
+  teammates); **LB** (`Gamepad.leftShoulder`, menu-move tick, suppressed while menus open) only flips
+  which you TRANSMIT into via `SetChannelTransmissionModeAsync(Single, prox|team)`. Bonus: the 35 km
+  hub↔track gap means the positional model naturally stops cross-area proximity while team stays 2-D.
+- **Team-speaker list:** unchanged UI (code-built overlay canvas, sortingOrder 140, below the SD HUD,
+  ~0.4 s linger) — now driven by `VivoxParticipant.SpeechDetected` over `ActiveChannels[teamChannel]`
+  (self shown via `IsSelf`, others via `DisplayName` set at login). Only team-transmitters show, exactly
+  as before.
+- **Settings (BOTH menus' AUDIO panels, still persisted in `GameSettings`, polled live):** MICROPHONE
+  cycler now sources `VoiceService.InputDeviceNames` (Vivox devices; "Default" = leave Vivox's default —
+  list may be empty until Vivox finishes booting), MUTE MY MIC → `MuteInputDevice`, MUTE PLAYERS →
+  `MuteOutputDevice`. **VOICE volume** is its OWN slider (3rd in the AUDIO panel, next to MUSIC/SFX;
+  `GameSettings.VoiceVolume`, **default 0.5**) that raises/lowers ONLY **other players' incoming voices**
+  (for quiet remote mics) — it maps onto Vivox **per-CHANNEL volume** (`SetChannelVolumeAsync` over every
+  joined channel, applied again on each fresh join), −50..+50, ≈0.5 = neutral, >0.5 boosts, <0.5 quietens.
+  **Deliberately NOT `SetOutputDeviceVolume`/`SetInputDeviceVolume`:** per-channel volume is local
+  playback of REMOTE participants only, so it can never touch your own mic/capture (the earlier
+  output-device version at max default made the mic feel hypersensitive / fed back). The global output
+  device is pinned to neutral (0) at init. `VoiceService.ApplyVoiceVolumeLive()` applies it mid-drag.
+  **Proximity Min/Max distance** are the `ConversationalDistance`/`AudibleDistance`
+  consts at the top of `VoiceService.cs` (currently **200 / 400**) — dev-tuned, applied at channel join
+  (change + rejoin a match to take effect).
+- **Channel lifecycle:** `MultiplayerWorld.BeginGame` calls `VoiceService.BeginMatch()` (was
+  `AddComponent<VoiceChat>()`); `TeardownToMenu` calls `VoiceService.EndMatch()` (LeaveAllChannels +
+  Logout). Team channel join is deferred until `LocalTeam()` resolves (may lag match start), throttled
+  to retry ≤ every 2 s.
+- **csproj:** `VoiceService.cs` compiled in place of `VoiceChat.cs`; added `<Reference
+  Unity.Services.Vivox>` (asmdef is autoReferenced, so Unity re-adds it on its own regen). The old
+  `VoiceChat.cs` (+meta) was deleted — git preserves it (incl. the 16 kHz capture-rate resampling fix
+  that's now moot since Vivox handles capture/rate).
+- **Testing caveats:** two instances on ONE machine still share the mic (feedback — use a headset or
+  MUTE MY MIC on one). Vivox needs internet + the dashboard step above; if not provisioned you'll see
+  the `[VoiceService] Vivox init failed` warning and no voice. Keyboard players still have no team
+  toggle (LB is gamepad-only). Watch the boot log for `Vivox initialized. Input devices: …`.
 
 **ROUND PRELOAD/GO SPLIT + "ROADING" SCREEN (user perf request, 2026-07-20 — ✅ compiles 0 errors).**
 The track used to load AT portal-spawn time — a big hitch right as the hub portal/boost gate appeared.

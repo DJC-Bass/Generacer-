@@ -256,8 +256,9 @@ public class MultiplayerWorld : MonoBehaviour
         // Phase 5: host-simulated AI/obstacles streamed to clients as puppets.
         gameObject.AddComponent<NpcReplicator>();
 
-        // Voice chat: proximity (3D, out of the cars) + LB team-direct (2D, teammates only).
-        gameObject.AddComponent<VoiceChat>();
+        // Voice chat via Vivox: proximity (positional 3D) + LB team-direct (2D). The persistent,
+        // self-bootstrapped VoiceService logs in and joins THIS match's channels; EndMatch on teardown.
+        VoiceService.BeginMatch();
 
         // Creating the manager doubles as the transition out of the menu: its Awake loads the hub.
         if (GameLoopManager.Instance == null)
@@ -276,6 +277,7 @@ public class MultiplayerWorld : MonoBehaviour
         if (!begun) return;
         begun = false;
 
+        VoiceService.EndMatch();   // leave Vivox voice channels + log out
         StopAllCoroutines();
         SceneManager.sceneLoaded -= OnSceneLoaded;
         UnregisterMessageHandlers();

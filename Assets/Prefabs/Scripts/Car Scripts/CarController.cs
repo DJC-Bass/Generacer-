@@ -384,14 +384,6 @@ public class CarController : MonoBehaviour
         if (centerOfMass != null)
             rb.centerOfMass = centerOfMass.localPosition;
 
-        // Smooth the RENDERED car between the 50 Hz physics steps. The hover suspension runs in
-        // FixedUpdate (framerate-independent), so the physics bob is identical everywhere — but with
-        // interpolation OFF the transform only moves on physics steps and is sampled unevenly at other
-        // framerates, which reads as up/down vibration (worst on the host, whose hosting load lowers its
-        // framerate, and on turns/drifts where the suspension is most active). Interpolate fixes it for
-        // any framerate. (Set here rather than per-prefab so every car — and any new one — gets it.)
-        rb.interpolation = RigidbodyInterpolation.Interpolate;
-
         currentGrip = gripFactor;
 
         anchors = new[] { wheelFL, wheelFR, wheelRL, wheelRR };

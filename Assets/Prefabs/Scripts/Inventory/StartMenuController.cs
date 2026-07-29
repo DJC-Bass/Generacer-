@@ -56,8 +56,8 @@ public class StartMenuController : MonoBehaviour
     private GameObject subReturnButton;        // main button to re-focus when backing out of a sub
 
     // AUDIO
-    private Slider musicSlider, sfxSlider;
-    private TextMeshProUGUI musicValueText, sfxValueText;
+    private Slider musicSlider, sfxSlider, voiceSlider;
+    private TextMeshProUGUI musicValueText, sfxValueText, voiceValueText;
     private GameObject audioFirst;
 
     // VIDEO (lives in the SETTINGS panel next to the Tutorial toggle)
@@ -233,6 +233,7 @@ public class StartMenuController : MonoBehaviour
     {
         if (musicSlider != null) { musicSlider.SetValueWithoutNotify(InitialMusic()); UpdateMusicValueText(musicSlider.value); }
         if (sfxSlider   != null) { sfxSlider.SetValueWithoutNotify(InitialSfx());     UpdateSfxValueText(sfxSlider.value); }
+        if (voiceSlider != null) { voiceSlider.SetValueWithoutNotify(InitialVoice()); UpdateVoiceValueText(voiceSlider.value); }
     }
 
     void RefreshVideoValues()
@@ -374,12 +375,13 @@ public class StartMenuController : MonoBehaviour
 
         musicSlider = BuildSliderRow(go.transform, "MUSIC", InitialMusic(), OnMusicChanged, out musicValueText);
         sfxSlider   = BuildSliderRow(go.transform, "SFX",   InitialSfx(),   OnSfxChanged,   out sfxValueText);
+        voiceSlider = BuildSliderRow(go.transform, "VOICE", InitialVoice(), OnVoiceChanged, out voiceValueText);
 
-        // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceChat) ----
+        // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceService) ----
         var micLabels = new System.Collections.Generic.List<string> { "Default" };
         string savedMic = GameSettings.VoiceMicDevice;
         int micStart = 0;
-        var micDevices = Microphone.devices;
+        var micDevices = VoiceService.InputDeviceNames;
         for (int i = 0; i < micDevices.Length; i++)
         {
             micLabels.Add(micDevices[i]);
@@ -387,7 +389,7 @@ public class StartMenuController : MonoBehaviour
         }
         var micSel = BuildCyclerRow(go.transform, "MICROPHONE", micLabels, micStart, i =>
         {
-            var devices = Microphone.devices;
+            var devices = VoiceService.InputDeviceNames;
             GameSettings.VoiceMicDevice = (i <= 0 || i > devices.Length) ? "" : devices[i - 1];
         });
         var muteSelfSel = BuildCyclerRow(go.transform, "MUTE MY MIC",
@@ -397,10 +399,11 @@ public class StartMenuController : MonoBehaviour
             new System.Collections.Generic.List<string> { "Off", "On" },
             GameSettings.VoiceMuteOthers ? 1 : 0, i => GameSettings.VoiceMuteOthers = i == 1);
 
-        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, micSel, muteSelfSel, mutePlayersSel });
+        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, voiceSlider, micSel, muteSelfSel, mutePlayersSel });
 
         UpdateMusicValueText(musicSlider.value);
         UpdateSfxValueText(sfxSlider.value);
+        UpdateVoiceValueText(voiceSlider.value);
 
         audioFirst = musicSlider.gameObject;
         go.SetActive(false);
@@ -470,11 +473,20 @@ public class StartMenuController : MonoBehaviour
         AudioManager.PlayMenuMove();   // tick at the NEW level so the slider previews SFX loudness
     }
 
+    void OnVoiceChanged(float v)
+    {
+        GameSettings.VoiceVolume = v;               // persist (independent of the SFX slider)
+        VoiceService.ApplyVoiceVolumeLive();        // live-apply to Vivox so the new level is audible now
+        UpdateVoiceValueText(v);
+    }
+
     void UpdateMusicValueText(float v) { if (musicValueText != null) musicValueText.text = Mathf.RoundToInt(v * 100f) + "%"; }
     void UpdateSfxValueText(float v)   { if (sfxValueText   != null) sfxValueText.text   = Mathf.RoundToInt(v * 100f) + "%"; }
+    void UpdateVoiceValueText(float v) { if (voiceValueText != null) voiceValueText.text = Mathf.RoundToInt(v * 100f) + "%"; }
 
     static float InitialMusic() => AudioManager.Instance != null ? AudioManager.Instance.MusicVolume : GameSettings.MusicVolume;
     static float InitialSfx()   => AudioManager.Instance != null ? AudioManager.Instance.SfxVolume   : GameSettings.SfxVolume;
+    static float InitialVoice() => GameSettings.VoiceVolume;
 
     // -------------------------------------------------------
     //  CONTROLS sub-screen (rebinding + reset)

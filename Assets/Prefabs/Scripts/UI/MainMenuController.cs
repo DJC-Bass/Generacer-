@@ -95,8 +95,8 @@ public class MainMenuController : MonoBehaviour
     private GameObject settingsCategoryPanel; // AUDIO / VIDEO / CONTROLS chooser
     private GameObject audioPanel, videoPanel, controlsPanel;
     private Button audioCatBtn;               // AUDIO chooser entry — focused when the chooser opens
-    private Slider musicSlider, sfxSlider;
-    private TextMeshProUGUI musicValueText, sfxValueText;
+    private Slider musicSlider, sfxSlider, voiceSlider;
+    private TextMeshProUGUI musicValueText, sfxValueText, voiceValueText;
 
     // Video/Graphics option cyclers + backing data.
     private OptionSelector resolutionSelector, fullscreenSelector, qualitySelector, vsyncSelector;
@@ -275,42 +275,44 @@ public class MainMenuController : MonoBehaviour
         go.transform.SetParent(parent, false);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);   // upper-left, like the button column
-        rt.sizeDelta = new Vector2(760f, 440f);
+        rt.sizeDelta = new Vector2(760f, 520f);        // grown to fit the third (VOICE) volume slider
         rt.anchoredPosition = new Vector2(96f, -330f);
 
-        musicSlider = BuildAudioRow(go.transform, "MUSIC", -10f, InitialMusic(), OnMusicChanged, out musicValueText);
-        sfxSlider   = BuildAudioRow(go.transform, "SFX",   -95f, InitialSfx(),   OnSfxChanged,   out sfxValueText);
+        musicSlider = BuildAudioRow(go.transform, "MUSIC", -10f,  InitialMusic(), OnMusicChanged, out musicValueText);
+        sfxSlider   = BuildAudioRow(go.transform, "SFX",   -95f,  InitialSfx(),   OnSfxChanged,   out sfxValueText);
+        voiceSlider = BuildAudioRow(go.transform, "VOICE", -180f, InitialVoice(), OnVoiceChanged, out voiceValueText);
 
-        // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceChat) ----
+        // ---- Voice chat (device + mutes; persisted via GameSettings, read live by VoiceService) ----
         // Smaller value text + a wider box so long microphone device names fit without bleeding.
         var micLabels = BuildMicrophoneOptions(out int micStart);
-        var micSel = BuildOptionRow(go.transform, "MICROPHONE",  -180f, micLabels, micStart, OnMicDeviceChanged,
+        var micSel = BuildOptionRow(go.transform, "MICROPHONE",  -265f, micLabels, micStart, OnMicDeviceChanged,
                                     selectorWidth: 450f, valueFontSize: 22f);
-        var muteSelfSel = BuildOptionRow(go.transform, "MUTE MY MIC", -250f,
+        var muteSelfSel = BuildOptionRow(go.transform, "MUTE MY MIC", -335f,
             new List<string> { "Off", "On" }, GameSettings.VoiceMuteSelf ? 1 : 0, i => GameSettings.VoiceMuteSelf = i == 1,
             selectorWidth: 450f, valueFontSize: 24f);
-        var mutePlayersSel = BuildOptionRow(go.transform, "MUTE PLAYERS", -320f,
+        var mutePlayersSel = BuildOptionRow(go.transform, "MUTE PLAYERS", -405f,
             new List<string> { "Off", "On" }, GameSettings.VoiceMuteOthers ? 1 : 0, i => GameSettings.VoiceMuteOthers = i == 1,
             selectorWidth: 450f, valueFontSize: 24f);
 
-        // Up/Down chains all five rows (wrapping); Left/Right adjusts the focused row's value.
-        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, micSel, muteSelfSel, mutePlayersSel });
+        // Up/Down chains all six rows (wrapping); Left/Right adjusts the focused row's value.
+        SettingsUI.WireVerticalWrap(new Selectable[] { musicSlider, sfxSlider, voiceSlider, micSel, muteSelfSel, mutePlayersSel });
 
         UpdateMusicValueText(musicSlider.value);
         UpdateSfxValueText(sfxSlider.value);
+        UpdateVoiceValueText(voiceSlider.value);
 
         go.SetActive(false);
         return go;
     }
 
-    /// <summary>Microphone picker options: DEFAULT plus every detected capture device, outs the index
-    /// of the saved choice (falls back to DEFAULT if the saved device is unplugged).</summary>
+    /// <summary>Microphone picker options: DEFAULT plus every Vivox capture device, outs the index
+    /// of the saved choice (falls back to DEFAULT if the saved device is gone or Vivox isn't ready).</summary>
     static List<string> BuildMicrophoneOptions(out int currentIndex)
     {
         var labels = new List<string> { "Default" };
         string saved = GameSettings.VoiceMicDevice;
         currentIndex = 0;
-        var devices = Microphone.devices;
+        var devices = VoiceService.InputDeviceNames;
         for (int i = 0; i < devices.Length; i++)
         {
             labels.Add(devices[i]);
@@ -321,7 +323,7 @@ public class MainMenuController : MonoBehaviour
 
     void OnMicDeviceChanged(int index)
     {
-        var devices = Microphone.devices;
+        var devices = VoiceService.InputDeviceNames;
         GameSettings.VoiceMicDevice = (index <= 0 || index > devices.Length) ? "" : devices[index - 1];
     }
 
@@ -373,11 +375,20 @@ public class MainMenuController : MonoBehaviour
         AudioManager.PlayMenuMove();                // tick at the NEW level so the slider previews SFX loudness
     }
 
+    void OnVoiceChanged(float v)
+    {
+        GameSettings.VoiceVolume = v;               // persist across sessions (independent of the SFX slider)
+        VoiceService.ApplyVoiceVolumeLive();        // live-apply to Vivox so the new level is audible now
+        UpdateVoiceValueText(v);
+    }
+
     void UpdateMusicValueText(float v) { if (musicValueText != null) musicValueText.text = Mathf.RoundToInt(v * 100f) + "%"; }
     void UpdateSfxValueText(float v)   { if (sfxValueText   != null) sfxValueText.text   = Mathf.RoundToInt(v * 100f) + "%"; }
+    void UpdateVoiceValueText(float v) { if (voiceValueText != null) voiceValueText.text = Mathf.RoundToInt(v * 100f) + "%"; }
 
     static float InitialMusic() => AudioManager.Instance != null ? AudioManager.Instance.MusicVolume : GameSettings.MusicVolume;
     static float InitialSfx()   => AudioManager.Instance != null ? AudioManager.Instance.SfxVolume   : GameSettings.SfxVolume;
+    static float InitialVoice() => GameSettings.VoiceVolume;
 
     // -------------------------------------------------------
     //  Video / Graphics screen
