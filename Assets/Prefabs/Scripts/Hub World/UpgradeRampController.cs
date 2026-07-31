@@ -27,6 +27,9 @@ public class CraftRecipe
              "(capacity items owned) × this. e.g. 1 Turbo per Turbo Canister, " +
              "5 Jets per Jet Pack.")]
     public int capacityPerContainer = 1;
+    [Tooltip("FLAT cap on how many of the product can be held, independent of any container item. " +
+             "0 = no flat cap. Used by Shield (max 4). Applies on top of the container limit.")]
+    public int maxProduct = 0;
     [Tooltip("Color of the progress fill for this recipe's bar.")]
     public Color barColor = new Color(0.2f, 0.45f, 1f);
     [Tooltip("Text shown under the bar.")]
@@ -58,12 +61,19 @@ public class UpgradeRampController : MonoBehaviour
         craftTime = 1f, barColor = new Color(0.2f, 0.45f, 1f), label = "X To Charge Turbo",
         capacityItem = "Turbo Canister", capacityPerContainer = 1
     };
-    [Tooltip("Bottom bar — charged with A.")]
+    [Tooltip("Middle bar — charged with A.")]
     public CraftRecipe jet = new CraftRecipe
     {
         materialA = "Jet Fuel", materialB = "", product = "Jet",
         craftTime = 0.2f, barColor = new Color(0.55f, 0.75f, 1f), label = "A to craft Jet",
         capacityItem = "Jet Pack", capacityPerContainer = 5
+    };
+    [Tooltip("Bottom bar — charged with Y. Plasma → Shield, same 1 s craft as Turbo, hard cap of 4 held.")]
+    public CraftRecipe shield = new CraftRecipe
+    {
+        materialA = "Plasma", materialB = "", product = "Shield",
+        craftTime = 1f, barColor = new Color(0.35f, 1f, 0.8f), label = "Y To Craft Shield",
+        capacityItem = "", capacityPerContainer = 0, maxProduct = 4
     };
 
     [Header("Detection")]
@@ -79,14 +89,14 @@ public class UpgradeRampController : MonoBehaviour
     private bool suppressedUntilExit;
 
     // ---- crafting ----
-    enum Craft { None, Turbo, Jet }
+    enum Craft { None, Turbo, Jet, Shield }
     private Craft active = Craft.None;
     private float progress;   // 0..1 of the currently charging recipe
 
     // ---- built UI ----
     private GameObject root;
-    private RectTransform turboFill, jetFill;
-    private TextMeshProUGUI turboCounts, jetCounts;
+    private RectTransform turboFill, jetFill, shieldFill;
+    private TextMeshProUGUI turboCounts, jetCounts, shieldCounts;
     private AudioSource craftLoopSource;   // looping turbo-craft sound (plays while the turbo bar charges)
 
     void Reset()
@@ -151,27 +161,29 @@ public class UpgradeRampController : MonoBehaviour
         if (gp.buttonEast.wasPressedThisFrame) { suppressedUntilExit = true; Close(); return; }
 
         bool xHeld = gp.buttonWest.isPressed;    // X -> Turbo (top bar)
-        bool aHeld = gp.buttonSouth.isPressed;   // A -> Jet (bottom bar)
+        bool aHeld = gp.buttonSouth.isPressed;   // A -> Jet (middle bar)
+        bool yHeld = gp.buttonNorth.isPressed;   // Y -> Shield (bottom bar); B is taken by Close
 
-        TickCrafting(xHeld, aHeld);
+        TickCrafting(xHeld, aHeld, yHeld);
         UpdateBars();
         SyncCraftLoop();
     }
 
-    void TickCrafting(bool xHeld, bool aHeld)
+    void TickCrafting(bool xHeld, bool aHeld, bool yHeld)
     {
         float dt = Time.unscaledDeltaTime;
 
-        // Pick up a new craft only when idle. X (Turbo) takes priority if both held.
+        // Pick up a new craft only when idle. X (Turbo) takes priority, then A (Jet), then Y (Shield).
         if (active == Craft.None)
         {
             if (xHeld && CanCraft(turbo)) { active = Craft.Turbo; progress = 0f; }
             else if (aHeld && CanCraft(jet)) { active = Craft.Jet; progress = 0f; }
+            else if (yHeld && CanCraft(shield)) { active = Craft.Shield; progress = 0f; }
             else return;
         }
 
-        bool held = active == Craft.Turbo ? xHeld : aHeld;
-        CraftRecipe r = active == Craft.Turbo ? turbo : jet;
+        bool held = active == Craft.Turbo ? xHeld : active == Craft.Jet ? aHeld : yHeld;
+        CraftRecipe r = ActiveRecipe();
 
         // Cancel (reset, no materials spent) if the button was released, the
         // materials ran out, or the inventory is at capacity for this product.
@@ -192,18 +204,26 @@ public class UpgradeRampController : MonoBehaviour
         }
     }
 
+    /// <summary>The recipe the active bar is charging.</summary>
+    CraftRecipe ActiveRecipe() =>
+        active == Craft.Turbo ? turbo : active == Craft.Jet ? jet : shield;
+
     /// <summary>A craft is allowed only with the materials AND free capacity.</summary>
     bool CanCraft(CraftRecipe r) => HasMaterials(r) && HasCapacity(r);
 
     /// <summary>
-    /// True while the player can hold one more product. Max held =
-    /// (capacityItem owned) × capacityPerContainer. Blank capacityItem = no limit.
+    /// True while the player can hold one more product. Two independent limits, both enforced:
+    /// the CONTAINER limit ((capacityItem owned) × capacityPerContainer; blank = unlimited) and the
+    /// FLAT limit (maxProduct; 0 = none — this is what caps Shield at 4).
     /// </summary>
     bool HasCapacity(CraftRecipe r)
     {
-        if (string.IsNullOrEmpty(r.capacityItem)) return true;   // unlimited
         var inv = PlayerInventory.Instance;
         if (inv == null) return false;
+
+        if (r.maxProduct > 0 && inv.GetCount(r.product) >= r.maxProduct) return false;
+
+        if (string.IsNullOrEmpty(r.capacityItem)) return true;   // no container limit
         int max = inv.GetCount(r.capacityItem) * Mathf.Max(0, r.capacityPerContainer);
         return inv.GetCount(r.product) < max;
     }
@@ -244,6 +264,13 @@ public class UpgradeRampController : MonoBehaviour
             if (craftLoopSource != null) craftLoopSource.Stop();
         }
         else if (r == jet) AudioManager.PlayJetCrafted(transform.position);
+        else if (r == shield)
+        {
+            AudioManager.PlayShieldCrafted(transform.position);
+            // Same treatment as Turbo (both are 1 s crafts): cut the charge loop on each completion so
+            // a consecutive craft restarts its audio from the top rather than running on seamlessly.
+            if (craftLoopSource != null) craftLoopSource.Stop();
+        }
     }
 
     // -------------------------------------------------------
@@ -274,8 +301,9 @@ public class UpgradeRampController : MonoBehaviour
         var lib = AudioManager.Instance != null ? AudioManager.Instance.Library : null;
         AudioClip want = null;
         if (lib != null)
-            want = active == Craft.Turbo ? lib.turboCraftLoop
-                 : active == Craft.Jet   ? lib.jetCraftLoop
+            want = active == Craft.Turbo  ? lib.turboCraftLoop
+                 : active == Craft.Jet    ? lib.jetCraftLoop
+                 : active == Craft.Shield ? lib.shieldCraftLoop
                  : null;
 
         if (want == null)
@@ -341,6 +369,7 @@ public class UpgradeRampController : MonoBehaviour
     {
         SetFill(turboFill, active == Craft.Turbo ? progress : 0f);
         SetFill(jetFill, active == Craft.Jet ? progress : 0f);
+        SetFill(shieldFill, active == Craft.Shield ? progress : 0f);
     }
 
     static void SetFill(RectTransform fill, float p)
@@ -355,6 +384,7 @@ public class UpgradeRampController : MonoBehaviour
     {
         if (turboCounts != null) turboCounts.text = CountsLine(turbo);
         if (jetCounts != null) jetCounts.text = CountsLine(jet);
+        if (shieldCounts != null) shieldCounts.text = CountsLine(shield);
     }
 
     string CountsLine(CraftRecipe r)
@@ -370,7 +400,12 @@ public class UpgradeRampController : MonoBehaviour
         if (!string.IsNullOrEmpty(r.capacityItem))
         {
             int max = Count(r.capacityItem) * Mathf.Max(0, r.capacityPerContainer);
+            if (r.maxProduct > 0) max = Mathf.Min(max, r.maxProduct);   // whichever limit binds first
             s += $"→    {r.product} {Count(r.product)}/{max}";
+        }
+        else if (r.maxProduct > 0)
+        {
+            s += $"→    {r.product} {Count(r.product)}/{r.maxProduct}";   // flat cap (Shield = 4)
         }
         else
         {
@@ -401,7 +436,7 @@ public class UpgradeRampController : MonoBehaviour
         panelImg.color = new Color(0.05f, 0.05f, 0.08f, 0.92f);
         var prt = panel.GetComponent<RectTransform>();
         prt.anchorMin = prt.anchorMax = prt.pivot = new Vector2(0.5f, 0.5f);
-        prt.sizeDelta = new Vector2(880f, 520f);
+        prt.sizeDelta = new Vector2(880f, 710f);   // grown for the third (Shield) bar
         prt.anchoredPosition = Vector2.zero;
 
         var title = NewText(panel.transform, "Title", 50, TextAlignmentOptions.Top);
@@ -409,12 +444,13 @@ public class UpgradeRampController : MonoBehaviour
         title.color = Color.white;
         StretchTop(title.rectTransform, 820f, 64f, 20f);
 
-        // Top bar (Turbo, X) and bottom bar (Jet, A), with space between.
+        // Top bar (Turbo, X), middle bar (Jet, A), bottom bar (Shield, Y), with space between.
         BuildBar(panel.transform, turbo, 130f, out turboFill, out turboCounts);
         BuildBar(panel.transform, jet, 320f, out jetFill, out jetCounts);
+        BuildBar(panel.transform, shield, 510f, out shieldFill, out shieldCounts);
 
         var hint = NewText(panel.transform, "Hint", 26, TextAlignmentOptions.Bottom);
-        hint.text = "Hold X: Turbo     Hold A: Jet     B: Close";
+        hint.text = "Hold X: Turbo     Hold A: Jet     Hold Y: Shield     B: Close";
         hint.color = new Color(1f, 1f, 1f, 0.6f);
         var hrt = hint.rectTransform;
         hrt.anchorMin = hrt.anchorMax = hrt.pivot = new Vector2(0.5f, 0f);

@@ -50,10 +50,27 @@ public class DroneProjectile : MonoBehaviour
             Destroy(gameObject);
     }
 
+    [Header("Shield")]
+    [Tooltip("Layer of the player's summoned Shield. A hit on this layer is BLOCKED: the projectile " +
+             "dies with no pop-up and no momentum loss. Works for the local car and for remote puppets " +
+             "alike (the shield's active state replicates), which matters because hits are " +
+             "host-authoritative in multiplayer.")]
+    public string shieldLayerName = "Shield";
+
     void OnCollisionEnter(Collision collision)
     {
         if (consumed) return;
         consumed = true;
+
+        // SHIELD CHECK FIRST. The shield is a CHILD of the car root, so the player-tag walk below would
+        // otherwise find the tag on its parent and pop the player anyway — the whole point of the
+        // shield is that it eats the shot before that.
+        if (IsShield(collision.collider))
+        {
+            AudioManager.PlayProjectileHitEnvironment(transform.position, audio3D);
+            Destroy(gameObject);
+            return;
+        }
 
         // Check if we hit a player (walk up hierarchy for sub-colliders). On the multiplayer host
         // (the only place projectiles simulate) a REMOTE player's solid puppet counts too — the hit
@@ -84,6 +101,15 @@ public class DroneProjectile : MonoBehaviour
 
         // Despawn on any collision regardless of what was hit
         Destroy(gameObject);
+    }
+
+    /// <summary>True when the struck collider is a summoned player shield (matched by LAYER, so it works
+    /// on remote puppets too — their shield's script is stripped, but its layer survives).</summary>
+    bool IsShield(Collider hit)
+    {
+        if (hit == null || string.IsNullOrEmpty(shieldLayerName)) return false;
+        int layer = LayerMask.NameToLayer(shieldLayerName);
+        return layer >= 0 && hit.gameObject.layer == layer;
     }
 
     /// <summary>Applies a host-reported projectile hit to THIS machine's own car (the host detected

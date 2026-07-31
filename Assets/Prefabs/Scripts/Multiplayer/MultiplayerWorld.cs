@@ -482,12 +482,12 @@ public class MultiplayerWorld : MonoBehaviour
         if (notifyServer) SendAreaToServer(false);
     }
 
-    /// <summary>Teleports the local car cleanly. The car's rigidbody uses INTERPOLATE (smooths the
-    /// 50 Hz physics for rendering — see CarController); a plain transform set leaves interpolation's
-    /// pose-history at the pre-teleport spot, so it render-smears across the ~35 km area jump. The
-    /// suspension raycast and follow camera then sample that smeared pose, so the car "keeps falling"
-    /// even though the world already switched areas. Pushing the pose into the physics engine
-    /// (SyncTransforms) and toggling interpolation off/on — which CLEARS the history — makes it instant.</summary>
+    /// <summary>Teleports the local car cleanly across the ~35 km area jump. `SyncTransforms` pushes the
+    /// new pose into the physics engine immediately, so THIS frame's suspension raycasts and camera reads
+    /// sample the destination rather than the old spot. The interpolation toggle is a safety net: IF a car
+    /// rigidbody is ever set to Interpolate, a plain transform set leaves interpolation's pose-history
+    /// behind and the car render-smears across the jump (reads as "kept falling"); toggling off→on clears
+    /// that history. Player cars currently use interpolation NONE, so that branch simply no-ops.</summary>
     static void TeleportCar(Rigidbody rb, Transform car, Vector3 pos, Quaternion rot)
     {
         car.SetPositionAndRotation(pos, rot);

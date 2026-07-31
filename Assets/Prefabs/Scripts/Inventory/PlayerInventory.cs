@@ -55,7 +55,7 @@ public class PlayerInventory : MonoBehaviour
 
     /// <summary>Sets the equipped SD. The SD HUD calls this as the player switches with the
     /// D-pad; read EquippedSD elsewhere to activate the SD's ability.</summary>
-    public void SetEquippedSD(string itemName) => EquippedSD = itemName ?? "";
+    public void SetEquippedSD(string itemName) => EquippedSD = Norm(itemName);
 
     /// <summary>
     /// Creates the persistent "PlayerSystems" object once at startup with the
@@ -76,6 +76,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<LraAbortController>();   // L+R+A hold-to-abort + its progress bar
         go.AddComponent<SDCardHUD>();            // equipped-SD readout + D-pad switching
         go.AddComponent<SDAbilityController>();  // rebindable "SD" control (default D-pad up): toggle the equipped SD
+        go.AddComponent<ShieldAbility>();        // L3: summon the crafted Shield for a few seconds
         go.AddComponent<PlayerCarSwapper>();     // swaps in the Car-Selection choice each gameplay scene
         go.AddComponent<StartMenuController>();   // Start button: in-game menu (Resume/Audio/Controls/Settings/Quit)
         go.AddComponent<TutorialGuide>();         // Tutorial scene's top-screen instruction messages
@@ -108,8 +109,17 @@ public class PlayerInventory : MonoBehaviour
                 Add(stack.itemName, stack.amount);
     }
 
+    /// <summary>
+    /// Normalises an item name before it's used as a key. Item names are typed into the Inspector in
+    /// several unrelated places (store rows, craft recipes, HUD fields, SD ability tables), and a stray
+    /// leading/trailing space makes two spellings of the same item silently distinct — the store grants
+    /// "Plasma " while the ramp recipe looks up "Plasma", so the recipe can never see it. Trimming at
+    /// this one boundary makes every lookup agree no matter how the string was typed.
+    /// </summary>
+    static string Norm(string itemName) => itemName == null ? "" : itemName.Trim();
+
     public int GetCount(string itemName)
-        => counts.TryGetValue(itemName, out int c) ? c : 0;
+        => counts.TryGetValue(Norm(itemName), out int c) ? c : 0;
 
     /// <summary>Item names in first-acquired order (for the inventory view).</summary>
     public IReadOnlyList<string> Order => order;
@@ -181,9 +191,11 @@ public class PlayerInventory : MonoBehaviour
     public void Add(string itemName, int amount)
     {
         if (amount <= 0) return;
-        int current = GetCount(itemName);
-        if (current == 0 && !counts.ContainsKey(itemName)) order.Add(itemName);
-        counts[itemName] = current + amount;
+        string key = Norm(itemName);
+        if (string.IsNullOrEmpty(key)) return;
+        int current = GetCount(key);
+        if (current == 0 && !counts.ContainsKey(key)) order.Add(key);
+        counts[key] = current + amount;
         OnChanged?.Invoke();
     }
 
@@ -193,9 +205,10 @@ public class PlayerInventory : MonoBehaviour
     /// </summary>
     public bool Consume(string itemName, int amount = 1)
     {
-        int current = GetCount(itemName);
+        string key = Norm(itemName);
+        int current = GetCount(key);
         if (amount <= 0 || current < amount) return false;
-        counts[itemName] = current - amount;
+        counts[key] = current - amount;
         OnChanged?.Invoke();
         return true;
     }

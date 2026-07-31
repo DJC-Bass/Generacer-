@@ -242,6 +242,8 @@ public class RemoteCarManager : MonoBehaviour
         byte flags = RemoteCarEffects.Encode(turbo, flame, sd);
         if (MultiplayerWorld.Instance != null && MultiplayerWorld.Instance.InTrackLocally)
             flags |= AreaInTrackFlag;   // bit 4: "I'm in the track" — for the hub spectator TVs
+        if (ShieldAbility.Instance != null && ShieldAbility.Instance.IsActive)
+            flags |= RemoteCarEffects.FlagShield;   // bit 5: my shield is up (blocks projectiles on the host)
         return flags;
     }
 

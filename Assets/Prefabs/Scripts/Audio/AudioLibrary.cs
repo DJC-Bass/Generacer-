@@ -75,6 +75,11 @@ public class AudioLibrary : ScriptableObject
     public AudioClip jetCraftLoop;
     [Tooltip("One-shot when a Jet finishes crafting and is added to the inventory.")]
     public AudioClip jetCrafted;
+    [Tooltip("Looping sound while a Shield is being crafted on the ramp (hold Y) — plays with the " +
+             "progress bar and cuts when it stops (release / cancel / close).")]
+    public AudioClip shieldCraftLoop;
+    [Tooltip("One-shot when a Shield finishes crafting and is added to the inventory.")]
+    public AudioClip shieldCrafted;
 
     [Header("Vehicle SFX (universal — same for every car)")]
     [Tooltip("One-shot played when Turbo Boost activates.")]
@@ -115,6 +120,18 @@ public class AudioLibrary : ScriptableObject
     public AudioClip sdActiveLoop;
     [Tooltip("One-shot (3D, at the car) when an SD ability is deactivated.")]
     public AudioClip sdDeactivate;
+
+    [Header("Shield Ability SFX (3D, at the car)")]
+    [Tooltip("One-shot (3D, at the car) when the Shield is summoned with L3.")]
+    public AudioClip shieldActivate;
+    [Tooltip("Looping 3D sound at the car while the Shield is up (the ~2 s it stays summoned).")]
+    public AudioClip shieldActiveLoop;
+    [Tooltip("One-shot (3D, at the car) when the Shield expires and vanishes.")]
+    public AudioClip shieldDeactivate;
+    [Tooltip("3D playback tuning shared by ALL THREE Shield sounds above (activate / active loop / " +
+             "deactivate) — spatial blend, volume, min/max distance, rolloff, doppler. THIS is the " +
+             "block to edit when tuning how far away the shield can be heard.")]
+    public Spatial3DSettings shieldAudio3D = new Spatial3DSettings();
 
     [Header("LRA SFX")]
     [Tooltip("Looping 2D sound while the player is holding the L+R+A combo to activate the LRA abort " +

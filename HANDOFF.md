@@ -368,25 +368,27 @@ NetworkVariables — same authority model, zero editor setup).**
   extrapolation/smoothing; the collider must track the transform exactly). Applies to ALL solid puppets
   (players/drones/boulders), so it also tightens player-vs-player contact accuracy. **Gotcha for future
   puppet work:** any transform-driven kinematic puppet must have rigidbody interpolation OFF.
-- **Player-car judder fix (2026-07-22):** the host's car vibrated up/down more than the client's, worst on
-  turns/drifts. The hover suspension runs in `FixedUpdate` (framerate-independent — identical physics
-  everywhere, ζ≈0.70 mild bob), but every car prefab had **Rigidbody Interpolate = None**, so the rendered
-  transform only moved on 50 Hz physics steps and was sampled unevenly at other framerates — reads as
-  vertical vibration, worst on the host (hosting load → lower/variable fps) and when the suspension is most
-  active. Fix: `CarController.Start` sets `rb.interpolation = Interpolate` (in code, so every car incl. new
-  ones gets it; overrides the prefab value). Textbook pairing with `CameraFollow` running in LateUpdate =
-  smooth follow at any framerate. NOTE the two interpolation rules are OPPOSITE by design: the REAL car is
-  physics-driven ⇒ **Interpolate**; a PUPPET is transform-driven ⇒ **None**. If the *physics* bob itself is
-  still too much, that's suspension tuning — raise `springDamper` (16 → ~23 = critical), not interpolation.
-- **Teleport regression from the judder fix (2026-07-22):** enabling car Interpolate broke the hub↔track
-  portal — players "kept falling" while the skybox/music had already switched. Cause: teleporting an
-  **Interpolate** rigidbody via a plain `transform.SetPositionAndRotation` leaves interpolation's pose
-  HISTORY at the pre-teleport spot, so it render-smears across the ~35 km area jump; the suspension raycast
-  and follow camera then sample that smeared pose → reads as falling. Fix: new `MultiplayerWorld.TeleportCar`
-  — sets the pose, `Physics.SyncTransforms()`, then toggles `rb.interpolation` off→on to **clear the
-  history** (instant jump). Routed BOTH `EnterTrackLocally` (portal in) and `ReturnToHubLocally` (portal
-  out / kill floor / LRA abort / return portal) through it; all MP exit paths funnel through those two.
-  **Gotcha:** any future transform-teleport of an interpolated body needs the same history-clear.
+- **Player-car judder — RESOLVED, and NOT with interpolation (settled 2026-07-23). Read this before
+  touching Rigidbody interpolation again.** The host's car appeared to vibrate up/down more than the
+  client's on turns/drifts. It was tried as an interpolation problem (`CarController.Start` setting
+  `rb.interpolation = Interpolate`) — **that change has been REVERTED and should not be reintroduced.**
+  Actual cause: **the size of the Editor game window in Focus Mode**; maximized/fullscreen heavily
+  reduces the vibration. Setting cars to Interpolate also caused a WORSE, separate regression —
+  **DroneCar movement jittered as if on bad ping** — plus it broke the hub↔track portal teleport (see
+  below). Player cars therefore stay on interpolation **None**. Puppets are transform-driven and also
+  **None**. If the *physics* bob itself ever feels like too much, that's suspension tuning — raise
+  `springDamper` (16 → ~23 = critically damped) — not interpolation.
+- **Teleport hardening (2026-07-22, from the reverted interpolation experiment):** while cars were
+  briefly set to Interpolate, the hub↔track portal broke — players "kept falling" while the
+  skybox/music had already switched, because teleporting an **Interpolate** rigidbody via a plain
+  `transform.SetPositionAndRotation` leaves interpolation's pose HISTORY at the pre-teleport spot and
+  it render-smears across the ~35 km jump. `MultiplayerWorld.TeleportCar` was added and **kept**: it
+  sets the pose, calls `Physics.SyncTransforms()` (so THIS frame's suspension raycasts/camera read the
+  destination), then toggles `rb.interpolation` off→on to clear any history. With cars back on `None`
+  that toggle simply no-ops, so the helper is now just correct-by-construction teleporting. BOTH
+  `EnterTrackLocally` and `ReturnToHubLocally` (portal out / kill floor / LRA abort / return portal)
+  route through it. **Gotcha:** any future transform-teleport of an interpolated body needs that
+  history-clear.
 - **Round lifecycle** (server loop in MultiplayerWorld, extended): round start clears the claim →
   round runs (portal for all, individual entry/exit, per-player deaths/finishes as before) → round end
   broadcast (everyone teleports home FIRST) → **`EvaluateRoundServer()` runs ONCE**: claimed team ⇒
@@ -441,6 +443,51 @@ message layer like everything else — no NetworkObjects). PLUS the player-colli
   `SpawnStrikeAt(point, height)` runs identically on every machine — same hazard, per-client contact
   damage stays local and consistent). Fans stay locally spawned everywhere but all their rolls now
   derive from `DeriveRandom("fans")` (they'd silently diverged per client before).
+- **PATROLLING DRONE PLANES (user feature, 2026-07-23 — ✅ compiles 0 errors; NEEDS SCENE WIRING, see
+  below).** `DroneAI/DronePlane.cs` + `DroneAI/DronePlaneSpawner.cs`, prefab `Prefabs/Planes/DronePlane`.
+  Airborne hunters that own a patch of sky over the track. **Three states:** PATROL — flies a horizontal
+  circle around its spawn point at a moderate cruise, holding its spawn altitude; CHASE — on spotting a
+  player in its vision cone it locks on and pursues in FULL 3D (so it follows a car up hills, through
+  loops and off jumps), holding `standoffDistance` (90) and sitting `chaseHeightOffset` (60) above the
+  car so it **strafes rather than rams**, firing the DroneCar's burst cycle + `DroneProjectile` the whole
+  time; RAGDOLL — ANY solid collision (scenery, a car, **another plane**) instantly kills the AI, flips
+  `useGravity` on and lets it tumble `ragdollDuration` (1 s) before despawning.
+  **Bounty:** crashing *while hunting someone* pays THAT player `killReward` (50) — local inventory, or
+  `NpcReplicator.SendBounty` for a remote player; crashing on patrol with no target pays nobody.
+  **Target loss:** `ValidateStickyTarget(target, anyArea:false)` is exactly the "did my target leave the
+  track?" test (LRA / kill floor / return portal / disconnect) → the plane drops back to PATROL around
+  wherever it now is, rather than flying home.
+  **NOT A RACER:** it never calls `NotifyRacerFinished`, so a plane can't cost the player first place or
+  score a round for the drones. Flying through the Return Portal is doubly safe — the portal is a
+  TRIGGER (so no `OnCollisionEnter` → no ragdoll) and it only reacts to the `Player` tag.
+  **Spawning:** FanSpawner-style scatter over `RoadEdge` centreline samples with lateral scatter, but the
+  vertical offset is a **positive band** (`minVerticalOffset` 120 .. `maxVerticalOffset` 600) rolled per
+  plane — always ABOVE the track, and the spread is what gives "mixed" altitudes. Patrol radius/speed are
+  also per-plane ranges. Host-only sim like DroneCarSpawner (`IsClientOnly` early-out, `RoundLoadedLocally`
+  gate, `TrackFrozen` respected in FixedUpdate); streamed as `NpcKind.Drone` (15 Hz, solid puppet).
+  `NpcReplicator.RegisterPrefab` extended to auto-register a **DronePlane's** projectile prefab too.
+  **Self-fire guard:** each plane `IgnoreCollision`s its own projectiles against all its colliders — without
+  it a plane ragdolls on its own first shot.
+  **Predictive aim (2026-07-23):** the plane leads its shots — `PredictAimPoint` aims where the car WILL
+  be from its current trajectory (`leadTarget` on, `leadTime` 1 s), not where it is. **Velocity source
+  matters:** remote players are KINEMATIC puppets whose rigidbody velocity is meaningless, so theirs comes
+  off `RemoteCarPuppet.CurrentVelocity` (the replicated value); the local car uses its own rigidbody; a
+  sampled position-delta is the last-resort fallback. Sight/cone checks still use the car's REAL position —
+  only the aim point is led. Optional `useProjectileFlightTime` swaps the fixed lead for a 2-pass intercept
+  solve (distance ÷ 402 m/s); **worth knowing: a fixed 1 s over-leads badly up close** — a shot crosses 50 m
+  in ~0.12 s — so flip that on if planes miss at knife range. `maxLeadTime` (2 s) caps a wild reading.
+  **Gizmos (2026-07-23):** `showVisionGizmo` / `showPatrolGizmo` / `showChaseGizmo` toggles (chase also
+  draws the YELLOW predicted aim point + the lead offset from the car, which is how you tune `leadTime`). Vision cone uses
+  the SAME expanding-ring style as DroneCar (green searching → red locked); patrol draws the horizontal
+  circle + centre marker + the point on the ring it's flying to; chase draws the line to the car and the
+  orange standoff hold-sphere. All work **before pressing play** — outside play mode the patrol centre falls
+  back to `transform.position`, since `patrolCenter` is only assigned in Awake (it would otherwise draw at
+  the world origin while authoring).
+  **⚠️ SCENE WIRING STILL REQUIRED (not doable from script):** (1) create the **`DronePlane` layer** in
+  Project Settings → Tags and Layers and set its collision matrix; (2) put a `DronePlaneSpawner` in the
+  TrackScene with `trackGenerator` + `dronePlanePrefab` assigned; (3) give the DronePlane prefab a
+  **Rigidbody + collider** and assign `projectilePrefab`; (4) set the plane's `visionMask` to the
+  **Player + RemotePlayer + DronePlane** layers only (never terrain, or the cone gets blocked).
 - **Sticky random targeting per the spec** (`MultiplayerWorld.PickStickyTarget(anyArea)` /
   `ValidateStickyTarget`): pool = players **currently in the track** (server `inTrackNow` +
   local car/remote puppets), `anyArea: true` for the hub ending swarm. Chase drones stick until the
@@ -1043,6 +1090,57 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   inline `CreateSlider` / `CreateOptionSelector` / rebind flow; the Start Menu already uses the shared
   versions. Pure dedupe — behaviour is already matched, so this is cleanup, not a fix.
 - ~~Input rebinding UI~~ — **DONE** (both menus, with conflict detection and live re-apply).
+
+**SHIELD ABILITY (user feature, 2026-07-23 — ✅ compiles 0 errors; NEEDS SCENE/PREFAB WIRING, below).**
+Plasma → Shield at the ramp; L3 summons an ellipsoid shield that eats drone fire for 2 s.
+- **Crafting:** third bar on the Upgrade Ramp — **Y** (X=Turbo, A=Jet, B=Close were taken), `Plasma` →
+  `Shield`, `craftTime` 1 s (same as Turbo). Capped at **4 held** via a NEW `CraftRecipe.maxProduct`
+  flat cap (0 = none) — distinct from the existing container cap (`capacityItem` × `capacityPerContainer`),
+  because Shield has no container item. `HasCapacity` enforces BOTH; the counts line renders `n/4`.
+  Ramp panel grew 520 → 710 for the third bar. **"Plasma" itself is a STORE row configured in the scene's
+  StoreController inspector** (the code-side default list is untouched).
+- **`Inventory/ShieldAbility.cs` (new, bootstrapped on PlayerSystems):** **L3** (`Gamepad.leftStickButton`,
+  polled directly like VoiceChat's LB — not a rebindable action) consumes one `Shield` and shows the car's
+  shield child for `shieldDuration` (2 s), then hides it. One activation = one shield; a press while
+  shielded or with none held is ignored. Finds the shield by CHILD NAME ("Shield", case-insensitive,
+  inactive-inclusive) under the local car, and re-finds it on a fresh car (scene load / car swap).
+- **Blocking projectiles — the subtle part:** `DroneProjectile.OnCollisionEnter` walks UP the hierarchy for
+  the `Player` tag, and the shield is a CHILD of the tagged car root — so a shield hit would have popped
+  the player anyway. It now checks the **Shield LAYER first** and, on a match, despawns with the
+  environment SFX and no pop-up/momentum loss. Layer (not component) because puppets have their scripts
+  stripped — the layer survives, so the same check works for local cars and remote puppets alike.
+- **Multiplayer:** shield state rides **bit 5 (`RemoteCarEffects.FlagShield`, 0x20)** of the existing car
+  stream byte — bits 0-3 are effects, **bit 4 is `AreaInTrackFlag`**, so 5 was the next free one.
+  Level-triggered like the other flags (a dropped Unreliable packet self-heals next tick). This does
+  DOUBLE DUTY: remote players see each other's shields, AND since projectile hits are **host-authoritative**,
+  the host's copy of a remote player's shield collider is what actually blocks their incoming fire.
+  `RemoteCarEffects` finds the puppet's shield by the same child name and toggles it.
+- **HUD:** `TurboJetHUD` gained a third label, `Shield: n`, to the RIGHT of Jet (x=690).
+- **Shield audio (2026-07-23) — 5 new AudioLibrary slots.** Crafting mirrors Turbo exactly:
+  `shieldCraftLoop` (loops with the Y progress bar, cut on each completion so a consecutive craft
+  restarts fresh) + `shieldCrafted` (one-shot, via `AudioManager.PlayShieldCrafted`). Ability sounds are
+  3D at the car: `shieldActivate` / `shieldActiveLoop` / `shieldDeactivate`, played by
+  `AudioManager.PlayShieldActivate`/`PlayShieldDeactivate` and (for the loop) a `ShieldLoopAudio` source
+  `ShieldAbility` owns and repositions onto the car each frame — same shape as SDAbilityController's
+  `sdLoopSource`. **3D TUNING LIVES IN ONE PLACE: `AudioLibrary.shieldAudio3D`** (a `Spatial3DSettings`
+  block on `Resources/AudioLibrary.asset`) — blend / volume / min+max distance / rolloff / doppler,
+  shared by all three shield sounds and applied via `ApplyTo(src, SfxVolume)`. NOTE this is unlike the SD
+  loop, whose 3D values are still HARDCODED in SDAbilityController (min 5 / max 60).
+- **Item names are now TRIMMED — `PlayerInventory.Norm` (2026-07-23). Read this before debugging any
+  "the recipe/store can't see my item" report.** First Shield playtest: the ramp wouldn't register Plasma
+  or craft. Cause was DATA, not code — the HubWorld Store override had `items.Array.data[4].itemName` =
+  **`'Plasma '` with a TRAILING SPACE** (Unity quotes a string when it has one), while the ramp recipe's
+  `shield.materialB` was `Plasma`. Two distinct dictionary keys ⇒ `GetCount` 0 ⇒ `HasMaterials` false ⇒
+  the bar never charges, and the counts line shows 0. Item names are hand-typed into the Inspector in
+  four unrelated places (store rows, craft recipes, HUD fields, SD tables), so this is a permanent
+  footgun: `GetCount`/`Add`/`Consume`/`SetEquippedSD` now `Trim()` their key, making every lookup agree
+  regardless of stray whitespace. `Order` (and so the inventory view) stores trimmed names too.
+- **⚠️ WIRING STILL REQUIRED (not doable from script):** (1) create the **`Shield` layer** in Project
+  Settings → Tags and Layers; (2) set its **collision matrix** — ON vs lightning / fans / boulders /
+  other players+cars, **OFF vs the track and the hub floor** (this is the "passes through the world"
+  behaviour, deliberately left as project settings, not code); (3) add the Shield ellipsoid as a child of
+  each **player-car prefab**, named exactly **"Shield"**, on the Shield layer, with a collider, left
+  **INACTIVE**; (4) confirm the **"Plasma"** store row exists (and is priced) on the scene StoreController.
 
 ---
 

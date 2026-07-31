@@ -25,6 +25,11 @@ public class RemoteCarEffects : MonoBehaviour
     public const byte FlagFlame = 0x02;   // bit 1: the jet flame flare is showing
     const int SdShift = 2;                // bits 2-3: active SD index (0..3)
     const byte SdMask = 0x0C;
+    // bit 4 is AreaInTrackFlag, owned by RemoteCarManager (which area the owner is in).
+    /// <summary>Bit 5: the owner's Shield is summoned. Replicating it does double duty — remote players
+    /// SEE the shield, and on the HOST (where projectile hits are decided) the puppet's shield collider
+    /// goes live, so it actually blocks incoming drone fire for its owner.</summary>
+    public const byte FlagShield = 0x20;
 
     // Canonical SD ordering both ends agree on (index 0 = "none"). Names match the SD inventory items
     // and the SDAbilityVFX entries; a car simply has no captured particle system for an SD it can't show.
@@ -52,11 +57,17 @@ public class RemoteCarEffects : MonoBehaviour
     private GameObject[] flameObjects;
     private Dictionary<string, ParticleSystem> sdSystems;
     private TrailRenderer[] trails;
+    private GameObject shieldObject;   // the puppet's own Shield child (mesh + collider on the Shield layer)
 
     // ---- Applied state (edge-detected so we never restart a running particle or thrash SetActive) ----
     private bool flameShown;
     private string sdShown;      // null == none
     private bool trailShown;
+    private bool shieldShown;
+
+    /// <summary>Name of the shield child on the car prefab. Must match ShieldAbility.shieldChildName —
+    /// puppets have their scripts stripped, so the shield can only be found by NAME here.</summary>
+    const string ShieldChildName = "Shield";
 
     /// <summary>Hands over the captured flame objects + SD particle systems (from the puppet instance)
     /// and the car prefab (read for trail tuning + rear-wheel offsets). Call before the puppet activates.</summary>
@@ -71,7 +82,26 @@ public class RemoteCarEffects : MonoBehaviour
                 if (!string.IsNullOrEmpty(kv.Key) && kv.Value != null)
                     sdSystems[kv.Key] = kv.Value;
 
+        // The shield rides on the puppet itself (StripPuppet keeps meshes + colliders), so we just find
+        // and hide it; the replicated flag bit raises it.
+        var shield = FindChildByName(transform, ShieldChildName);
+        shieldObject = shield != null ? shield.gameObject : null;
+        if (shieldObject != null) shieldObject.SetActive(false);
+
         BuildTrails(prefab);
+    }
+
+    /// <summary>Depth-first child search by name, including INACTIVE objects — the shield sits inactive
+    /// on the prefab, so an active-only search would never find it.</summary>
+    static Transform FindChildByName(Transform root, string name)
+    {
+        foreach (Transform child in root)
+        {
+            if (string.Equals(child.name, name, System.StringComparison.OrdinalIgnoreCase)) return child;
+            var deeper = FindChildByName(child, name);
+            if (deeper != null) return deeper;
+        }
+        return null;
     }
 
     /// <summary>Recreates the two rear-tire turbo trails the owner's CarController builds at runtime
@@ -136,6 +166,14 @@ public class RemoteCarEffects : MonoBehaviour
         bool turbo = (flags & FlagTurbo) != 0;
         bool flame = (flags & FlagFlame) != 0;
         string sd = SdOrder[(flags & SdMask) >> SdShift];
+
+        // Shield: level-triggered like the rest, so a dropped packet self-heals on the next update.
+        bool shield = (flags & FlagShield) != 0;
+        if (shield != shieldShown && shieldObject != null)
+        {
+            shieldShown = shield;
+            shieldObject.SetActive(shield);
+        }
 
         // The flame flare's rising edge IS a jump — break the trail there, exactly as the owner does
         // when it leaves the ground, so a jet-jump doesn't smear a straight line across the arc.

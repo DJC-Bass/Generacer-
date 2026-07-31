@@ -18,9 +18,11 @@ public class TurboJetHUD : MonoBehaviour
     [Tooltip("Inventory item names to display.")]
     public string turboItem = "Turbo";
     public string jetItem = "Jet";
+    public string shieldItem = "Shield";
 
     private TextMeshProUGUI turboLabel;
     private TextMeshProUGUI jetLabel;
+    private TextMeshProUGUI shieldLabel;
     private GameObject canvasGO;
 
     void Awake()
@@ -64,6 +66,7 @@ public class TurboJetHUD : MonoBehaviour
         var inv = PlayerInventory.Instance;
         if (turboLabel != null) turboLabel.text = $"Turbo: {(inv != null ? inv.GetCount(turboItem) : 0)}";
         if (jetLabel != null) jetLabel.text = $"Jet: {(inv != null ? inv.GetCount(jetItem) : 0)}";
+        if (shieldLabel != null) shieldLabel.text = $"Shield: {(inv != null ? inv.GetCount(shieldItem) : 0)}";
     }
 
     void BuildUI()
@@ -78,11 +81,13 @@ public class TurboJetHUD : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 0.5f;
 
-        // Turbo on the left, Jet offset to its right with a gap between them.
+        // Turbo on the left, Jet to its right, Shield to the right of that — each offset by a gap.
         turboLabel = MakeLabel(canvasGO.transform, "TurboText",
                                new Color(0.45f, 0.65f, 1f), anchoredX: 30f, width: 300f);
         jetLabel = MakeLabel(canvasGO.transform, "JetText",
                              new Color(0.65f, 0.82f, 1f), anchoredX: 360f, width: 300f);
+        shieldLabel = MakeLabel(canvasGO.transform, "ShieldText",
+                                new Color(0.55f, 1f, 0.85f), anchoredX: 690f, width: 300f);
     }
 
     static TextMeshProUGUI MakeLabel(Transform parent, string name, Color color,

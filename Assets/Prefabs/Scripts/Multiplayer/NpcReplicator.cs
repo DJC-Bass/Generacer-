@@ -44,8 +44,9 @@ public class NpcReplicator : MonoBehaviour
     // ---- Prefab registry (populated on every machine by the scene spawners) ----
     private static readonly Dictionary<string, GameObject> prefabs = new Dictionary<string, GameObject>();
 
-    /// <summary>Registers a prefab clients may need to build puppets from. Registering a drone
-    /// prefab also registers its projectile prefab (clients have no other path to it).</summary>
+    /// <summary>Registers a prefab clients may need to build puppets from. Registering a shooter
+    /// (drone car or drone plane) also registers its projectile prefab (clients have no other path
+    /// to it).</summary>
     public static void RegisterPrefab(GameObject prefab)
     {
         if (prefab == null) return;
@@ -53,6 +54,9 @@ public class NpcReplicator : MonoBehaviour
         var drone = prefab.GetComponent<DroneCar>();
         if (drone != null && drone.projectilePrefab != null)
             prefabs[drone.projectilePrefab.name] = drone.projectilePrefab;
+        var plane = prefab.GetComponent<DronePlane>();
+        if (plane != null && plane.projectilePrefab != null)
+            prefabs[plane.projectilePrefab.name] = plane.projectilePrefab;
     }
 
     // ---- Host-side tracked entities ----

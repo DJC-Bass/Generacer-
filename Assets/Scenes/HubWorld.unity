@@ -723,6 +723,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1066234524}
     m_Modifications:
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialA
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialB
+      value: Plasma
+      objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
       value: UpgradeRamp (1)
@@ -1117,6 +1125,43 @@ PrefabInstance:
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 06747d9d7f0c3ab4aab4c7cf073c2026, type: 2}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.size
+      value: 6
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].price
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[4].itemName
+      value: 'Plasma '
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[4].maxOwned
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].itemName
+      value: LRA
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].maxOwned
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[4].description
+      value: Used to craft Shields in the Upgrade Ramp.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].description
+      value: Press L, R and A to grant safe passage back home and keep your inventory
+        (one time use).
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].grantAmount
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6872381292332018610, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: m_LocalPosition.x
       value: -3.37323
@@ -2220,6 +2265,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1066234524}
     m_Modifications:
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialA
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialB
+      value: Plasma
+      objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
       value: UpgradeRamp
@@ -3603,6 +3656,14 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 574272633}
     m_Modifications:
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialA
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialB
+      value: Plasma
+      objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
       value: UpgradeRamp (1)
@@ -5312,6 +5373,43 @@ PrefabInstance:
       propertyPath: m_StaticShadowCaster
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.size
+      value: 6
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].price
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[4].itemName
+      value: 'Plasma '
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[4].maxOwned
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].itemName
+      value: LRA
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].maxOwned
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[4].description
+      value: Used to craft Shields in the Upgrade Ramp.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].description
+      value: Press L, R and A to grant safe passage back home and keep your inventory
+        (one time use).
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].grantAmount
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 6872381292332018610, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: m_LocalPosition.x
       value: -3.37323
@@ -5608,6 +5706,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: 'Landmass[Subdivided]'
       objectReference: {fileID: 0}
+    - target: {fileID: 3947770401456116004, guid: b2069e3ff732ebf489a56d9bc7436526, type: 3}
+      propertyPath: m_Layer
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 5420364377667204636, guid: b2069e3ff732ebf489a56d9bc7436526, type: 3}
+      propertyPath: m_Layer
+      value: 8
+      objectReference: {fileID: 0}
     - target: {fileID: 6997044689445513540, guid: b2069e3ff732ebf489a56d9bc7436526, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -5752,6 +5858,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 574272633}
     m_Modifications:
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.label
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialA
+      value: Plasma
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.materialB
+      value: 
+      objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
       value: UpgradeRamp
