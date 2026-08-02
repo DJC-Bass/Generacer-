@@ -477,7 +477,20 @@ message layer like everything else — no NetworkObjects). PLUS the player-colli
   solve (distance ÷ 402 m/s); **worth knowing: a fixed 1 s over-leads badly up close** — a shot crosses 50 m
   in ~0.12 s — so flip that on if planes miss at knife range. `maxLeadTime` (2 s) caps a wild reading.
   **Gizmos (2026-07-23):** `showVisionGizmo` / `showPatrolGizmo` / `showChaseGizmo` toggles (chase also
-  draws the YELLOW predicted aim point + the lead offset from the car, which is how you tune `leadTime`). Vision cone uses
+  draws the YELLOW predicted aim point + the lead offset from the car, which is how you tune `leadTime`).
+- **PROJECTILE I-FRAMES / anti-stunlock (2026-07-23):** a landed DronePissBall grants
+  `hitInvulnerabilitySeconds` (2 s) of immunity to **every** drone projectile — from any plane or drone
+  car, not just the one that hit — so a pack can't chain-pop the player. State is a **static** on
+  `DroneProjectile` (`invulnerableUntil` / `PlayerInvulnerable`) because the window belongs to the
+  PLAYER, not to any one projectile. **Not replicated, deliberately:** each machine owns its own car's
+  window, so BOTH hit paths test it — local contact in `OnCollisionEnter`, and host-reported hits in
+  `ApplyRemoteHitToLocalPlayer` (the host can't know a client's window, so it reports every contact and
+  the victim decides; a dropped hit costs one wasted message). An absorbed shot still despawns but
+  plays the ENVIRONMENT impact, not the player one. Instances publish their inspector value into
+  `lastKnownInvulnSeconds` so the static remote path uses the tuned duration instead of a second
+  hardcoded number. `ResetStatics` (`RuntimeInitializeOnLoadMethod`) clears the window on load —
+  without it, with domain reload disabled, a stale future timestamp + `Time.time` restarting at 0 would
+  leave the player permanently immune. Vision cone uses
   the SAME expanding-ring style as DroneCar (green searching → red locked); patrol draws the horizontal
   circle + centre marker + the point on the ring it's flying to; chase draws the line to the car and the
   orange standoff hold-sphere. All work **before pressing play** — outside play mode the patrol centre falls

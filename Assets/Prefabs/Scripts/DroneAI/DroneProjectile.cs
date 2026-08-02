@@ -27,15 +27,46 @@ public class DroneProjectile : MonoBehaviour
              "three DronePissBall sounds: the drone firing it, and its environment / player impacts.")]
     public Spatial3DSettings audio3D = new Spatial3DSettings();
 
+    [Header("Hit Invulnerability (anti-stunlock)")]
+    [Tooltip("Seconds of immunity to ALL drone projectiles after one lands. Shared across every " +
+             "projectile from every drone car and plane, so a pack can't chain-pop the player: the " +
+             "first hit lands, and everything else is ignored until the window closes.")]
+    public float hitInvulnerabilitySeconds = 2f;
+
     private Rigidbody rb;
     private float spawnTime;
     private bool consumed;
+
+    // ---- Local player's invulnerability window (STATIC = shared by every projectile in the scene,
+    //      which is the whole point: the window belongs to the PLAYER, not to any one projectile).
+    //      Each machine owns its own car's window — the host tracks its own, and a client applies the
+    //      same test to host-reported hits — so nothing has to be replicated. ----
+    static float invulnerableUntil = -999f;
+    // Instances publish their inspector value here so the STATIC remote-hit path (which has no
+    // instance) uses the same tuned duration instead of a second hardcoded number.
+    static float lastKnownInvulnSeconds = 2f;
+
+    /// <summary>True while the local player is still immune from a recent projectile hit.</summary>
+    public static bool PlayerInvulnerable => Time.time < invulnerableUntil;
+
+    /// <summary>Opens (or extends) the local player's immunity window.</summary>
+    static void BeginInvulnerability(float seconds)
+    {
+        if (seconds <= 0f) return;
+        invulnerableUntil = Mathf.Max(invulnerableUntil, Time.time + seconds);
+    }
+
+    // Statics survive a play-mode restart when domain reload is disabled, and Time.time restarts at 0 —
+    // a stale future value would leave the player permanently immune. Clear it on every load.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics() => invulnerableUntil = -999f;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         rb.useGravity = false;          // travels in a straight line, not an arc
         spawnTime = Time.time;
+        lastKnownInvulnSeconds = hitInvulnerabilitySeconds;   // keep the static path in sync with the prefab
     }
 
     /// <summary>Launch the projectile in a direction at a given speed (m/s).</summary>
@@ -81,8 +112,15 @@ public class DroneProjectile : MonoBehaviour
         {
             if (t.CompareTag(playerTag))
             {
-                HitPlayer(t.gameObject);
-                hitPlayer = true;
+                // ANTI-STUNLOCK: while the window from a previous hit is open, this shot is absorbed —
+                // the projectile still dies, but nothing is applied. hitPlayer stays false so it reads
+                // as a dull environment impact rather than a second player hit.
+                if (!PlayerInvulnerable)
+                {
+                    HitPlayer(t.gameObject);
+                    BeginInvulnerability(hitInvulnerabilitySeconds);
+                    hitPlayer = true;
+                }
                 break;
             }
             if (t.CompareTag("RemotePlayer"))
@@ -119,6 +157,13 @@ public class DroneProjectile : MonoBehaviour
     {
         var car = PlayerRegistry.LocalCar;
         if (car == null) return;
+
+        // ANTI-STUNLOCK, victim side. The HOST can't know our invulnerability window, so it reports
+        // every contact against our puppet and WE decide — the same test the local path uses, which is
+        // what makes the window cover projectiles from every drone and plane regardless of who saw the
+        // hit. Dropping it here costs only a wasted message.
+        if (PlayerInvulnerable) return;
+        BeginInvulnerability(lastKnownInvulnSeconds);
 
         AudioManager.PlayProjectileHitPlayer(car.transform.position, null);
 

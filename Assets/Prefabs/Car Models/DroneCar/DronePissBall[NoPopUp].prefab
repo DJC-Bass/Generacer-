@@ -154,7 +154,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   maxLifetime: 4
-  popUpForce: 0
+  popUpForce: 10
   playerTag: Player
   mainMenuSceneName: MainMenu
   audio3D:
@@ -164,3 +164,5 @@ MonoBehaviour:
     maxDistance: 200
     rolloffMode: 1
     dopplerLevel: 0
+  hitInvulnerabilitySeconds: 2
+  shieldLayerName: Shield

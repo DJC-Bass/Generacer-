@@ -209,7 +209,7 @@ MonoBehaviour:
   fireWindowDuration: 0.5
   fireCooldownDuration: 1
   leadTarget: 1
-  leadTime: 1
+  leadTime: 2
   useProjectileFlightTime: 1
   maxLeadTime: 4
   ragdollDuration: 3
