@@ -1104,6 +1104,27 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   versions. Pure dedupe — behaviour is already matched, so this is cleanup, not a fix.
 - ~~Input rebinding UI~~ — **DONE** (both menus, with conflict detection and live re-apply).
 
+**LRA IS NOW A DEFAULT CAR ABILITY, with a PREMIUM upgrade item (user change, 2026-07-23 — ✅ compiles
+0 errors).** Previously the L+R+A abort required an "LRA" item and always kept the inventory. Now:
+- **DEFAULT tier (RED bar) — always available, no item, can't run out.** It's an innate ability of every
+  car, so nothing shows in the inventory view. Cost: the inventory is **wiped to the starting defaults**
+  (`ResetToStarting`), exactly like the kill floor / timeout. It only saves the player the fall.
+- **PREMIUM tier (GREEN bar)** — whenever the player holds an **"LRA Premium"** (store item), the abort
+  consumes one and keeps the inventory: the ORIGINAL LRA behaviour. Still one-use.
+- `LraAbortController`: the `HasLra()` gate is GONE from `canAbort` (the combo now always works while
+  in-track), `premiumItemName` replaces `lraItemName`, and `CompleteAbort` does consume-or-wipe in one
+  place (`bool premium = inv.Consume(premiumItemName, 1); if (!premium) inv.ResetToStarting();`) so the
+  two outcomes can never both fire. The bar's fill colour is recoloured **live in `ShowBar`** off
+  `HasPremium()`, so mid-hold the player can see which abort they're committing to.
+- Leaving the track now ranks: End Portal (keep + rewards) > LRA Premium (keep, no rewards) > LRA default
+  (wiped, but on the player's terms) > kill floor / timeout (wiped).
+- **Note:** `LraAbortController` is CODE-BOOTSTRAPPED (`AddComponent` in `PlayerInventory.Bootstrap`), so
+  it has no serialized scene/prefab data — changed field defaults take effect immediately, unlike the
+  UpgradeRamp/Store prefabs where the YAML wins.
+- **⚠️ The store row must be renamed to exactly `LRA Premium`** — as of this change the saved HubWorld
+  scene still read `LRA`, and a mismatch silently drops EVERY abort to the inventory-wiping tier (same
+  failure shape as the `'Plasma '` bug above).
+
 **SHIELD ABILITY (user feature, 2026-07-23 — ✅ compiles 0 errors; NEEDS SCENE/PREFAB WIRING, below).**
 Plasma → Shield at the ramp; L3 summons an ellipsoid shield that eats drone fire for 2 s.
 - **Crafting:** third bar on the Upgrade Ramp — **Y** (X=Turbo, A=Jet, B=Close were taken), `Plasma` →

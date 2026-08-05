@@ -1143,7 +1143,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].itemName
-      value: LRA
+      value: LRA Premium
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].maxOwned
@@ -1155,8 +1155,8 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].description
-      value: Press L, R and A to grant safe passage back home and keep your inventory
-        (one time use).
+      value: Using the LRA keeps your current inventory instead of losing it (one
+        time use).
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].grantAmount
@@ -5391,7 +5391,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].itemName
-      value: LRA
+      value: LRA Premium
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].maxOwned
@@ -5403,8 +5403,8 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].description
-      value: Press L, R and A to grant safe passage back home and keep your inventory
-        (one time use).
+      value: Using the LRA keeps your current inventory instead of losing it (one
+        time use).
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].grantAmount

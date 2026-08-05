@@ -210,7 +210,7 @@ MonoBehaviour:
   fireCooldownDuration: 1
   leadTarget: 1
   leadTime: 2
-  useProjectileFlightTime: 1
+  useProjectileFlightTime: 0
   maxLeadTime: 4
   ragdollDuration: 3
   killReward: 50
