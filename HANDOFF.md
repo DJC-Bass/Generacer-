@@ -1104,6 +1104,70 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   versions. Pure dedupe — behaviour is already matched, so this is cleanup, not a fix.
 - ~~Input rebinding UI~~ — **DONE** (both menus, with conflict detection and live re-apply).
 
+**PROCEDURAL SKYBOX with animated clouds + stars (user feature, 2026-07-23).**
+`Prefabs/Skyboxes/ProceduralSkyClouds.shader` — a URP skybox in the spirit of Unity's built-in
+Skybox/Procedural (tinted zenith→horizon gradient, flat ground colour, sun disk + glow off the scene's
+directional light) plus drifting CLOUDS and fixed STARS. Fully procedural — no textures.
+- **Draw order is sky → stars → sun → clouds**, so clouds correctly occlude both stars and the sun.
+- **Clouds:** 5-octave fbm value-noise on a DOME projection (`dir.xz / (dir.y + _CloudDomeBias)` — the
+  bias stops the horizon smearing to infinity), drifting along `_CloudDirection` at `_CloudSpeed`, with
+  a time-warped domain (`_CloudTurbulence`) so shapes CHURN instead of sliding rigidly. `_CloudCoverage`
+  / `_CloudSoftness` shape them; `_CloudHorizonFade` keeps them off the horizon line.
+- **Stars:** hash-per-cell points from the quantised view direction. Because a skybox's direction never
+  depends on camera POSITION, they're pinned to the sky and never move — as specified.
+- **Sun placement (2026-07-23):** `_SunDirectionSource` picks between **Manual Angles** (default) and
+  **Scene Directional Light**. Manual uses `_SunElevation` (−10..90; **90 = straight overhead / noon**)
+  + `_SunAzimuth` (0..360), converted to a direction in the shader — so the visual sun is authored
+  independently of scene lighting. The light mode reads `_MainLightPosition` (declared in URP's
+  `Input.hlsl`, pulled in by `Core.hlsl` — do NOT redeclare it), guarded against a zero vector so a
+  scene with no directional light can't NaN. **Gotcha:** in Manual mode the sun disk and the actual
+  lighting direction are DECOUPLED — match them by hand, or switch to the light mode.
+- **Sun is masked by `aboveHorizon`** so the ground OCCLUDES it. Without that a low sun drew as a bright
+  disk sitting in the flat ground area (the symptom that prompted the manual-angle controls).
+- **NIGHT MODE (2026-07-23)** — the sky goes dark on its own when the directional light is gone, like
+  the built-in skybox losing its light. `_NightSource`: **Auto** (default) derives the night factor from
+  **`_MainLightColor` luminance — URP sets that global to BLACK when there is no main directional light
+  (or it's disabled)**, which is the reliable "no sun" signal; **Manual** drives `_NightBlend` yourself
+  (0..1), which is the hook for a scripted day/night fade. `_NightLightThreshold` sets how dim counts as
+  night. At night: colours are MULTIPLIED down by `_NightDarkness` × `_NightTint` (multiplied, NOT
+  replaced with authored night colours — that **preserves the per-scene randomised HUE**, so the sky
+  still reads as its own colour, just deep and cool); `_Exposure` lerps to `_NightExposure`; the SUN
+  fades out entirely; stars go to full `_StarBrightness` while daylight scales them by
+  `_DayStarVisibility` (0.15). **Ordering matters and is deliberate:** night is applied to the sky/ground
+  BEFORE the stars are added (so stars stay bright against a dark sky), and clouds are night-darkened but
+  composited LAST so they still occlude stars after dark.
+- **Hue-randomizer hook:** it exposes `_SkyTint` + `_GroundColor` under the built-in names, so naming a
+  material with the **`SimpleSkybox` prefix** makes `SkyboxHueRandomizer` hue-shift it per scene / per
+  round seed exactly like the existing sky. Name it anything else to opt OUT of the randomisation.
+- **Static GROUND TEXTURE (2026-07-23):** the same fbm cloud noise projected onto the ground plane with
+  **no time term** — fixed mottling that breaks up the flat ground colour (`_GroundCloud*` properties).
+  It's inside an `if (up < 0.05)` branch: sky and ground pixels are screen-coherent, so whole waves take
+  one side and genuinely skip the other's fbm rather than paying for both.
+- **Hue randomisation, extended (2026-07-23):** `SkyboxHueRandomizer` re-hues `_HorizonColor`,
+  `_CloudColor` and `_GroundCloudColor` too, each behind a `HasProperty` guard so the built-in
+  Skybox/Procedural material is untouched. **Only THREE hues are rolled (sky / ground / lit cloud), and
+  they're drawn UP FRONT before the guards** — drawing them lazily inside the optional branches would
+  advance the seeded stream a different number of steps on a machine whose skybox lacked those
+  properties, desyncing multiplayer skies. **Horizon and ground-texture hues are DERIVED, not rolled**
+  (`hSky + horizonHueOffset`, `hGround + groundTextureHueOffset`, both `Mathf.Repeat`-wrapped), so the
+  sky gradient and the ground each read as one coherent surface instead of occasionally rolling a
+  clashing pair. **`_NightTint` is rolled too** (4th independent hue), so the night sky gets its own cast
+  per scene.
+  `ShiftHue` takes optional saturation bounds, used for OPPOSITE reasons — both default to no clamping,
+  so the original colours behave exactly as before:
+  • `cloudMinSaturation` (0.2) raises the FLOOR for the lit cloud colour — **hue does nothing to a
+  pure-white (S=0) colour**, so the shader's default white clouds would otherwise never visibly tint.
+  • `nightTintMaxSaturation` (0.5) caps the CEILING for the night tint — that colour is **MULTIPLIED**
+  into the already-hue-shifted sky, and a vivid clashing pair (red tint over a green sky) cancels the
+  channels and collapses the night to near-black. Set it to 1 to allow those very dark nights.
+- **⚠️ Shaders are NOT covered by `dotnet build`** — that only compiles C#. This one is unverified until
+  Unity imports it; check the Console/material inspector on first import.
+- **Perf note:** clouds are the expensive part (one 5-octave fbm + a 2-tap warp per pixel, full-screen).
+  The warp deliberately uses single-octave `ValueNoise`, not `Fbm`, to keep it to ONE fbm per pixel. If a
+  weak GPU struggles, drop the octave count in `Fbm` or set `_CloudTurbulence` to 0.
+- **Build tip:** if the sky renders in the Editor but not in a build, add the shader to Project Settings
+  → Graphics → Always Included Shaders (the usual skybox-stripping gotcha).
+
 **LRA IS NOW A DEFAULT CAR ABILITY, with a PREMIUM upgrade item (user change, 2026-07-23 — ✅ compiles
 0 errors).** Previously the L+R+A abort required an "LRA" item and always kept the inventory. Now:
 - **DEFAULT tier (RED bar) — always available, no item, can't run out.** It's an innate ability of every
