@@ -53,7 +53,7 @@ public class SDAbilityController : MonoBehaviour
     private SDAbility[] abilities =
     {
         new SDAbility { sdItemName = "Fire SD",      effect = SDEffectType.MassMultiply, massMultiplier = 100f, creditsPerSecond = 20f },
-        new SDAbility { sdItemName = "Wind SD",      effect = SDEffectType.CollideOnly,  collideLayers = new[] { "Track", "Default" }, creditsPerSecond = 25f },
+        new SDAbility { sdItemName = "Wind SD",      effect = SDEffectType.CollideOnly,  collideLayers = new[] { "Track", "Default", "Portal" }, creditsPerSecond = 25f },
         new SDAbility { sdItemName = "Lightning SD", effect = SDEffectType.Rewind, creditsPerSecond = 50f },
     };
 

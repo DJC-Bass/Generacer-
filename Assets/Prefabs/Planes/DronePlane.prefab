@@ -207,11 +207,11 @@ MonoBehaviour:
   fireRate: 12
   projectileSpeed: 402
   fireWindowDuration: 0.5
-  fireCooldownDuration: 1
+  fireCooldownDuration: 0.5
   leadTarget: 1
-  leadTime: 2
+  leadTime: 0.5
   useProjectileFlightTime: 0
-  maxLeadTime: 4
+  maxLeadTime: 1
   ragdollDuration: 3
   killReward: 50
   showVisionGizmo: 1

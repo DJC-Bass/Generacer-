@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 1721648663414653880}
   - component: {fileID: 254366612106336038}
   - component: {fileID: 1234567890987654321}
-  m_Layer: 0
+  m_Layer: 18
   m_Name: PortalTrigger
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -106,7 +106,7 @@ GameObject:
   - component: {fileID: 2088620252937897274}
   - component: {fileID: 403640367920195125}
   - component: {fileID: 6075015363959644399}
-  m_Layer: 0
+  m_Layer: 18
   m_Name: PortalMesh
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -218,7 +218,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3464968713083386110}
   - component: {fileID: -8164794143000553149}
-  m_Layer: 0
+  m_Layer: 18
   m_Name: Portal
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -272,7 +272,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1861025399710742256}
-  m_Layer: 0
+  m_Layer: 18
   m_Name: PortalParticles
   m_TagString: Untagged
   m_Icon: {fileID: 0}
