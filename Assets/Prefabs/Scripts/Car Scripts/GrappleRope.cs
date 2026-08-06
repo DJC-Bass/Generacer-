@@ -22,13 +22,13 @@ public class GrappleRope : MonoBehaviour
     [Tooltip("Gravity applied to the rope points (units/s²). Only affects the LOOK of the sag.")]
     public float ropeGravity = -9f;
     [Tooltip("Velocity retained each frame (0..1). Lower = the rope settles faster.")]
-    [Range(0f, 1f)] public float damping = 0.75f;
+    [Range(0f, 1f)] public float damping = 0.5f;
     [Tooltip("How much longer the rope is than the straight line between its ends. 1 = taut, " +
              "1.06 gives a natural slack curve.")]
-    public float slack = 1f;
+    public float slack = .75f;
     [Tooltip("Rope thickness at the muzzle and at the hook end.")]
-    public float startWidth = 0.20f;
-    public float endWidth = 0.25f;
+    public float startWidth = 0.50f;
+    public float endWidth = 0.75f;
 
     private LineRenderer line;
     private Vector3[] points;
@@ -54,7 +54,7 @@ public class GrappleRope : MonoBehaviour
             var shader = Shader.Find("Universal Render Pipeline/Unlit");
             if (shader == null) shader = Shader.Find("Sprites/Default");
             if (shader != null)
-                line.material = new Material(shader) { color = new Color(0.85f, 0.85f, 0.9f) };
+                line.material = new Material(shader) { color = new Color(0f, 0f, 0f) };
         }
         AllocatePoints();
     }

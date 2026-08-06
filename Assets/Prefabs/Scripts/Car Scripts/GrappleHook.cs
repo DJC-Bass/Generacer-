@@ -32,11 +32,14 @@ public class GrappleHook : MonoBehaviour
     public float fireSpeed = 640f;
     [Tooltip("Seconds the hook may fly without hitting anything before it's recalled.")]
     public float flightTimeout = 2f;
-    [Tooltip("Radius of the hook's sweep test. A little thickness makes it far easier to catch edges.")]
-    public float hookRadius = 10f;
+    [Tooltip("Thickness of the SECONDARY sweep, used only to catch edges the thin primary ray misses. " +
+             "This is a sweep radius, NOT a catch range — keep it small (≈0.5–2). A radius large enough " +
+             "to engulf the road around the car makes every sphere hit a useless start-overlap; " +
+             "detection then rests entirely on the ray. 0 disables the secondary test.")]
+    public float hookRadius = 1.5f;
 
     [Header("Muzzle (front of the car)")]
-    public float muzzleForward = 2.5f;
+    public float muzzleForward = 3f;
     public float muzzleUp = 0.5f;
 
     [Header("Blocked Layers")]
@@ -54,9 +57,9 @@ public class GrappleHook : MonoBehaviour
 
     [Header("Reeling (RT + Y)")]
     [Tooltip("Acceleration applied while reeling.")]
-    public float reelForce = 45f;
+    public float reelForce = 100f;
     [Tooltip("Metres per second the rope shortens while reeling the car in.")]
-    public float reelSpeed = 18f;
+    public float reelSpeed = 100f;
     [Tooltip("A trigger past this value (0-1) counts as held.")]
     public float triggerThreshold = 0.5f;
 
@@ -140,14 +143,24 @@ public class GrappleHook : MonoBehaviour
     //  Fire / flight
     // -------------------------------------------------------
 
+    /// <summary>Where the rope is DRAWN from — the nose of the car.</summary>
     Vector3 MuzzlePosition() =>
         carGO.transform.position + carGO.transform.forward * muzzleForward + carGO.transform.up * muzzleUp;
+
+    /// <summary>Where the physics sweep STARTS — the car's centre: muzzle height, but WITHOUT the
+    /// forward offset. That forward projection is what put the origin inside rising track mesh when
+    /// driving uphill, and a sweep beginning inside a collider reports point (0,0,0) — which anchored
+    /// the hook to the world origin. Starting at the centre keeps the origin in open air inside the car
+    /// body, whose own colliders are skipped anyway (degenerate distance-0 hits, plus the IsOwnCar
+    /// test). The rope still visually leaves the nose; the hook clears the car within one step.</summary>
+    Vector3 SweepOrigin() =>
+        carGO.transform.position + carGO.transform.up * muzzleUp;
 
     void Fire()
     {
         CurrentState = State.Firing;
         flightTimer = 0f;
-        HookPosition = MuzzlePosition();
+        HookPosition = SweepOrigin();
         // Inherit the car's velocity so the hook isn't left behind when fired at speed.
         hookVelocity = carGO.transform.forward * fireSpeed + carRb.linearVelocity;
         if (rope != null) rope.ResetShape();
@@ -168,25 +181,29 @@ public class GrappleHook : MonoBehaviour
 
         if (stepLen > 1e-4f)
         {
-            // Everything except the blocked layers; self-hits are filtered below (the car and another
-            // player share the Player layer, so this can't be done with a mask).
-            var hits = Physics.SphereCastAll(from, hookRadius, step / stepLen, stepLen,
-                                             ~blockedMask, QueryTriggerInteraction.Ignore);
-            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-            foreach (var hit in hits)
-            {
-                // DEGENERATE HIT — the sweep began already OVERLAPPING this collider. Unity reports
-                // those with distance 0 and, critically, **point = Vector3.zero**: there is no real
-                // contact point to give. Honouring one anchored the hook to the WORLD ORIGIN, which
-                // (with the track sitting at TrackAreaOffset, 100 km out) read as "it grabbed something
-                // impossibly far away". It happened going UPHILL, where the muzzle — pushed out in
-                // front of the car — buries itself in the rising track mesh. Skip and keep flying; the
-                // hook leaves the geometry within a step or two.
-                if (hit.distance <= 0f) continue;
+            Vector3 dir = step / stepLen;
 
-                if (IsOwnCar(hit.collider.transform)) continue;   // never hook ourselves
-                if (IsUserInterface(hit.collider.transform)) continue;
-                Attach(hit);
+            // PRIMARY TEST — a thin RAY. It gives exact contact points and, crucially, does not begin
+            // its sweep already overlapping the road: a fat sphere centred near the car engulfs the
+            // track surface underneath it, so the track came back as a distance-0 start-overlap on
+            // EVERY step and was skipped — the hook flew straight through the world. A ray from inside
+            // the car body is in open air and reports the road properly.
+            if (TryPickHit(Physics.RaycastAll(from, dir, stepLen, ~blockedMask,
+                                              QueryTriggerInteraction.Ignore), out RaycastHit rayHit))
+            {
+                Attach(rayHit);
+                return;
+            }
+
+            // SECONDARY TEST — the sphere, purely to widen the catch onto edges the thin ray slipped
+            // past. Start-overlaps are still discarded here (their point is Vector3.zero, which once
+            // anchored the hook to the world origin 100 km away), but that no longer costs us the
+            // track, because the ray above owns the real detection.
+            if (hookRadius > 0f &&
+                TryPickHit(Physics.SphereCastAll(from, hookRadius, dir, stepLen, ~blockedMask,
+                                                 QueryTriggerInteraction.Ignore), out RaycastHit sphereHit))
+            {
+                Attach(sphereHit);
                 return;
             }
         }
@@ -199,6 +216,26 @@ public class GrappleHook : MonoBehaviour
         {
             Release();
         }
+    }
+
+    /// <summary>Nearest usable hit from a sweep result. Rejects: DEGENERATE hits (`distance == 0` means
+    /// the sweep began inside that collider — Unity has no contact point to report and hands back
+    /// `Vector3.zero`, i.e. the world origin), our own car, and UI canvases.</summary>
+    bool TryPickHit(RaycastHit[] hits, out RaycastHit best)
+    {
+        best = default;
+        if (hits == null || hits.Length == 0) return false;
+
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        foreach (var hit in hits)
+        {
+            if (hit.distance <= 0f) continue;
+            if (IsOwnCar(hit.collider.transform)) continue;
+            if (IsUserInterface(hit.collider.transform)) continue;
+            best = hit;
+            return true;
+        }
+        return false;
     }
 
     bool IsOwnCar(Transform t)

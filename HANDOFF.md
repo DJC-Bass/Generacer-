@@ -1111,9 +1111,17 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   with no hit. Blocked layers (`blockedLayerNames`, inspector): **Portal / Projectile / Lightning**; the
   car's OWN colliders are always skipped by hierarchy test, not by mask — a remote player's car shares
   the `Player` layer, so a mask could never separate "me" from "them".
-- **Flight uses `SphereCastAll` along the travel SEGMENT**, not a point test at the new position: the
-  hook covers hundreds of metres per second and would otherwise tunnel straight through thin geometry.
-  Velocity is inherited from the car so it still outruns you at 600 mph.
+- **Flight sweeps along the travel SEGMENT** (not a point test at the new position): the hook covers
+  hundreds of metres per second and would otherwise tunnel. **NOTE the hook has NO rigidbody/collider —
+  there is nothing to set "Continuous Dynamic" on; a swept cast IS the CCD technique**, so speed alone
+  can never make it miss. Velocity is inherited from the car so it still outruns you at 600 mph.
+- **TWO-TIER detection (2026-07-23), and WHY:** a thin **`RaycastAll` is the PRIMARY** test; the
+  `SphereCastAll` is a **secondary** pass only, widening the catch onto edges. Reason: `hookRadius` is a
+  sweep RADIUS, not a catch range. Raised to 10, the sphere **engulfed the road the car sits on**, so
+  the track was a distance-0 START-OVERLAP every step → discarded by the degenerate-hit rule → the hook
+  flew straight through the world, ignoring the track entirely. A ray from inside the car body is in
+  open air and reports the road correctly, so detection no longer depends on the radius being sane.
+  Keep `hookRadius` ≈0.5–2; 0 disables the secondary test.
 - **Tether = ONE inextensible distance constraint** (chosen over a jointed chain, which stretches and
   destabilises at this game's speeds). It only removes the velocity component moving AWAY from the
   anchor once taut — the tangential component is left alone, and **that IS the swing**, for free.
@@ -1146,9 +1154,15 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   5. A **ScreenSpaceOverlay canvas's rect spans (0,0) → (screenW, screenH) in world units, so its
      bottom-left CORNER sits exactly on the world origin.** The rope ended at the origin; the canvas
      corner was simply the nearest thing drawn there. Pure coincidence — the canvas has no collider.
-  **Fix:** `TickFlight` skips any hit with `hit.distance <= 0f`. The hook keeps flying and leaves the
-  geometry within a step or two. **Gotcha for any future sweep/raycast in this project: a cast that
-  starts inside a collider returns point (0,0,0) — always reject `distance <= 0` before using the point.**
+  **Fixed twice over — symptom AND cause:** (1) `TickFlight` skips any hit with `hit.distance <= 0f`;
+  (2) the sweep now starts from **`SweepOrigin()` = car centre** (muzzle HEIGHT, no forward offset)
+  instead of the muzzle. The `forward × 2.5` projection was the thing burying the origin in the hill —
+  the height offset never was. The rope is still DRAWN from `MuzzlePosition()` (the nose), so it looks
+  unchanged; the hook clears the car body within one step, and the body's own colliders are skipped by
+  both the distance-0 rule and the `IsOwnCar` test.
+  **Gotcha for any future sweep/raycast in this project: a cast that starts inside a collider returns
+  point (0,0,0) — always reject `distance <= 0` before using the point.** With the track 100 km from the
+  origin, that failure mode doesn't look like a local bug; it looks like a wild hit across the map.
 - **UI hygiene (kept anyway, 2026-07-23).** Independent of the above: **every canvas here is code-built
   with `new GameObject(...)`, which lands on the DEFAULT layer**, so excluding the UI layer from a
   physics query achieves nothing on its own. TWO measures, belt-and-braces:
