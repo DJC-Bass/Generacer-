@@ -143,5 +143,7 @@ public class SDCardHUD : MonoBehaviour
         rt.pivot = new Vector2(0f, 1f);
         rt.sizeDelta = new Vector2(500f, 64f);
         rt.anchoredPosition = new Vector2(30f, -100f);
+
+        UiLayer.Apply(canvasGO);   // keep code-built UI off the Default layer (see UiLayer)
     }
 }

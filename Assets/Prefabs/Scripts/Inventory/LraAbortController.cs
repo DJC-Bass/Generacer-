@@ -252,6 +252,8 @@ public class LraAbortController : MonoBehaviour
         label.color = Color.white;
         label.alignment = TextAlignmentOptions.Center;
         StretchToParent(label.rectTransform);
+
+        UiLayer.Apply(canvasGO);   // keep code-built UI off the Default layer (see UiLayer)
     }
 
     static void StretchToParent(RectTransform rt)

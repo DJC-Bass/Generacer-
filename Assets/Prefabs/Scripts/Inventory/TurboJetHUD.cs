@@ -88,6 +88,8 @@ public class TurboJetHUD : MonoBehaviour
                              new Color(0.65f, 0.82f, 1f), anchoredX: 360f, width: 300f);
         shieldLabel = MakeLabel(canvasGO.transform, "ShieldText",
                                 new Color(0.55f, 1f, 0.85f), anchoredX: 690f, width: 300f);
+
+        UiLayer.Apply(canvasGO);   // keep code-built UI off the Default layer (see UiLayer)
     }
 
     static TextMeshProUGUI MakeLabel(Transform parent, string name, Color color,

@@ -256,6 +256,10 @@ public class MultiplayerWorld : MonoBehaviour
         // Phase 5: host-simulated AI/obstacles streamed to clients as puppets.
         gameObject.AddComponent<NpcReplicator>();
 
+        // Grappling hook: streams each player's rope so others can see it, and routes a reel on a
+        // remote player's car to the machine that owns it.
+        gameObject.AddComponent<GrappleReplicator>();
+
         // Voice chat via Vivox: proximity (positional 3D) + LB team-direct (2D). The persistent,
         // self-bootstrapped VoiceService logs in and joins THIS match's channels; EndMatch on teardown.
         VoiceService.BeginMatch();

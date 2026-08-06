@@ -68,6 +68,7 @@ public class Speedometer : MonoBehaviour
         rt.sizeDelta = new Vector2(400f, 100f);
         rt.anchoredPosition = new Vector2(-screenPadding.x, screenPadding.y);
 
+        UiLayer.Apply(canvasGO);   // keep code-built UI off the Default layer (see UiLayer)
         return tmp;
     }
 }

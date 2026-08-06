@@ -1104,6 +1104,66 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   versions. Pure dedupe — behaviour is already matched, so this is cleanup, not a fix.
 - ~~Input rebinding UI~~ — **DONE** (both menus, with conflict detection and live re-apply).
 
+**GRAPPLING HOOK (user feature, 2026-07-23 — ✅ compiles 0 errors).** `Car Scripts/GrappleHook.cs`,
+`Car Scripts/GrappleRope.cs`, `Multiplayer/GrappleReplicator.cs`.
+- **Controls:** **RB** fires from the car's nose (RB was completely unused — no conflict); **RB again**
+  releases, whether still flying or attached. **RT + Y** reels. Range 200 m, recalled after a 2 s flight
+  with no hit. Blocked layers (`blockedLayerNames`, inspector): **Portal / Projectile / Lightning**; the
+  car's OWN colliders are always skipped by hierarchy test, not by mask — a remote player's car shares
+  the `Player` layer, so a mask could never separate "me" from "them".
+- **Flight uses `SphereCastAll` along the travel SEGMENT**, not a point test at the new position: the
+  hook covers hundreds of metres per second and would otherwise tunnel straight through thin geometry.
+  Velocity is inherited from the car so it still outruns you at 600 mph.
+- **Tether = ONE inextensible distance constraint** (chosen over a jointed chain, which stretches and
+  destabilises at this game's speeds). It only removes the velocity component moving AWAY from the
+  anchor once taut — the tangential component is left alone, and **that IS the swing**, for free.
+  Slack rope does nothing at all. `GrappleRope` is a many-segment VERLET rope for the visual only.
+- **Reeling is decided by MASS:** anchor lighter than the car ⇒ the object is dragged in; heavier or
+  static (the track) ⇒ the car is pulled instead and the rope shortens. Note a remote player's puppet is
+  KINEMATIC but still carries the real car's mass from the prefab, so it's excluded from the
+  `isKinematic` test that would otherwise disqualify every remote car.
+- **Facing is a TORQUE, applied only while `CarController.IsAirborne`.** Torque (not a hard rotation)
+  means it does its best and simply falls short when geometry won't allow it — exactly the user's case
+  of grappling a car that's over a ledge while you're on the track. Grounded steering is never
+  overridden, so a mid-race grapple doesn't make the car undrivable.
+- **Multiplayer:** `GNRC_GRAPPLE` streams {senderId, state, hookPos} at 15 Hz so everyone sees everyone's
+  ropes (Unreliable while active, **Reliable on release** so a rope can't be left hanging). Pulling a
+  remote player can NOT push their puppet — movement is owner-authoritative and the next state update
+  would overwrite it — so `GNRC_GRAPPLE_PULL` is relayed via the host to the OWNER's machine, which
+  applies the acceleration to their real car. `PushAnchor` routes automatically.
+- **Bootstrapping:** `GrappleHook` on the PlayerSystems object (like ShieldAbility); `GrappleReplicator`
+  added to the MultiplayerWorld object at session begin. No scene wiring, no prefab.
+- **"Grapple grabs the CreditsHUD canvas" — the REAL cause was NOT the UI (2026-07-23). Worth reading
+  before trusting any `hit.point` from a sweep.** The rope appeared to latch onto a corner of the
+  CreditsHUDCanvas rect from a huge distance. It never touched the UI. Chain:
+  1. Going **uphill**, the muzzle (car position + forward × 2.5) buries itself in the rising track mesh.
+  2. `Physics.SphereCastAll` starting **already overlapping** a collider reports that hit with
+     `distance == 0` and — the killer — **`point == Vector3.zero`**. Documented Unity behaviour: there
+     is no real contact point to report, so you get the origin.
+  3. The hook honoured it and anchored to **world origin (0,0,0)**.
+  4. The track area sits at `TrackAreaOffset` = **(0,0,-100000)**, so the rope stretched 100 km back to
+     the origin — hence "grabbed from very far away".
+  5. A **ScreenSpaceOverlay canvas's rect spans (0,0) → (screenW, screenH) in world units, so its
+     bottom-left CORNER sits exactly on the world origin.** The rope ended at the origin; the canvas
+     corner was simply the nearest thing drawn there. Pure coincidence — the canvas has no collider.
+  **Fix:** `TickFlight` skips any hit with `hit.distance <= 0f`. The hook keeps flying and leaves the
+  geometry within a step or two. **Gotcha for any future sweep/raycast in this project: a cast that
+  starts inside a collider returns point (0,0,0) — always reject `distance <= 0` before using the point.**
+- **UI hygiene (kept anyway, 2026-07-23).** Independent of the above: **every canvas here is code-built
+  with `new GameObject(...)`, which lands on the DEFAULT layer**, so excluding the UI layer from a
+  physics query achieves nothing on its own. TWO measures, belt-and-braces:
+  (1) new `UI/UiLayer.cs` — `UiLayer.Apply(canvasRoot)` sets a canvas and all descendants to the **UI**
+  layer; called at the END of each build (after children exist) in CreditsHUD, TurboJetHUD, SDCardHUD,
+  LraAbortController, Speedometer and VoiceService — the canvases alive during track gameplay.
+  (2) `GrappleHook.IsUserInterface` skips ANY hit whose collider has a **Canvas parent**, regardless of
+  layer. That's the actual guarantee: a Canvas is never a legitimate grapple target, and it covers UI
+  added in future without anyone remembering to call `UiLayer.Apply` or set a layer.
+  **When adding new code-built UI:** call `UiLayer.Apply` at the end of its build for consistency; the
+  Canvas check means forgetting can't reintroduce the grapple bug.
+- **Tuning:** `ropeStiffness` (1 = perfectly inextensible), `ropeSpring`, `reelForce`/`reelSpeed`,
+  `faceTorque`/`faceDamping`, `hookRadius` (thickness makes edges much easier to catch), and
+  `GrappleRope`'s `slack`/`segments`/`solverIterations` for how string-like the rope looks.
+
 **PROCEDURAL SKYBOX with animated clouds + stars (user feature, 2026-07-23).**
 `Prefabs/Skyboxes/ProceduralSkyClouds.shader` — a URP skybox in the spirit of Unity's built-in
 Skybox/Procedural (tinted zenith→horizon gradient, flat ground colour, sun disk + glow off the scene's

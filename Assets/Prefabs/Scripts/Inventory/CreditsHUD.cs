@@ -93,5 +93,10 @@ public class CreditsHUD : MonoBehaviour
         rt.pivot = new Vector2(0f, 1f);
         rt.sizeDelta = new Vector2(500f, 70f);
         rt.anchoredPosition = new Vector2(30f, -24f);
+
+        // Park the whole canvas on the UI layer. Code-built UI defaults to the DEFAULT layer, which is
+        // how the grappling hook was able to latch onto this HUD. Applied last, so the children are
+        // already parented and get it too.
+        UiLayer.Apply(canvasGO);
     }
 }
