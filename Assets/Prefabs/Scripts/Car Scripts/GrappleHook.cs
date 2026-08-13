@@ -25,11 +25,19 @@ public class GrappleHook : MonoBehaviour
 {
     public static GrappleHook Instance { get; private set; }
 
+    [Header("Requirement")]
+    [Tooltip("Inventory item the player must OWN to fire at all — the tool, not ammo, so it is never " +
+             "consumed. Without it RB does nothing. Blank = no requirement.")]
+    public string requiredItem = "Grappling Gun";
+    [Tooltip("Item SPENT on every shot (the ammo). One is consumed the moment the hook launches, hit " +
+             "or miss. Blank = shots are free.")]
+    public string ammoItem = "Grappling Hook";
+
     [Header("Firing")]
     [Tooltip("Maximum rope length (metres). The hook is recalled if it flies further than this.")]
-    public float maxRange = 1000f;
+    public float maxRange = 1500f;
     [Tooltip("Hook travel speed (m/s), on top of the car's own velocity so it still outruns the car.")]
-    public float fireSpeed = 640f;
+    public float fireSpeed = 1500f;
     [Tooltip("Seconds the hook may fly without hitting anything before it's recalled.")]
     public float flightTimeout = 2f;
     [Tooltip("Thickness of the SECONDARY sweep, used only to catch edges the thin primary ray misses. " +
@@ -41,6 +49,12 @@ public class GrappleHook : MonoBehaviour
     [Header("Muzzle (front of the car)")]
     public float muzzleForward = 3f;
     public float muzzleUp = 0.5f;
+
+    [Header("Shield")]
+    [Tooltip("Layer of a summoned player Shield. A hook that reaches one FAILS outright — the shot is " +
+             "swatted away and recalled, rather than passing through or latching on. Your own shield " +
+             "is never a candidate (it's part of your car, which the hook always skips).")]
+    public string shieldLayerName = "Shield";
 
     [Header("Blocked Layers")]
     [Tooltip("Layers the hook passes straight through instead of latching onto. Defaults to Portal, " +
@@ -57,9 +71,9 @@ public class GrappleHook : MonoBehaviour
 
     [Header("Reeling (RT + Y)")]
     [Tooltip("Acceleration applied while reeling.")]
-    public float reelForce = 100f;
+    public float reelForce = 50f;
     [Tooltip("Metres per second the rope shortens while reeling the car in.")]
-    public float reelSpeed = 100f;
+    public float reelSpeed = 50f;
     [Tooltip("A trigger past this value (0-1) counts as held.")]
     public float triggerThreshold = 0.5f;
 
@@ -72,6 +86,34 @@ public class GrappleHook : MonoBehaviour
     /// <summary>What the hook is doing right now. Read by the replicator to stream rope state.</summary>
     public enum State { Idle, Firing, Attached }
     public State CurrentState { get; private set; } = State.Idle;
+
+    /// <summary>WHAT the rope is anchored to. The replicator sends this rather than a world position:
+    /// a Static point is identical on every machine, and a PlayerCar is already replicated + smoothed
+    /// by RemoteCarPuppet, so each viewer can glue the rope to THEIR copy of that car instead of
+    /// chasing a stale point sampled on someone else's machine.</summary>
+    public enum AnchorKind : byte
+    {
+        None = 0,
+        Static = 1,      // fixed world point (track geometry) — correct everywhere, never moves
+        PlayerCar = 2,   // another player's car: send their client id + a local offset
+        Dynamic = 3,     // some other rigidbody (drone, boulder) — still needs a streamed position
+    }
+    public AnchorKind CurrentAnchorKind { get; private set; } = AnchorKind.None;
+
+    /// <summary>Owning client of a <see cref="AnchorKind.PlayerCar"/> anchor.</summary>
+    public ulong AnchorClientId { get; private set; }
+    /// <summary>Attach point in the anchor's LOCAL space (PlayerCar / Dynamic).</summary>
+    public Vector3 AnchorLocalOffset => anchorLocal;
+    /// <summary>Attach point in world space (Static), or the live position for Dynamic.</summary>
+    public Vector3 AnchorWorldPoint => anchorRb != null ? CurrentAnchor() : anchorWorld;
+
+    // ---- Flight, published so viewers can SIMULATE it instead of being fed 15 positions a second ----
+    /// <summary>Where the hook was launched from.</summary>
+    public Vector3 FlightOrigin { get; private set; }
+    /// <summary>Constant velocity of the hook in flight — it travels in a straight line.</summary>
+    public Vector3 FlightVelocity => hookVelocity;
+    /// <summary>Seconds the hook has been flying, so a viewer can start mid-flight.</summary>
+    public float FlightElapsed => flightTimer;
 
     /// <summary>Live hook-head position — the far end of the rope. Meaningless while Idle.</summary>
     public Vector3 HookPosition { get; private set; }
@@ -124,9 +166,17 @@ public class GrappleHook : MonoBehaviour
             var gp = Gamepad.current;
             if (gp != null && gp.rightShoulder.wasPressedThisFrame)
             {
-                if (CurrentState == State.Idle) Fire();
-                else Release();                      // RB again releases, whether flying or attached
+                // RELEASING is never gated — losing the gun (or the last hook) mid-swing must not
+                // strand the player on a tether they can't cut. Only FIRING has requirements.
+                if (CurrentState != State.Idle) Release();
+                else TryFire();
             }
+
+            // L3 — BREAK FREE of anyone grappling us. Polled here rather than called from
+            // ShieldAbility so the two stay independent: the same press summons a shield (if one is
+            // held) AND shrugs off the tether, and breaking free still works with an empty inventory.
+            if (gp != null && gp.leftStickButton.wasPressedThisFrame && MultiplayerWorld.IsMultiplayerGame)
+                GrappleReplicator.SendBreakFree();
         }
 
         UpdateRopeVisual();
@@ -156,15 +206,49 @@ public class GrappleHook : MonoBehaviour
     Vector3 SweepOrigin() =>
         carGO.transform.position + carGO.transform.up * muzzleUp;
 
+    /// <summary>True when the player owns the Grappling Gun. It's a TOOL: checked on every shot but
+    /// never consumed, so one purchase enables the hook for good.</summary>
+    bool HasGrappleGun()
+    {
+        if (string.IsNullOrEmpty(requiredItem)) return true;   // blank = ungated
+        var inv = PlayerInventory.Instance;
+        return inv != null && inv.GetCount(requiredItem) > 0;
+    }
+
+    /// <summary>Fires only if the player owns the gun AND has a hook to spend. The hook is consumed at
+    /// LAUNCH, hit or miss — a wasted shot costs one, which is what makes range and aim matter.</summary>
+    void TryFire()
+    {
+        if (!HasGrappleGun())
+        {
+            Debug.Log($"[Grapple] No '{requiredItem}' owned — RB does nothing.");
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(ammoItem))
+        {
+            var inv = PlayerInventory.Instance;
+            if (inv == null || !inv.Consume(ammoItem, 1))
+            {
+                Debug.Log($"[Grapple] Out of '{ammoItem}' — craft more at the Upgrade Ramp.");
+                return;
+            }
+        }
+
+        Fire();
+    }
+
     void Fire()
     {
         CurrentState = State.Firing;
+        CurrentAnchorKind = AnchorKind.None;
         flightTimer = 0f;
         HookPosition = SweepOrigin();
+        FlightOrigin = HookPosition;
         // Inherit the car's velocity so the hook isn't left behind when fired at speed.
         hookVelocity = carGO.transform.forward * fireSpeed + carRb.linearVelocity;
         if (rope != null) rope.ResetShape();
-        AudioManager.PlaySdActivate(HookPosition);
+        AudioManager.PlayGrappleFire(MuzzlePosition());
     }
 
     /// <summary>Advances the hook and sweeps for a catch. A SPHERE cast along the travel segment (not a
@@ -191,7 +275,7 @@ public class GrappleHook : MonoBehaviour
             if (TryPickHit(Physics.RaycastAll(from, dir, stepLen, ~blockedMask,
                                               QueryTriggerInteraction.Ignore), out RaycastHit rayHit))
             {
-                Attach(rayHit);
+                ResolveHit(rayHit);
                 return;
             }
 
@@ -203,7 +287,7 @@ public class GrappleHook : MonoBehaviour
                 TryPickHit(Physics.SphereCastAll(from, hookRadius, dir, stepLen, ~blockedMask,
                                                  QueryTriggerInteraction.Ignore), out RaycastHit sphereHit))
             {
-                Attach(sphereHit);
+                ResolveHit(sphereHit);
                 return;
             }
         }
@@ -255,6 +339,27 @@ public class GrappleHook : MonoBehaviour
     /// grapple target, so this covers all of it — current and future — for one lookup per candidate hit.</summary>
     static bool IsUserInterface(Transform t) => t != null && t.GetComponentInParent<Canvas>() != null;
 
+    /// <summary>Decides what a landed hit means. A player's SHIELD defeats the hook outright — the
+    /// attempt is recalled rather than latching on, so raising a shield is a real counter to being
+    /// grappled (and pairs with the shield already blocking drone fire).</summary>
+    void ResolveHit(RaycastHit hit)
+    {
+        if (IsShield(hit.collider))
+        {
+            Debug.Log("[Grapple] Hook deflected by a player's shield.");
+            Release();
+            return;
+        }
+        Attach(hit);
+    }
+
+    bool IsShield(Collider hit)
+    {
+        if (hit == null || string.IsNullOrEmpty(shieldLayerName)) return false;
+        int layer = LayerMask.NameToLayer(shieldLayerName);
+        return layer >= 0 && hit.gameObject.layer == layer;
+    }
+
     void Attach(RaycastHit hit)
     {
         HookPosition = hit.point;
@@ -266,8 +371,20 @@ public class GrappleHook : MonoBehaviour
         if (anchorWasBody) anchorLocal = anchorRb.transform.InverseTransformPoint(hit.point);
         else anchorWorld = hit.point;
 
+        // Classify the anchor for replication. A PlayerCar is the important case: it's already
+        // replicated and smoothed on every machine, so viewers should derive the rope end from THEIR
+        // copy of that car rather than be fed a position sampled on ours.
+        if (!anchorWasBody) CurrentAnchorKind = AnchorKind.Static;
+        else if (AnchorIsRemotePlayer(out ulong ownerId))
+        {
+            CurrentAnchorKind = AnchorKind.PlayerCar;
+            AnchorClientId = ownerId;
+        }
+        else CurrentAnchorKind = AnchorKind.Dynamic;   // drone, boulder — still needs streaming
+
         ropeLength = Mathf.Max(Vector3.Distance(MuzzlePosition(), hit.point), minRopeLength);
         CurrentState = State.Attached;
+        AudioManager.PlayGrappleAttach(hit.point);   // out where it landed, not at the car
         Debug.Log($"[Grapple] Attached to '{hit.collider.name}' at {ropeLength:0.#} m.");
     }
 
@@ -275,9 +392,10 @@ public class GrappleHook : MonoBehaviour
     {
         if (CurrentState == State.Idle) return;
         CurrentState = State.Idle;
+        CurrentAnchorKind = AnchorKind.None;
         anchorRb = null;
         anchorWasBody = false;
-        if (carGO != null) AudioManager.PlaySdDeactivate(carGO.transform.position);
+        if (carGO != null) AudioManager.PlayGrappleRelease(carGO.transform.position);
     }
 
     // -------------------------------------------------------

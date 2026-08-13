@@ -80,6 +80,12 @@ public class AudioLibrary : ScriptableObject
     public AudioClip shieldCraftLoop;
     [Tooltip("One-shot when a Shield finishes crafting and is added to the inventory.")]
     public AudioClip shieldCrafted;
+    [Tooltip("Looping sound while the player is ROTATING the right stick to craft a Grappling Hook — " +
+             "plays with the radial gauge and cuts the moment the stick stops or is released.")]
+    public AudioClip grappleCraftLoop;
+    [Tooltip("One-shot when a Grappling Hook finishes crafting (one full revolution) and is added to " +
+             "the inventory.")]
+    public AudioClip grappleCrafted;
 
     [Header("Vehicle SFX (universal — same for every car)")]
     [Tooltip("One-shot played when Turbo Boost activates.")]
@@ -132,6 +138,20 @@ public class AudioLibrary : ScriptableObject
              "deactivate) — spatial blend, volume, min/max distance, rolloff, doppler. THIS is the " +
              "block to edit when tuning how far away the shield can be heard.")]
     public Spatial3DSettings shieldAudio3D = new Spatial3DSettings();
+
+    [Header("Grappling Hook SFX (3D)")]
+    [Tooltip("One-shot at the car's nose when the hook is FIRED (RB).")]
+    public AudioClip grappleFire;
+    [Tooltip("One-shot AT THE HIT POINT when the hook successfully latches on — it plays out where the " +
+             "hook landed, so it doubles as a positional cue for what you caught.")]
+    public AudioClip grappleAttach;
+    [Tooltip("One-shot at the car when the tether ends — released with RB, deflected by a shield, or " +
+             "recalled after missing.")]
+    public AudioClip grappleRelease;
+    [Tooltip("3D playback tuning shared by all THREE Grappling Hook sounds above. Note the attach sound " +
+             "can play up to the hook's full range away (200 m+), so the max distance here wants to be " +
+             "generous or a long successful shot will land silently.")]
+    public Spatial3DSettings grappleAudio3D = new Spatial3DSettings();
 
     [Header("LRA SFX")]
     [Tooltip("Looping 2D sound while the player is holding the L+R+A combo to activate the LRA abort " +

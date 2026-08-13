@@ -1106,6 +1106,27 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 
 **GRAPPLING HOOK (user feature, 2026-07-23 — ✅ compiles 0 errors).** `Car Scripts/GrappleHook.cs`,
 `Car Scripts/GrappleRope.cs`, `Multiplayer/GrappleReplicator.cs`.
+- **GUN + AMMO ECONOMY (2026-08-13).** Firing needs BOTH:
+  • `requiredItem` = **`Grappling Gun`** — the TOOL. Owned, **never consumed**; one purchase enables the
+    hook for good. Deliberately NOT the ramp recipe's `capacityItem`; it gates the ability, not capacity.
+  • `ammoItem` = **`Grappling Hook`** — SPENT one per shot, **at launch, hit or miss**, so a wasted shot
+    costs you and range/aim matter. Crafted from Wire at the ramp (rotary slot).
+  Either blank = that check is skipped (handy for testing). **RELEASING is never gated** — losing the gun
+  or the last hook mid-swing must not strand the player on a tether they can't cut, so only FIRING
+  checks. Both failure paths log rather than failing mutely.
+- **AUDIO (2026-08-13) — 5 new AudioLibrary slots.** Ability (3D): `grappleFire` (at the muzzle),
+  `grappleAttach` (**at the HIT POINT**, so a long catch is audible out where it landed and doubles as a
+  positional cue), `grappleRelease` (at the car; covers RB-release, shield deflection AND a missed
+  recall, since all funnel through `Release()`). All three tuned by one block, **`AudioLibrary.
+  grappleAudio3D`** — note the attach can play up to the hook's full range away (200 m+), so its max
+  distance wants to be generous or long successful shots land silently. Ramp: `grappleCraftLoop` +
+  `grappleCrafted`. **The loop needed a new flag:** the rotary craft never sets `active`, so
+  `SyncCraftLoop` keys off `rotaryActive` (true while the stick is turning on a craftable recipe);
+  the loop is cut on each completion so continuous rotation restarts per hook, like Turbo/Shield.
+- **HUD (2026-08-13):** `TurboJetHUD` gained a 4th label `Grapple: n` at x=1020, right of Shield — and it
+  is **hidden until a `Grappling Gun` is owned**, since its presence is what tells the player the ability
+  exists at all (a count for an ability you can't use would mislead). `Refresh` runs on every inventory
+  change, so buying the gun reveals it instantly.
 - **Controls:** **RB** fires from the car's nose (RB was completely unused — no conflict); **RB again**
   releases, whether still flying or attached. **RT + Y** reels. Range 200 m, recalled after a 2 s flight
   with no hit. Blocked layers (`blockedLayerNames`, inspector): **Portal / Projectile / Lightning**; the
@@ -1134,11 +1155,41 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   means it does its best and simply falls short when geometry won't allow it — exactly the user's case
   of grappling a car that's over a ledge while you're on the track. Grounded steering is never
   overridden, so a mid-race grapple doesn't make the car undrivable.
-- **Multiplayer:** `GNRC_GRAPPLE` streams {senderId, state, hookPos} at 15 Hz so everyone sees everyone's
-  ropes (Unreliable while active, **Reliable on release** so a rope can't be left hanging). Pulling a
-  remote player can NOT push their puppet — movement is owner-authoritative and the next state update
-  would overwrite it — so `GNRC_GRAPPLE_PULL` is relayed via the host to the OWNER's machine, which
-  applies the acceleration to their real car. `PushAnchor` routes automatically.
+- **Multiplayer — replicate the ATTACHMENT, not the hook POSITION (rewritten 2026-08-13).** The first
+  version streamed the hook's world position at 15 Hz and applied it RAW, which made the rope end lag
+  and teleport whenever it was hooked to another player. Two compounding causes, both now gone:
+  (1) raw 15 Hz application stepped visibly while the rope's OTHER end rode a smoothed puppet;
+  (2) more fundamentally, a world point sampled on the OWNER's machine can never match where the VIEWER
+  sees that car — each extrapolates it separately — and at 268 m/s the 66 ms gap alone is **~18 m**.
+  **Now `GNRC_GRAPPLE` carries {senderId, state, KIND, anchorClientId, a, b, f}** and each viewer
+  derives the endpoint itself (`TryResolveHookPosition`):
+  • **Static** — a fixed world point, identical everywhere, sent once. Nothing to smooth.
+  • **PlayerCar** — client id + LOCAL offset; the viewer reads **their own copy** of that car (already
+    interpolated by `RemoteCarPuppet`) and does `TransformPoint(offset)`. Rigidly glued, zero lag,
+    nothing to snap. Resolves the LOCAL car when the hooked player is you.
+  • **Dynamic** (drone/boulder — no replicated identity to key off yet) — still streamed, but now EASED
+    (`DynamicSmoothTau` 0.08) so it glides instead of stepping.
+  • **Firing** — the flight is SIMULATED locally from {origin, velocity, elapsed}; a straight line at
+    constant velocity needs no updates at all. Each message re-bases the local clock so drift can't
+    accumulate, and a timeout guard stops a rope flying forever if the attach/release message is lost.
+  **Rates collapsed accordingly:** only a Dynamic anchor uses `StreamRate` 15 Hz; everything else is a
+  2 Hz `HeartbeatRate` (self-heals a dropped packet / late joiner). State CHANGES — fire, attach,
+  release — carry the whole story now, so they go **Reliable**. Net result is smoother AND cheaper.
+- **BREAK FREE — L3 (2026-08-13).** A grappled player shrugs the tether off with **L3**. Key point: the
+  tether lives entirely on the GRAPPLER's machine and the victim holds no record of being hooked, so
+  rather than replicate "who is hooked", the victim just **broadcasts `GNRC_GRAPPLE_BREAK` {victimId}**
+  and whoever is attached to that car releases (`ReleaseHooksAttachedTo`). Reliable, one message per
+  press, no new persistent state. Polled in `GrappleHook`, NOT called from `ShieldAbility`, so the two
+  stay independent: the same press summons a shield **if one is held** and breaks the tether either
+  way — **breaking free never requires a shield.** (A shield raised by that press then also deflects
+  the next hook, per below.) Host fans the message out, since the grappler can be any machine.
+- **SHIELDS DEFLECT HOOKS (2026-08-13).** A hook reaching a player's Shield layer **fails outright** —
+  `ResolveHit` recalls it instead of latching on, so a raised shield is a real counter to being
+  grappled (matching the shield already eating drone fire). Your own shield is never a candidate: it's
+  a child of your car, which the hook always skips.
+- **Pulling a remote player** can NOT push their puppet — movement is owner-authoritative and the next
+  state update would overwrite it — so `GNRC_GRAPPLE_PULL` is relayed via the host to the OWNER's
+  machine, which applies the acceleration to their real car. `PushAnchor` routes automatically.
 - **Bootstrapping:** `GrappleHook` on the PlayerSystems object (like ShieldAbility); `GrappleReplicator`
   added to the MultiplayerWorld object at session begin. No scene wiring, no prefab.
 - **"Grapple grabs the CreditsHUD canvas" — the REAL cause was NOT the UI (2026-07-23). Worth reading
@@ -1174,6 +1225,20 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   added in future without anyone remembering to call `UiLayer.Apply` or set a layer.
   **When adding new code-built UI:** call `UiLayer.Apply` at the end of its build for consistency; the
   Canvas check means forgetting can't reintroduce the grapple bug.
+- **CRAFTING — 4th ramp slot, ROTARY (2026-07-23):** `Wire` → **`Grappling Hook`**, made by sweeping the
+  **RIGHT STICK one full CLOCKWISE revolution**; keep spinning and it keeps crafting while Wire lasts
+  (the surplus past 360° carries over). Progress is the **angle SWEPT**, accumulated frame to frame —
+  not the stick's absolute position — so the player may start anywhere on the circle and REVERSING
+  unwinds progress instead of granting it. Guards: `stickDeadzone` (0.5) resets the revolution when the
+  stick is released, and `maxStickStepDegrees` (90) rejects per-frame jumps that are a flick across the
+  centre rather than a swept turn (otherwise you could flick your way to a free craft). Only runs while
+  no hold-bar is charging, so the ramp still does one craft at a time.
+  **UI:** a RADIAL gauge, not a bar — dark-silver fill sweeping clockwise from 12 o'clock
+  (`Image.Type.Filled` + `Radial360` + `Origin360.Top`). Unity's radial fill **requires a sprite** (a
+  plain Image with none cannot be filled), so `RingSprite()` generates a feathered white annulus texture
+  in code, keeping the ramp UI asset-free; it's white so each Image's own colour tints it. Ramp panel
+  grew 710 → 900.
+  **Note:** the recipe has NO capacity item — see the open question about "Grappling Gun" below.
 - **Tuning:** `ropeStiffness` (1 = perfectly inextensible), `ropeSpring`, `reelForce`/`reelSpeed`,
   `faceTorque`/`faceDamping`, `hookRadius` (thickness makes edges much easier to catch), and
   `GrappleRope`'s `slack`/`segments`/`solverIterations` for how string-like the rope looks.
@@ -1311,8 +1376,14 @@ Plasma → Shield at the ramp; L3 summons an ellipsoid shield that eats drone fi
   Settings → Tags and Layers; (2) set its **collision matrix** — ON vs lightning / fans / boulders /
   other players+cars, **OFF vs the track and the hub floor** (this is the "passes through the world"
   behaviour, deliberately left as project settings, not code); (3) add the Shield ellipsoid as a child of
-  each **player-car prefab**, named exactly **"Shield"**, on the Shield layer, with a collider, left
+  **EVERY player-car prefab**, named exactly **"Shield"**, on the Shield layer, with a collider, left
   **INACTIVE**; (4) confirm the **"Plasma"** store row exists (and is priced) on the scene StoreController.
+- **⚠️ The Shield is PER-CAR wiring, and that's the easy thing to miss (2026-08-13).** Symptom: "shields
+  don't come up at all" — cause: the car being driven simply has no `Shield` child. As of this date only
+  `Car Models/Melody.prefab` nests `CarAccessories/Shield.prefab`; the other five (`Car`, `Deora II Test
+  Car`, `GeorgeCar`, `S-Sen7[Black_White]`, `S-Sen7[Red]`) do NOT, so L3 summons nothing in them.
+  `ShieldAbility` now logs a **one-time warning naming the car** when the child is missing — it used to
+  fail silently, which is indistinguishable from a broken ability. Same applies to any car added later.
 
 ---
 

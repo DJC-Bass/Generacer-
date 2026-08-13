@@ -5375,10 +5375,18 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.size
-      value: 6
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].price
+      value: 100
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[6].price
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[7].price
       value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
@@ -5391,10 +5399,26 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].itemName
-      value: LRA Premium
+      value: Grappling Gun
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].maxOwned
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[6].itemName
+      value: Wire
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[6].maxOwned
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[7].itemName
+      value: LRA Premium
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[7].maxOwned
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
@@ -5403,11 +5427,27 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].description
+      value: Allows the use of up to 5 Grappling Hooks.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[5].grantAmount
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[6].description
+      value: Can be used to craft Grappling Hooks on the Upgrade Ramp.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[6].grantAmount
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[7].description
       value: Using the LRA keeps your current inventory instead of losing it (one
         time use).
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
-      propertyPath: items.Array.data[5].grantAmount
+      propertyPath: items.Array.data[7].grantAmount
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6872381292332018610, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}

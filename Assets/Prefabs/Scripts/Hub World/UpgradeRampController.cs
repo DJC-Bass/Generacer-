@@ -76,6 +76,25 @@ public class UpgradeRampController : MonoBehaviour
         capacityItem = "", capacityPerContainer = 0, maxProduct = 4
     };
 
+    [Tooltip("Fourth slot — crafted by ROTATING the right stick, not by holding a button. One full " +
+             "clockwise revolution = one Grappling Hook, and rotations keep chaining while materials last.")]
+    public CraftRecipe grapple = new CraftRecipe
+    {
+        materialA = "Wire", materialB = "", product = "Grappling Hook",
+        craftTime = 1f, barColor = new Color(0.62f, 0.64f, 0.67f),   // slightly dark silver
+        label = "Rotate Right Stick To Craft Grappling Hook",
+        capacityItem = "", capacityPerContainer = 0, maxProduct = 0
+    };
+
+    [Header("Rotary Craft (right stick)")]
+    [Tooltip("How far the right stick must be pushed for its rotation to register (0-1). Below this " +
+             "the stick counts as released and the revolution resets.")]
+    public float stickDeadzone = 0.5f;
+    [Tooltip("Largest per-frame stick movement treated as real rotation (degrees). Anything bigger is " +
+             "a flick across the deadzone rather than a swept turn, and is ignored so it can't cheat " +
+             "a revolution.")]
+    public float maxStickStepDegrees = 90f;
+
     [Header("Detection")]
     [Tooltip("Tag on the player car (or any of its colliders).")]
     public string playerTag = "Player";
@@ -97,6 +116,16 @@ public class UpgradeRampController : MonoBehaviour
     private GameObject root;
     private RectTransform turboFill, jetFill, shieldFill;
     private TextMeshProUGUI turboCounts, jetCounts, shieldCounts;
+    private Image grappleFill;                 // radial gauge for the rotary craft
+    private TextMeshProUGUI grappleCounts;
+
+    // ---- rotary craft state ----
+    private float rotationDegrees;             // clockwise degrees swept toward the next revolution
+    private Vector2 lastStickDir;
+    private bool stickEngaged;
+    // True while the stick is turning on a craftable recipe — the rotary slot's equivalent of a held
+    // bar, and what SyncCraftLoop keys its loop off (the rotary craft never sets `active`).
+    private bool rotaryActive;
     private AudioSource craftLoopSource;   // looping turbo-craft sound (plays while the turbo bar charges)
 
     void Reset()
@@ -165,6 +194,7 @@ public class UpgradeRampController : MonoBehaviour
         bool yHeld = gp.buttonNorth.isPressed;   // Y -> Shield (bottom bar); B is taken by Close
 
         TickCrafting(xHeld, aHeld, yHeld);
+        TickRotaryCraft(gp);
         UpdateBars();
         SyncCraftLoop();
     }
@@ -202,6 +232,57 @@ public class UpgradeRampController : MonoBehaviour
             // Stop if released, out of materials, or now at capacity.
             if (!held || !CanCraft(r)) active = Craft.None;
         }
+    }
+
+    /// <summary>
+    /// The rotary craft: sweeping the RIGHT STICK one full clockwise revolution makes one Grappling
+    /// Hook, and holding the rotation going keeps chaining them while the Wire lasts. Progress is the
+    /// ANGLE SWEPT, accumulated frame to frame — not the stick's absolute position — so the player can
+    /// begin anywhere on the circle (the gauge just fills from 12 o'clock) and reversing the stick
+    /// unwinds progress rather than granting it.
+    /// </summary>
+    void TickRotaryCraft(Gamepad gp)
+    {
+        // One craft at a time: a bar already charging owns the ramp.
+        if (active != Craft.None) { ResetRotation(); return; }
+
+        Vector2 stick = gp.rightStick.ReadValue();
+        if (stick.magnitude < stickDeadzone) { ResetRotation(); return; }
+
+        Vector2 dir = stick.normalized;
+        if (!stickEngaged)
+        {
+            // First frame past the deadzone — establish a reference without crediting any sweep.
+            stickEngaged = true;
+            lastStickDir = dir;
+            return;
+        }
+
+        // Vector2.SignedAngle is positive counter-clockwise, so negate it to make CLOCKWISE count up.
+        float delta = -Vector2.SignedAngle(lastStickDir, dir);
+        lastStickDir = dir;
+
+        // A jump this large isn't a swept turn — it's the stick crossing the centre or snapping to a
+        // new quadrant. Crediting it would let a player flick their way to a free craft.
+        if (Mathf.Abs(delta) > maxStickStepDegrees) return;
+
+        if (!CanCraft(grapple)) { rotationDegrees = 0f; rotaryActive = false; return; }
+
+        rotaryActive = true;
+        rotationDegrees = Mathf.Max(0f, rotationDegrees + delta);
+        if (rotationDegrees >= 360f)
+        {
+            rotationDegrees -= 360f;   // carry the surplus so continuous spinning keeps producing
+            DoCraft(grapple);
+            if (!CanCraft(grapple)) rotationDegrees = 0f;
+        }
+    }
+
+    void ResetRotation()
+    {
+        rotationDegrees = 0f;
+        stickEngaged = false;
+        rotaryActive = false;
     }
 
     /// <summary>The recipe the active bar is charging.</summary>
@@ -264,6 +345,13 @@ public class UpgradeRampController : MonoBehaviour
             if (craftLoopSource != null) craftLoopSource.Stop();
         }
         else if (r == jet) AudioManager.PlayJetCrafted(transform.position);
+        else if (r == grapple)
+        {
+            AudioManager.PlayGrappleCrafted(transform.position);
+            // Cut the charge loop on each completion so a continuous rotation restarts its audio per
+            // hook instead of running on seamlessly — same treatment Turbo and Shield get.
+            if (craftLoopSource != null) craftLoopSource.Stop();
+        }
         else if (r == shield)
         {
             AudioManager.PlayShieldCrafted(transform.position);
@@ -304,6 +392,7 @@ public class UpgradeRampController : MonoBehaviour
             want = active == Craft.Turbo  ? lib.turboCraftLoop
                  : active == Craft.Jet    ? lib.jetCraftLoop
                  : active == Craft.Shield ? lib.shieldCraftLoop
+                 : rotaryActive           ? lib.grappleCraftLoop   // rotary slot: no `active` to key off
                  : null;
 
         if (want == null)
@@ -333,6 +422,7 @@ public class UpgradeRampController : MonoBehaviour
         EnsureUI();
         active = Craft.None;
         progress = 0f;
+        ResetRotation();
         RefreshCounts();
         UpdateBars();
         root.SetActive(true);
@@ -346,6 +436,7 @@ public class UpgradeRampController : MonoBehaviour
         if (root != null) root.SetActive(false);
         active = Craft.None;
         progress = 0f;
+        ResetRotation();
         isOpen = false;
         MenuState.AnyOpen = false;
         if (craftLoopSource != null) craftLoopSource.Stop();   // cut the crafting loop
@@ -370,6 +461,7 @@ public class UpgradeRampController : MonoBehaviour
         SetFill(turboFill, active == Craft.Turbo ? progress : 0f);
         SetFill(jetFill, active == Craft.Jet ? progress : 0f);
         SetFill(shieldFill, active == Craft.Shield ? progress : 0f);
+        if (grappleFill != null) grappleFill.fillAmount = Mathf.Clamp01(rotationDegrees / 360f);
     }
 
     static void SetFill(RectTransform fill, float p)
@@ -385,6 +477,7 @@ public class UpgradeRampController : MonoBehaviour
         if (turboCounts != null) turboCounts.text = CountsLine(turbo);
         if (jetCounts != null) jetCounts.text = CountsLine(jet);
         if (shieldCounts != null) shieldCounts.text = CountsLine(shield);
+        if (grappleCounts != null) grappleCounts.text = CountsLine(grapple);
     }
 
     string CountsLine(CraftRecipe r)
@@ -436,7 +529,6 @@ public class UpgradeRampController : MonoBehaviour
         panelImg.color = new Color(0.05f, 0.05f, 0.08f, 0.92f);
         var prt = panel.GetComponent<RectTransform>();
         prt.anchorMin = prt.anchorMax = prt.pivot = new Vector2(0.5f, 0.5f);
-        prt.sizeDelta = new Vector2(880f, 710f);   // grown for the third (Shield) bar
         prt.anchoredPosition = Vector2.zero;
 
         var title = NewText(panel.transform, "Title", 50, TextAlignmentOptions.Top);
@@ -444,13 +536,21 @@ public class UpgradeRampController : MonoBehaviour
         title.color = Color.white;
         StretchTop(title.rectTransform, 820f, 64f, 20f);
 
-        // Top bar (Turbo, X), middle bar (Jet, A), bottom bar (Shield, Y), with space between.
-        BuildBar(panel.transform, turbo, 130f, out turboFill, out turboCounts);
-        BuildBar(panel.transform, jet, 320f, out jetFill, out jetCounts);
-        BuildBar(panel.transform, shield, 510f, out shieldFill, out shieldCounts);
+        // The slots FLOW: each builder returns where the next one starts, so a blank label costs no
+        // space and adding a slot can't silently overlap the hint the way fixed offsets did.
+        float y = 110f;                                             // below the title
+        y = BuildBar(panel.transform, turbo, y, out turboFill, out turboCounts);
+        y = BuildBar(panel.transform, jet, y, out jetFill, out jetCounts);
+        y = BuildBar(panel.transform, shield, y, out shieldFill, out shieldCounts);
 
-        var hint = NewText(panel.transform, "Hint", 26, TextAlignmentOptions.Bottom);
-        hint.text = "Hold X: Turbo     Hold A: Jet     Hold Y: Shield     B: Close";
+        // Fourth slot: a radial gauge instead of a bar, because the input is a stick REVOLUTION.
+        y = BuildRotaryGauge(panel.transform, grapple, y, 130f, out grappleFill, out grappleCounts);
+
+        // Size the panel to whatever the slots actually needed, leaving room for the hint line.
+        prt.sizeDelta = new Vector2(880f, y + 20f);
+
+        var hint = NewText(panel.transform, "Hint", 22, TextAlignmentOptions.Bottom);
+        hint.text = "Hold X: Turbo    Hold A: Jet    Hold Y: Shield    Rotate RS: Grapple    B: Close";
         hint.color = new Color(1f, 1f, 1f, 0.6f);
         var hrt = hint.rectTransform;
         hrt.anchorMin = hrt.anchorMax = hrt.pivot = new Vector2(0.5f, 0f);
@@ -462,10 +562,25 @@ public class UpgradeRampController : MonoBehaviour
 
     // Builds one bar block (background + L→R fill + label + counts) anchored to
     // the panel top, starting topOffset pixels down.
-    void BuildBar(Transform parent, CraftRecipe r, float topOffset,
-                  out RectTransform fill, out TextMeshProUGUI counts)
+    // ---- Vertical rhythm. A slot is: bar → (small gap) → its text → (larger gap) → the next bar.
+    //      The gap from a bar to ITS OWN text is deliberately much smaller than the gap to the NEXT
+    //      slot, so each block reads as one group instead of the text floating between two bars.
+    const float BarWidth = 740f;
+    const float BarHeight = 50f;
+    const float GapBarToText = 6f;        // bar → its own label/counts (was effectively ~48)
+    const float LabelHeight = 34f;
+    const float GapLabelToCounts = 2f;
+    const float CountsHeight = 28f;
+    const float GapSlotToSlot = 62f;      // one slot's text → the next slot's bar (unchanged)
+
+    /// <summary>Builds one bar slot and returns the TOP OFFSET the next slot should start at, so the
+    /// column flows instead of using hard-coded positions. A recipe with a BLANK label reserves no
+    /// space for it — the empty labels on Turbo/Jet were what pushed their counts lines so far from
+    /// their bars.</summary>
+    float BuildBar(Transform parent, CraftRecipe r, float topOffset,
+                   out RectTransform fill, out TextMeshProUGUI counts)
     {
-        const float barW = 740f, barH = 50f;
+        const float barW = BarWidth, barH = BarHeight;
 
         var bgGO = NewUI("BarBG", parent);
         var bg = bgGO.AddComponent<Image>();
@@ -483,14 +598,107 @@ public class UpgradeRampController : MonoBehaviour
         fill.offsetMin = Vector2.zero;
         fill.offsetMax = Vector2.zero;
 
-        var label = NewText(parent, "BarLabel", 30, TextAlignmentOptions.Top);
-        label.text = r.label;
-        label.color = Color.white;
-        StretchTop(label.rectTransform, barW, 36f, topOffset + barH + 10f);
+        float y = topOffset + barH + GapBarToText;
+
+        if (!string.IsNullOrEmpty(r.label))
+        {
+            var label = NewText(parent, "BarLabel", 28, TextAlignmentOptions.Top);
+            label.text = r.label;
+            label.color = Color.white;
+            StretchTop(label.rectTransform, barW, LabelHeight, y);
+            y += LabelHeight + GapLabelToCounts;
+        }
 
         counts = NewText(parent, "BarCounts", 24, TextAlignmentOptions.Top);
         counts.color = new Color(1f, 1f, 1f, 0.7f);
-        StretchTop(counts.rectTransform, barW, 30f, topOffset + barH + 10f + 38f);
+        StretchTop(counts.rectTransform, barW, CountsHeight, y);
+
+        return y + CountsHeight + GapSlotToSlot;
+    }
+
+    /// <summary>Builds the rotary slot: a dark ring with a radial fill that sweeps CLOCKWISE from
+    /// 12 o'clock, plus the label and counts line. Unity's radial fill needs a SPRITE (a plain Image
+    /// with no sprite can't be filled), so the ring is generated in code — keeping this UI
+    /// asset-free like the rest of the ramp.</summary>
+    float BuildRotaryGauge(Transform parent, CraftRecipe r, float topOffset, float diameter,
+                           out Image fill, out TextMeshProUGUI counts)
+    {
+        Sprite ring = RingSprite();
+
+        var bgGO = NewUI("RotaryBG", parent);
+        var bg = bgGO.AddComponent<Image>();
+        bg.sprite = ring;
+        bg.color = new Color(0f, 0f, 0f, 0.6f);
+        StretchTop(bgGO.GetComponent<RectTransform>(), diameter, diameter, topOffset);
+
+        var fillGO = NewUI("RotaryFill", bgGO.transform);
+        var fillImg = fillGO.AddComponent<Image>();
+        fillImg.sprite = ring;
+        fillImg.color = r.barColor;
+        fillImg.type = Image.Type.Filled;
+        fillImg.fillMethod = Image.FillMethod.Radial360;
+        fillImg.fillOrigin = (int)Image.Origin360.Top;   // starts at 12 o'clock, where the stick starts
+        fillImg.fillClockwise = true;
+        fillImg.fillAmount = 0f;
+        var frt = fillGO.GetComponent<RectTransform>();
+        frt.anchorMin = Vector2.zero;
+        frt.anchorMax = Vector2.one;
+        frt.offsetMin = Vector2.zero;
+        frt.offsetMax = Vector2.zero;
+        fill = fillImg;
+
+        float y = topOffset + diameter + GapBarToText;
+
+        if (!string.IsNullOrEmpty(r.label))
+        {
+            var label = NewText(parent, "RotaryLabel", 28, TextAlignmentOptions.Top);
+            label.text = r.label;
+            label.color = Color.white;
+            StretchTop(label.rectTransform, BarWidth, LabelHeight, y);
+            y += LabelHeight + GapLabelToCounts;
+        }
+
+        counts = NewText(parent, "RotaryCounts", 24, TextAlignmentOptions.Top);
+        counts.color = new Color(1f, 1f, 1f, 0.7f);
+        StretchTop(counts.rectTransform, BarWidth, CountsHeight, y);
+
+        return y + CountsHeight + GapSlotToSlot;
+    }
+
+    // Generated once and shared by the background and the fill.
+    private static Sprite ringSprite;
+
+    /// <summary>A white annulus texture turned into a Sprite. White so the Image's own colour tints it,
+    /// with the inner and outer edges feathered a couple of pixels so the ring doesn't alias.</summary>
+    static Sprite RingSprite()
+    {
+        if (ringSprite != null) return ringSprite;
+
+        const int size = 256;
+        const float feather = 2f;
+        float centre = (size - 1) * 0.5f;
+        float outer = centre * 0.98f;
+        float inner = centre * 0.74f;
+
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var pixels = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = x - centre, dy = y - centre;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                // Inside the band = 1, fading out across `feather` pixels at BOTH edges.
+                float a = Mathf.Min(Mathf.Clamp01((outer - d) / feather),
+                                    Mathf.Clamp01((d - inner) / feather));
+                pixels[y * size + x] = new Color32(255, 255, 255, (byte)(Mathf.Clamp01(a) * 255f));
+            }
+        }
+        tex.SetPixels32(pixels);
+        tex.Apply();
+
+        ringSprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f));
+        return ringSprite;
     }
 
     static GameObject NewUI(string name, Transform parent)

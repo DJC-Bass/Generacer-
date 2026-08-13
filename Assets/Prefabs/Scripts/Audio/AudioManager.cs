@@ -396,6 +396,7 @@ public class AudioManager : MonoBehaviour
     public static void PlayTurboCrafted(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.turboCrafted : null, position);
     public static void PlayJetCrafted(Vector3 position)   => PlayLibrarySfxAt(Lib != null ? Lib.jetCrafted   : null, position);
     public static void PlayShieldCrafted(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.shieldCrafted : null, position);
+    public static void PlayGrappleCrafted(Vector3 position) => PlayLibrarySfxAt(Lib != null ? Lib.grappleCrafted : null, position);
 
     // SD ability one-shots (3D at the car). The "while active" loop is managed by SDAbilityController.
     public static void PlaySdActivate(Vector3 position)   => PlayLibrarySfxAt(Lib != null ? Lib.sdActivate   : null, position);
@@ -407,6 +408,15 @@ public class AudioManager : MonoBehaviour
         PlayLibrarySfxAt(Lib != null ? Lib.shieldActivate : null, position, Lib != null ? Lib.shieldAudio3D : null);
     public static void PlayShieldDeactivate(Vector3 position) =>
         PlayLibrarySfxAt(Lib != null ? Lib.shieldDeactivate : null, position, Lib != null ? Lib.shieldAudio3D : null);
+
+    // Grappling hook one-shots (3D), all tuned by AudioLibrary.grappleAudio3D. Attach plays at the HIT
+    // POINT rather than the car, so a long catch is audible out where it landed.
+    public static void PlayGrappleFire(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.grappleFire : null, position, Lib != null ? Lib.grappleAudio3D : null);
+    public static void PlayGrappleAttach(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.grappleAttach : null, position, Lib != null ? Lib.grappleAudio3D : null);
+    public static void PlayGrappleRelease(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.grappleRelease : null, position, Lib != null ? Lib.grappleAudio3D : null);
 
     // Positional obstacle one-shots (3D, at the event's world location). Optional Spatial3DSettings
     // let the caller (e.g. the LightningSpawner) tweak the 3D falloff.

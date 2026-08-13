@@ -40,6 +40,7 @@ public class ShieldAbility : MonoBehaviour
     private float activeUntil;
     private GameObject carGO;
     private GameObject shieldGO;
+    private GameObject warnedCar;   // so the "no shield child" warning fires once per car, not per frame
 
     // 3D looping "shield up" sound on its own object, moved to the car each frame while active.
     // Tuned entirely from AudioLibrary.shieldAudio3D (shared with the activate/deactivate one-shots).
@@ -146,6 +147,16 @@ public class ShieldAbility : MonoBehaviour
         if (shieldGO == null)
         {
             IsActive = false;
+            // Say so LOUDLY, once per car. A car prefab that was never given the Shield child makes L3
+            // silently do nothing, which is indistinguishable from a broken ability — the shield is
+            // per-CAR wiring, so it has to be added to every car prefab, not just one.
+            if (warnedCar != carGO)
+            {
+                warnedCar = carGO;
+                Debug.LogWarning($"[Shield] Car '{carGO.name}' has no child named '{shieldChildName}' — " +
+                                 "L3 cannot summon a shield on this car. Add the Shield prefab as a " +
+                                 "child of THIS car prefab (on the Shield layer, left inactive).");
+            }
             return;
         }
 
