@@ -55,6 +55,8 @@ MonoBehaviour:
   jetCrafted: {fileID: 8300000, guid: 8bf290c2c3a2ef342a6b6b4c93347ce3, type: 3}
   shieldCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
   shieldCrafted: {fileID: 8300000, guid: 8bf290c2c3a2ef342a6b6b4c93347ce3, type: 3}
+  grappleCraftLoop: {fileID: 8300000, guid: b74d07bbe18a2434793cc5e0a80ccc23, type: 3}
+  grappleCrafted: {fileID: 8300000, guid: 3b89100b0f793f74b825bdd8f7a589ae, type: 3}
   turboBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   jump: {fileID: 8300000, guid: e489c81a33c011f438c6cd4094709df9, type: 3}
   driftScreech: {fileID: 8300000, guid: ae1af34f9f1f7b84d99b545c55ceb328, type: 3}
@@ -74,11 +76,21 @@ MonoBehaviour:
   projectileHitPlayer: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
   sdActivate: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
   sdActiveLoop: {fileID: 0}
-  sdDeactivate: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
+  sdDeactivate: {fileID: 8300000, guid: 503158f0b57e3a9499f29e33022d0391, type: 3}
   shieldActivate: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
   shieldActiveLoop: {fileID: 8300000, guid: 38f994c7e40032e438d4148ba8f01be3, type: 3}
-  shieldDeactivate: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
+  shieldDeactivate: {fileID: 8300000, guid: 503158f0b57e3a9499f29e33022d0391, type: 3}
   shieldAudio3D:
+    spatialBlend: 1
+    volume: 0.9
+    minDistance: 200
+    maxDistance: 400
+    rolloffMode: 1
+    dopplerLevel: 0
+  grappleFire: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
+  grappleAttach: {fileID: 8300000, guid: a50eb66abf680dc4a8808b6f9db2a0d0, type: 3}
+  grappleRelease: {fileID: 8300000, guid: 8c7cd5f6cfbf2fd4aa25f759ac665782, type: 3}
+  grappleAudio3D:
     spatialBlend: 1
     volume: 0.9
     minDistance: 200
