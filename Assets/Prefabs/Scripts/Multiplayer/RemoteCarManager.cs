@@ -449,6 +449,13 @@ public class RemoteCarManager : MonoBehaviour
                 if (effect.particleSystem != null)
                     effect.particleSystem.gameObject.SetActive(false);
         }
+
+        // The Support Ship is authored ACTIVE on the car prefab (it's positioned by eye in the editor)
+        // and is only ever a TEMPLATE — SupportShipAbility hides it on the local car, and the same has
+        // to happen here or every remote player would drive around with a ship welded above them.
+        // SupportShipReplicator clones this child when that player actually summons one.
+        var shipTemplate = SupportShipAbility.FindChildByName(go.transform, SupportShipAbility.ShipChildName);
+        if (shipTemplate != null) shipTemplate.gameObject.SetActive(false);
     }
 
     /// <summary>Records the flame GameObjects and each SD's particle system BEFORE the strip destroys

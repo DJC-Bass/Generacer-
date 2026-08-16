@@ -260,6 +260,10 @@ public class MultiplayerWorld : MonoBehaviour
         // remote player's car to the machine that owns it.
         gameObject.AddComponent<GrappleReplicator>();
 
+        // Support Ship: whose ship is out, where its hub pilot is holding it, and the server's verdict
+        // on when one has been downed.
+        gameObject.AddComponent<SupportShipReplicator>();
+
         // Voice chat via Vivox: proximity (positional 3D) + LB team-direct (2D). The persistent,
         // self-bootstrapped VoiceService logs in and joins THIS match's channels; EndMatch on teardown.
         VoiceService.BeginMatch();

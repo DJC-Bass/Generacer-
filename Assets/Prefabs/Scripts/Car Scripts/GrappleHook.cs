@@ -175,7 +175,10 @@ public class GrappleHook : MonoBehaviour
             // L3 — BREAK FREE of anyone grappling us. Polled here rather than called from
             // ShieldAbility so the two stay independent: the same press summons a shield (if one is
             // held) AND shrugs off the tether, and breaking free still works with an empty inventory.
-            if (gp != null && gp.leftStickButton.wasPressedThisFrame && MultiplayerWorld.IsMultiplayerGame)
+            // Y HELD makes this the Support Ship chord instead (see SupportShipAbility), so it must not
+            // also fire the break-free — same exclusion ShieldAbility applies to the shield.
+            if (gp != null && gp.leftStickButton.wasPressedThisFrame && !gp.buttonNorth.isPressed
+                && MultiplayerWorld.IsMultiplayerGame)
                 GrappleReplicator.SendBreakFree();
         }
 

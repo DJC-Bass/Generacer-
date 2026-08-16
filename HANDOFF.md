@@ -10,11 +10,157 @@ tutorial guide, event-system guard) or their own object (`AudioManager`, `GameLo
 ---
 
 ## NEXT TASK (this is why a fresh agent is here)
-**ONLINE MULTIPLAYER** — build out the Main Menu's Online Multiplayer button. **Nothing exists yet**: no
-netcode package, no lobby, no networked anything. This is from scratch and by far the largest feature in the
-project. Settings are COMPLETE in both menus and no settings work is outstanding.
 
-### The design (from the user)
+**SUPPORT SHIP — FIRING CONTROLS.** The ship itself is **BUILT** (2026-08-16, detail below); what the
+user deferred is the *gun*: "unlimited. Will work on fire controls later." Everything else in the
+feature — summoning, the hub pilot station, the camera hand-off, flight, destruction, replication — is
+done and compiles. **Do not rebuild it.** What is left:
+- A **fire input** for the hub pilot (RT is the natural fit; the pilot's sticks are already spoken for).
+- Shots at **enemies**, and at the **racer themselves for a small jump** — the pop-up already exists in
+  `DroneProjectile.HitPlayer` / `ApplyRemoteHitToLocalPlayer`. Watch the **projectile i-frames**
+  (`DroneProjectile.PlayerInvulnerable`): a friendly boost either has to bypass that window or share it,
+  or a racer who was just shot can't be boosted for 2 s.
+- Firing is **host-authoritative** like every other projectile. The pilot presses; the effect has to be
+  routed to the machine that owns the target, exactly as `GNRC_GRAPPLE_PULL` and `GNRC_NPC_HIT` do.
+  A `GNRC_SHIP_FIRE` message alongside the four that already exist is the shape to reach for.
+
+> ⚠️ **The multiplayer sections below are the HISTORICAL design record.** Multiplayer is **BUILT** —
+> Phases 1–6 are code-complete (lobby/sessions, shared additive world, networked cars, server-authoritative
+> scoring, host-simulated AI, UX polish) plus voice (now **Vivox**), the grappling hook, shields, drone
+> planes, the Support Ship and more. Read **"MULTIPLAYER MESSAGE INDEX"** just below for the live wire
+> protocol, then the dated bullets in the roadmap for how each piece actually ended up. Do NOT rebuild any
+> of it.
+
+### SUPPORT SHIP — what was built (2026-08-16)
+
+The user's mental model: **a rail shooter** — the hub teammate is the gunner, and the racer in the
+TrackScene *is the rail*. Four new files, plus the settled answers to the six questions that were open:
+
+| Question | The user's answer |
+|---|---|
+| Who gets the controls | A **PilotControlCenter** prefab in the hub (box-collider trigger, like the store). Driving in lists teammates with active ships; pick one and you fly it. Nobody in the hub → the ship just holds its current offset. |
+| What the gunner sees/presses | Cuts to a chase camera on the ship, set up like the MainCamera (offset + Position/Pitch/Roll smooth times). Left stick slides the ship in a horizontal/vertical box. Nose tilts into the turn. |
+| Activation | The racer presses **L3 + Y together** to summon/dismiss, if they hold a "Support Ship". |
+| Lifetime | Lives as long as its car. **Any collision downs it** — 2 s ragdoll then despawn, exactly like a DronePlane. |
+| Cost of fire | Unlimited (deferred — see NEXT TASK above). |
+| Visibility | Enemies see it and can shoot it down. **LavaBoulders must not target it** — they don't: `BoulderObstacle` targets via `MultiplayerWorld.PickStickyTarget`, which only ever returns player cars. |
+
+Plus four decisions the user made when asked:
+- **Destruction consumes one "Support Ship".** Summoning and dismissing are free. That's the whole point
+  of dismissing it when nobody is flying it.
+- **The pilot's hub car is frozen** (`RigidbodyConstraints.FreezeAll` + `MenuState.AnyOpen`) and they must
+  stay on the pad; leaving the trigger or pressing B hands the ship back.
+- **What can down the ship is the collision MATRIX** on a new `SupportShip` layer, not code.
+- **The pilot's AudioListener moves to the ship**, so they hear the racer's world, not the hub.
+
+**`SupportShip.cs`** (Car Scripts) — the flyer. Deliberately NOT a physics flyer like `DronePlane`: it is
+a FOLLOWER, and the follow model is *the chase camera's*. The lazy-Susan per-axis lag (yaw/pitch/roll) is
+duplicated from `CameraFollow` — keep the two in sync by hand if the camera feel is ever re-tuned. This is
+not arbitrary: the ship's authored position on `Melody.prefab` is `(0, 2.5, -7)`, which **is**
+`CameraFollow.offset`, so an unpiloted ship sits exactly at the driver's viewpoint. ⚠️ That also means the
+racer effectively **cannot see their own ship** — move the child up/forward on the prefab if you want it
+visible from the cockpit. `PilotOffset` slides it inside that frame; tilt is derived from the ship's ACTUAL
+travel through the car's frame (not the stick), so it banks both when the pilot slides it and when the car
+corners hard enough to swing it.
+
+- **Death detection is by TRIGGER, not collision**, for two reasons that are easy to get wrong: a kinematic
+  body driven by transform writes raises **no collision events against static scenery** (so it would sail
+  straight through the track), and triggers still honour the **collision matrix** — which is what keeps
+  "what can down the ship" a Project Settings decision. The owner's own car is excluded in code
+  (`BelongsToCar`), because the matrix cannot tell it apart from an enemy's — both are on `Player`.
+- `detectCrashes` gates whether *this copy* may call a crash. True on the owner's machine and on the host;
+  **false on every other viewer**, whose copy is derived from an interpolated puppet and would invent hits.
+
+**`SupportShipAbility.cs`** (Inventory) — the racer's half, bootstrapped on `PlayerSystems`. The child on
+the car prefab is only ever a **TEMPLATE**: summoning CLONES it and cuts the clone loose, so the wreck can
+be destroyed without permanently stripping the prefab of its ship, and so it can trail with lag (a rigidly
+parented child is welded to the car's rotation). The clone is built from the template's **world** pose, so
+nesting depth on the prefab doesn't matter.
+
+⚠️ **The L3+Y chord required two other systems to stand down**: `ShieldAbility` and `GrappleHook`'s
+break-free both fire on bare L3, so both now ignore an L3 press made while Y is held. If you add another
+L3 binding, it needs the same exclusion.
+
+**`SupportShipReplicator.cs`** (Multiplayer) — see the message index below. This is the **first entity
+whose input and whose subject live on different machines**, so authority splits three ways along the line
+of who actually knows the answer: the racer owns *whether the ship is out*, the **pilot** owns *where in
+its box it sits* (routing that through the racer would put a full round trip between the pilot's stick and
+their own screen — unflyable), and the **server** owns *whether it is still alive* (so it dies once,
+everywhere, and exactly one item is deducted). Nothing about the flight is streamed; each machine glues
+its own ship to its own copy of the owner's car.
+
+**`PilotControlCenter.cs`** (Hub World) — the pad. Same trigger-menu shape as `StoreController`, and it
+flies a LOCAL copy of the ship the same way `HubSpectatorTV` films a local copy of a remote racer. Claims
+are **server-arbitrated, never optimistic** — two hub players can reach for the same ship in the same frame
+and exactly one must get it — so the pad waits for the verdict, with a 3 s timeout because a refusal looks
+identical to a slow network. **Your own ship is listed too**, which is what makes the whole feature
+testable solo: summon a ship, park on the pad, fly it.
+
+---
+
+## MULTIPLAYER MESSAGE INDEX (live wire protocol — all custom named messages)
+
+Everything is `CustomMessagingManager` named messages (**no NetworkObjects/NetworkVariables anywhere**).
+Listen server: the host is also a player. Movement is **owner-authoritative**; game state is
+**server-authoritative**. Voice does NOT appear here — it left this layer entirely when it moved to Vivox.
+
+| Message | Owner | Direction | Payload / purpose |
+|---|---|---|---|
+| `GNRC_HELLO` | RemoteCarManager | client → server | name, car, team — roster join |
+| `GNRC_ROSTER` | RemoteCarManager | server → all | full roster; drives puppet lifecycle |
+| `GNRC_CAR` | RemoteCarManager | owner → all (host relays) | 30 Hz pos/rot/vel + **1 effect byte** |
+| `GNRC_READY` | MultiplayerWorld | client → server | hub loaded, ready for rounds |
+| `GNRC_ROUND_START` | MultiplayerWorld | server → all | round, seed, live, remaining — preload + freeze |
+| `GNRC_ROUND_GO` | MultiplayerWorld | server → all | portal spawns, unfreeze, timers start |
+| `GNRC_ROUND_END` | MultiplayerWorld | server → all | reason: 0 timeout, 1 all racers left |
+| `GNRC_AREA` | MultiplayerWorld | client → server | inTrack flag |
+| `GNRC_RACER_FIN` | MultiplayerWorld | server → all | an AI racer finished — first place forfeit |
+| `GNRC_FINISH` | MultiplayerScoring | client → server | localFirstPlace claim |
+| `GNRC_SDS` | MultiplayerScoring | client → server | distinct SD names held (team aggregate) |
+| `GNRC_SD_AWARD` | MultiplayerScoring | server → one | the team-validated SD |
+| `GNRC_FIRST_BONUS` | MultiplayerScoring | server → one | first-place credits (ONE winner/round) |
+| `GNRC_SCORE` | MultiplayerScoring | server → all | droneWins |
+| `GNRC_ENDING` | MultiplayerScoring | server → all | isDroneEnding, winningTeam |
+| `GNRC_RIVALS` | MultiplayerScoring | server → all | rival pairings |
+| `GNRC_RIVAL_BONUS` | MultiplayerScoring | server → one | beat-your-rival credits |
+| `GNRC_NPC_SPAWN` / `_STATE` / `_DESPAWN` | NpcReplicator | server → all | host-simulated AI + obstacles |
+| `GNRC_STRIKE` | NpcReplicator | server → all | lightning, event-replicated |
+| `GNRC_NPC_HIT` | NpcReplicator | server → victim | projectile hit YOUR car (victim applies it) |
+| `GNRC_BOUNTY` | NpcReplicator | server → one | knockoff credits |
+| `GNRC_GRAPPLE` | GrappleReplicator | owner → all (host relays) | state + **anchor KIND** + ids/offsets |
+| `GNRC_GRAPPLE_PULL` | GrappleReplicator | → victim (host relays) | acceleration applied on the OWNER's machine |
+| `GNRC_GRAPPLE_BREAK` | GrappleReplicator | victim → all | L3: release any hook attached to me |
+| `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | ship is out / put away; 2 Hz heartbeat, Reliable on change |
+| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz Vector2 stick offset for a named owner's ship |
+| `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
+| `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
+
+**Four patterns this codebase leans on — copy them:**
+1. **Route effects to the authority.** A remote car is a kinematic puppet — pushing it locally is erased
+   by its next update. `GNRC_GRAPPLE_PULL` / `GNRC_NPC_HIT` send the *effect* to the machine that owns
+   the car and let IT apply the force. **The Support Ship's gun will need exactly this.**
+2. **Replicate identity, not position.** `GNRC_GRAPPLE` sends *what* it's attached to, so each viewer
+   derives the position from its own already-smoothed copy. Streaming a world point for a moving,
+   replicated object always lags and snaps. `GNRC_SHIP_AIM` is the same idea one step further: it sends
+   only the pilot's *offset*, and every machine derives the ship's world pose from its own copy of the
+   racer's car.
+3. **Level-triggered flags self-heal.** The `GNRC_CAR` effect byte and `GNRC_SHIP` are the owner's current
+   state, not edge events, so a dropped Unreliable packet fixes itself on the next tick.
+4. **Whoever supplies the input owns the result.** `GNRC_SHIP_AIM` is broadcast by the PILOT, not by the
+   ship's owner — the alternative (pilot → owner → everyone) puts a full round trip between a player's
+   stick and their own screen. Anything genuinely contested (who holds the controls, whether a ship
+   died) still goes through the server.
+
+**Two message-shape idioms in use.** Both are load-bearing and look like bugs if you don't know them:
+- **Direction-dependent meaning.** `GNRC_GRAPPLE_PULL`, `GNRC_SHIP_PILOT` and `GNRC_SHIP_DOWN` all mean
+  *"please"* when the server receives them and *"it is so"* when a client does. One name, one payload
+  layout, `if (IsServer)` picks the branch.
+- **Fixed-size payloads.** `GNRC_GRAPPLE` reuses its two Vector3 slots for different things per state;
+  `GNRC_SHIP_PILOT`'s verdict writes a dummy trailing bool so it matches the request layout.
+
+---
+
+### The multiplayer design (historical — from the user, 2026-07-19)
 - **Lobby screen** reached from the Main Menu's Online Multiplayer button: **host a lobby**, **join a lobby**,
   and **set the lobby's rules** — including **how many players per team**, so team size is a lobby parameter,
   never a hard-coded 3.
@@ -946,6 +1092,15 @@ Three sessions have layered up here, so read the labels rather than assuming "th
 ### AudioLibrary slots STILL EMPTY (`{fileID: 0}`) — assign clips (OGG/WAV)
 As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carLanding`,
 `lightningWarning`, `sdActiveLoop`, `portalSpawn`, `portalDespawn`, `victoryBanner`.
+**PLUS the 14 slots added this session, all unassigned** — Shield: `shieldCraftLoop`, `shieldCrafted`,
+`shieldActivate`, `shieldActiveLoop`, `shieldDeactivate` (+ the `shieldAudio3D` tuning block); Grappling
+hook: `grappleCraftLoop`, `grappleCrafted`, `grappleFire`, `grappleAttach`, `grappleRelease` (+ the
+`grappleAudio3D` block); Support Ship: `supportShipActivate`, `supportShipLoop`, `supportShipDeactivate`,
+`supportShipDestroyed` (+ the `supportShipAudio3D` block). **Each 3D block is the single tuning point for
+its feature's sounds.** Two range gotchas: `grappleAttach` plays AT THE HIT POINT up to the hook's full
+range away, so give `grappleAudio3D` a generous max distance or long successful shots land silently; and
+`supportShipLoop` rides the SHIP, which the pilot can slide to the edge of its offset box, so a tight max
+distance will make an escort fade out exactly when it's being flown.
 (The user has been assigning clips live; several slots intentionally reuse a **placeholder** clip and may
 want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`==`projectileHitPlayer`;
 `loopBoost`/`boostGateBoost` reuse `turboBoost`; `menuOpen` reuses `menuSelect`; `windowsEnter`==
@@ -1063,6 +1218,53 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 ---
 
 ## Exact next steps for a fresh agent
+
+> **0. THE ACTUAL NEXT FEATURE IS THE SUPPORT SHIP'S FIRING CONTROLS — see "NEXT TASK" at the top of
+> this file. The ship itself is BUILT (2026-08-16); only the gun was deferred.** Everything numbered
+> below is background/cleanup.
+
+### ⚠️ OUTSTANDING EDITOR WIRING (accumulated this session — code is done, Unity setup is NOT)
+Each of these makes a finished feature silently do nothing until it's wired:
+- **Shield → EVERY car prefab.** Only `Melody.prefab` nests `CarAccessories/Shield.prefab`. The other five
+  (`Car`, `Deora II Test Car`, `GeorgeCar`, `S-Sen7[Black_White]`, `S-Sen7[Red]`) have no `Shield` child, so
+  L3 does nothing in them. Child must be named exactly **"Shield"**, on the **Shield** layer, with a
+  collider, left **inactive**. (`ShieldAbility` now warns once per car naming the offender.)
+- **`Shield` layer collision matrix** — ON vs lightning/fans/boulders/other cars, **OFF vs track + hub floor**.
+- **`DronePlane` layer** + a `DronePlaneSpawner` in the TrackScene (trackGenerator + prefab assigned), and
+  the DronePlane prefab needs a **Rigidbody + collider** and its `projectilePrefab`; set its `visionMask`
+  to **Player + RemotePlayer + DronePlane only** (terrain in the mask blocks the cone).
+- **Store rows:** `Grappling Gun` (suggest `maxOwned = 1`), `Wire`, `Plasma`, and the LRA row renamed to
+  exactly **`LRA Premium`** — as of last check the saved scene still read `LRA`, which silently drops
+  every abort to the inventory-wiping tier.
+- **Vivox must be enabled in the Unity Cloud Dashboard** or voice throws at login and degrades to silence.
+- **Skybox material** must be named with the **`SimpleSkybox` prefix** to receive the per-scene hue
+  randomisation; add `Skybox/ProceduralSkyClouds` to Always Included Shaders if it renders in-editor only.
+- **14 unassigned AudioLibrary slots** (shield ×5, grapple ×5, support ship ×4) — see the empty-slots section.
+
+**Support Ship (2026-08-16) — all of this is required before it does anything:**
+- **A `SupportShip` layer** must be added in Tags and Layers. As of writing, `TagManager.asset` has
+  `DronePlane`/`Shield`/`Portal` but **no `SupportShip`**, and `SupportShipAbility` only logs a warning —
+  without it the ship keeps the prefab's layer and the collision matrix below is not in effect.
+- **`SupportShip` layer collision matrix.** This is the entire "what can down my ship" design, and the
+  user's explicit choice was to make it a Project Settings decision rather than code. Suggested start:
+  **OFF vs Track and the hub floor** — the ship trails the car with camera-style lag, so loops, tunnels
+  and low ceilings would otherwise shred it constantly — and **ON vs Projectile, Boulder, Drone,
+  DronePlane, Fan, Lightning and Player**. Also **OFF vs `SupportShip`** unless you want two escorts to
+  collide. The owner's own car is already excluded in code, so leaving Player ON only lets *enemies*
+  hit it, which is what the user asked for.
+- **`SupportShip` child on EVERY car prefab.** Only `Melody.prefab` has one (at `(0, 2.5, -7)`, scale
+  0.5). Same situation as the Shield. It must be named exactly **"SupportShip"** and needs a **collider**
+  (any shape — the code turns it into a trigger). It can be left ACTIVE in the prefab: both
+  `SupportShipAbility` and `RemoteCarManager.HideConditionalVisuals` now switch it off, since it is only
+  ever a template. `SupportShipAbility` warns once per car naming the offender.
+- **A `PilotControlCenter` prefab in the HubWorld scene** with the `PilotControlCenter` component and a
+  **trigger** box collider (adding the component sets `isTrigger` via `Reset()`). The `.blend` asset
+  exists but is not yet placed or scripted.
+- **A `Support Ship` store row.** The item name must match `SupportShipAbility.shipItem` exactly. Note
+  the inventory trims keys now, so a trailing space is survivable — but the name still has to match.
+- **Portal on the ship's `crashIgnoreMask`** (or off in the matrix), or driving the racer through the
+  TrackScene's return portal will cost them their ship.
+
 1. **Phases 0–5 are DONE in code** (full detail per phase in the roadmap section; everything compiles
    0-errors via `dotnet build Assembly-CSharp.csproj`; still ZERO editor asset setup beyond filling
    `multiplayerCars` — note the **`RemotePlayer` tag was added to ProjectSettings/TagManager.asset**,
@@ -1077,8 +1279,8 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
    remote knockback on the SHOVED player's own screen, WindowsAudio possibly reacting to a puppet.
 3. **Phase 7 (testing)** is really "keep doing the two-instance runs with Network Simulator latency" —
    the critical scenarios list lives in the Phase 7 roadmap entry, plus each phase's own checks.
-2. **Assign the 8 empty AudioLibrary slots** and, if desired, give distinct clips to the placeholder-shared
-   pairs listed above.
+2. **Assign the empty AudioLibrary slots** (8 long-standing + 14 added recently — see the empty-slots
+   section) and, if desired, give distinct clips to the placeholder-shared pairs listed above.
 3. **Verify component wiring in the editor** (GUIDs match the `.meta`s, so they should bind — confirm no
    "missing script"): `PortalExitAudio` on every selectable player-car prefab; `JetFlames` on the
    JetFlames accessory (child visuals toggle, root stays active); `SpeedCheck` on the SpeedCheck object
@@ -1236,12 +1438,60 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
   **UI:** a RADIAL gauge, not a bar — dark-silver fill sweeping clockwise from 12 o'clock
   (`Image.Type.Filled` + `Radial360` + `Origin360.Top`). Unity's radial fill **requires a sprite** (a
   plain Image with none cannot be filled), so `RingSprite()` generates a feathered white annulus texture
-  in code, keeping the ramp UI asset-free; it's white so each Image's own colour tints it. Ramp panel
-  grew 710 → 900.
+  in code, keeping the ramp UI asset-free; it's white so each Image's own colour tints it.
+  **Layout reflowed (2026-08-13):** the slots no longer sit at hard-coded offsets — each builder RETURNS
+  where the next one starts and the panel sizes itself to the total. Two bugs that fixed: a **blank label
+  still reserved 36 px**, which is why Turbo/Jet (blank labels in the prefab) had their counts floating
+  far from their bars; and the fixed offsets had let the rotary slot overlap the hint line. Rhythm is four
+  constants — `GapBarToText` **6**, `LabelHeight` 34, `GapLabelToCounts` 2, `GapSlotToSlot` **62** — so a
+  bar sits tight to its OWN text while slots stay clearly separated. Adding a 5th slot can no longer
+  silently overlap anything.
   **Note:** the recipe has NO capacity item — see the open question about "Grappling Gun" below.
 - **Tuning:** `ropeStiffness` (1 = perfectly inextensible), `ropeSpring`, `reelForce`/`reelSpeed`,
   `faceTorque`/`faceDamping`, `hookRadius` (thickness makes edges much easier to catch), and
   `GrappleRope`'s `slack`/`segments`/`solverIterations` for how string-like the rope looks.
+
+**SUPPORT SHIP — traps and tuning (user feature, 2026-08-16).**
+The design summary is at the TOP of this file. These are the things that cost time or would look like
+bugs to someone reading the code cold:
+- **A kinematic body moved by transform writes raises NO collision events against static scenery.** The
+  first instinct — kinematic follower + `OnCollisionEnter` — silently sails through the entire track.
+  Triggers fire in that situation, AND still honour the collision matrix, which is why `SupportShip`
+  detects death with `OnTriggerEnter`. Consequence: the ship's colliders are triggers while alive, so a
+  `DroneProjectile`'s own `OnCollisionEnter` never runs against it — the ship destroys the projectile
+  itself so the shot doesn't sail on into the racer. Solidity is restored on ragdoll so the wreck tumbles.
+- **`Physics.IgnoreCollision` ERRORS on a collider whose GameObject is inactive**, and a car is full of
+  those (Shield, jet flames, SD VFX, the ship template itself). `Attach` filters to `activeInHierarchy`;
+  trigger overlaps with the car are caught by the `BelongsToCar` hierarchy walk instead.
+- **The car's own colliders must be excluded in CODE, not the matrix.** Own car and enemy cars are both
+  on `Player`, and the user wants enemies to be able to down the ship — so the matrix can't separate them.
+- **Cloning is from the template's WORLD pose**, not `localPosition`. The ship may be nested inside an
+  accessories group on some car prefabs, in which case a local-space read parks it in the wrong place.
+- **Who may declare a crash is not "whoever sees one".** Every viewer runs a copy of every ship, but a
+  third party's copy is glued to an *interpolated puppet* and will invent contacts. `detectCrashes` is
+  true only on the owner's machine and the host; everyone else waits for `GNRC_SHIP_DOWN`. Note the
+  division of labour that falls out of this: a client can only be downed by scenery/obstacles it
+  simulates locally, while **projectile kills can only ever come from the host** — on clients,
+  projectiles are puppets with their colliders stripped, so there is nothing to trigger against.
+  Both paths report; `BroadcastDownVerdict` de-dupes, and `Crash()` is idempotent.
+- **The host must record its OWN ship in the shared table.** `ResolvePilotRequest` runs on the host and
+  checks `active` before granting; without `BroadcastLocalShipState` writing `ships[LocalClientId]`, the
+  host's own ship is invisible to its own arbitration and nobody can ever fly it.
+- **`MenuState.AnyOpen` does NOT stop a car driving.** It only gates the BUTTONS (turbo / jump / brake /
+  self-level) — throttle and steering are read unconditionally in `CarController.ReadInput`. Freezing
+  the pilot's car needs `RigidbodyConstraints.FreezeAll` as well, which is what `PilotControlCenter`
+  does (saving and restoring the previous constraints).
+- **Exactly one AudioListener may be enabled.** The pilot's listener is switched on only as the hub
+  camera's is switched off, and `RestoreCamera` is null-guarded because a scene load can destroy the hub
+  camera while someone is flying.
+- **`SupportShip` runs at `[DefaultExecutionOrder(-50)]`** so it moves before the (unordered) cameras;
+  otherwise the pilot's chase camera frames the ship's *previous* frame and reads as a permanent jitter.
+- **Tuning:** `defaultOffset` (taken from the authored child, so move the prefab child to re-home the
+  ship), `positionSmoothTime`/`pitchSmoothTime`/`rollSmoothTime` (the CameraFollow-style lag — these are
+  duplicated from `CameraFollow` and must be kept in sync by hand), `maxHorizontalOffset`/
+  `maxVerticalOffset` (the pilot's box; drawn as a gizmo when the ship is selected), `offsetMoveSpeed`,
+  `maxBankAngle`/`maxNoseAngle`/`tiltFullRateSpeed`/`tiltSmoothTime` (nose tilt), and `ragdollDuration`.
+  On `PilotControlCenter`: `cameraOffset`/`fieldOfView` for the gunner's framing, and `teamOnly`.
 
 **PROCEDURAL SKYBOX with animated clouds + stars (user feature, 2026-07-23).**
 `Prefabs/Skyboxes/ProceduralSkyClouds.shader` — a URP skybox in the spirit of Unity's built-in

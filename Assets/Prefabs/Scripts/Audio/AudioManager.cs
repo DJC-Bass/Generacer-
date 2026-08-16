@@ -418,6 +418,15 @@ public class AudioManager : MonoBehaviour
     public static void PlayGrappleRelease(Vector3 position) =>
         PlayLibrarySfxAt(Lib != null ? Lib.grappleRelease : null, position, Lib != null ? Lib.grappleAudio3D : null);
 
+    // Support Ship one-shots (3D), all tuned by AudioLibrary.supportShipAudio3D. The "while out" engine
+    // loop is managed by SupportShipAbility, which reads the same 3D block.
+    public static void PlaySupportShipActivate(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipActivate : null, position, Lib != null ? Lib.supportShipAudio3D : null);
+    public static void PlaySupportShipDeactivate(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipDeactivate : null, position, Lib != null ? Lib.supportShipAudio3D : null);
+    public static void PlaySupportShipDestroyed(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipDestroyed : null, position, Lib != null ? Lib.supportShipAudio3D : null);
+
     // Positional obstacle one-shots (3D, at the event's world location). Optional Spatial3DSettings
     // let the caller (e.g. the LightningSpawner) tweak the 3D falloff.
     public static void PlayLightningWarning(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.lightningWarning : null, position, settings);

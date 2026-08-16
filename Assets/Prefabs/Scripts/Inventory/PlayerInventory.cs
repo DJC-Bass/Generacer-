@@ -78,6 +78,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<SDAbilityController>();  // rebindable "SD" control (default D-pad up): toggle the equipped SD
         go.AddComponent<ShieldAbility>();        // L3: summon the crafted Shield for a few seconds
         go.AddComponent<GrappleHook>();          // RB: fire/release the grappling hook (RT+Y reels)
+        go.AddComponent<SupportShipAbility>();   // L3+Y: summon/dismiss the teammate-flown escort ship
         go.AddComponent<PlayerCarSwapper>();     // swaps in the Car-Selection choice each gameplay scene
         go.AddComponent<StartMenuController>();   // Start button: in-game menu (Resume/Audio/Controls/Settings/Quit)
         go.AddComponent<TutorialGuide>();         // Tutorial scene's top-screen instruction messages

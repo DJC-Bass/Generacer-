@@ -64,7 +64,10 @@ public class ShieldAbility : MonoBehaviour
 
         if (MenuState.AnyOpen) return;
         var gp = Gamepad.current;
-        if (gp != null && gp.leftStickButton.wasPressedThisFrame) TryActivate();
+        // L3 with Y HELD is the Support Ship chord, not a shield — otherwise summoning the ship would
+        // always burn a shield at the same time (see SupportShipAbility).
+        if (gp != null && gp.leftStickButton.wasPressedThisFrame && !gp.buttonNorth.isPressed)
+            TryActivate();
     }
 
     /// <summary>Summons the shield if the player owns one and none is already up. A press with an empty

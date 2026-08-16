@@ -153,6 +153,23 @@ public class AudioLibrary : ScriptableObject
              "generous or a long successful shot will land silently.")]
     public Spatial3DSettings grappleAudio3D = new Spatial3DSettings();
 
+    [Header("Support Ship SFX (3D, at the ship)")]
+    [Tooltip("One-shot (3D) when the racer summons their Support Ship with L3+Y.")]
+    public AudioClip supportShipActivate;
+    [Tooltip("Looping 3D engine/hover sound riding the Support Ship the whole time it is out. This is " +
+             "what makes an escorting ship audible to everyone nearby, so keep it quiet and steady.")]
+    public AudioClip supportShipLoop;
+    [Tooltip("One-shot (3D) when the racer dismisses their Support Ship with L3+Y.")]
+    public AudioClip supportShipDeactivate;
+    [Tooltip("One-shot (3D) when the Support Ship is downed by a collision or a projectile — plays at " +
+             "the wreck, so it doubles as a positional cue for where the ship was lost.")]
+    public AudioClip supportShipDestroyed;
+    [Tooltip("3D playback tuning shared by ALL FOUR Support Ship sounds above — spatial blend, volume, " +
+             "min/max distance, rolloff, doppler. THIS is the block to edit when tuning how far away " +
+             "the ship can be heard. Note the ship flies up to its offset limits away from its racer, " +
+             "so a tight max distance will make it drop out at the edges of the pilot's box.")]
+    public Spatial3DSettings supportShipAudio3D = new Spatial3DSettings();
+
     [Header("LRA SFX")]
     [Tooltip("Looping 2D sound while the player is holding the L+R+A combo to activate the LRA abort " +
              "(plays with the progress bar; cuts when the combo is released or the abort completes).")]
