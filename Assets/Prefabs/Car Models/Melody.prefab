@@ -1524,12 +1524,20 @@ PrefabInstance:
       value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
+      propertyPath: maxRollAngle
+      value: -80
+      objectReference: {fileID: 0}
+    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: lookSmoothTime
       value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
+      propertyPath: muzzleOffset.y
+      value: -0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: muzzleOffset.z
-      value: 0
+      value: -20
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: tiltSmoothTime
@@ -1537,7 +1545,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: offsetMoveSpeed
-      value: 2.5
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: maxForwardOffset

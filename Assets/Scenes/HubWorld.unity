@@ -382,17 +382,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PilotControlCenter
   playerTag: Player
   padExitGrace: 0.5
+  burstRounds: 3
+  burstInterval: 0.12
   teamOnly: 0
-  matchPlayerCamera: 1
   cameraOffset: {x: 0, y: 3, z: -12}
-  positionSmoothTime: 0.35
-  pitchSmoothTime: 0.2
-  rollSmoothTime: 0.2
-  rotationSmoothTime: 0.1
   lookAheadDistance: 8
   fieldOfView: 75
   nearClip: 0.3
+  trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
   farClip: 20000
+  cameraFollowLag: 0.08
   rowNormal: {r: 0, g: 0, b: 0, a: 0.55}
   rowSelected: {r: 0.35, g: 0.9, b: 1, a: 0.95}
   rowBusy: {r: 0.25, g: 0.1, b: 0.1, a: 0.7}
@@ -6272,17 +6271,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PilotControlCenter
   playerTag: Player
   padExitGrace: 0.5
+  burstRounds: 3
+  burstInterval: 0.12
   teamOnly: 0
-  matchPlayerCamera: 1
   cameraOffset: {x: 0, y: 3, z: -12}
-  positionSmoothTime: 0.35
-  pitchSmoothTime: 0.2
-  rollSmoothTime: 0.2
-  rotationSmoothTime: 0.1
   lookAheadDistance: 8
   fieldOfView: 75
   nearClip: 0.3
-  farClip: 20000
+  trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
+  farClip: 35000
+  cameraFollowLag: 0.08
   rowNormal: {r: 0, g: 0, b: 0, a: 0.55}
   rowSelected: {r: 0.35, g: 0.9, b: 1, a: 0.95}
   rowBusy: {r: 0.25, g: 0.1, b: 0.1, a: 0.7}

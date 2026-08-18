@@ -74,7 +74,11 @@ public class SupportShip : MonoBehaviour
     [Tooltip("Local X rotation at full vertical push (degrees). Applied NEGATIVE when climbing and " +
              "POSITIVE when descending, which is Unity's convention for nose-up / nose-down.")]
     public float maxPitchAngle = 35f;
-    [Tooltip("Lag easing the aim angles in, and easing them back to level (0,0) when the stick is " +
+    [Tooltip("Local Z rotation held while a bumper is down (degrees). RB rolls RIGHT, LB rolls LEFT. " +
+             "Holding BOTH cancels to zero, so the ship levels out mid-roll. If the roll comes out " +
+             "mirrored on your model, negate this value.")]
+    public float maxRollAngle = 80f;
+    [Tooltip("Lag easing the aim angles in, and easing them back to level (0,0,0) when the controls are " +
              "released. 0 = instant/snappy.")]
     public float lookSmoothTime = 0.12f;
 
@@ -116,6 +120,29 @@ public class SupportShip : MonoBehaviour
     /// <summary>True once it has been downed — the wreck is falling and the AI/follow is off.</summary>
     public bool IsRagdolling { get; private set; }
 
+    /// <summary>The ship's LEVEL-FLIGHT frame: the lagged car-following rotation, WITHOUT the pilot's
+    /// aim angles. This is what the ship's rotation is built on — its actual transform.rotation is this
+    /// times <see cref="PilotLook"/>.
+    ///
+    /// Exposed for the pilot's chase camera, which follows the ship's POSITION but must ignore its aim:
+    /// if the camera swung with the yaw, angling the ship to shoot left would just drag the whole view
+    /// left and nothing would appear to have been aimed. Framing on this instead keeps the camera
+    /// pointed down the car's heading while the ship visibly angles inside the shot — the Star Fox
+    /// arrangement, and the thing that makes the widened arc of fire readable.</summary>
+    public Quaternion FollowFrame => smoothedRot;
+
+    /// <summary>Where the ship sits INSIDE <see cref="FollowFrame"/>: the resting offset plus whatever
+    /// the pilot has slid it to. This — not the world position — is the thing that only changes when
+    /// the PILOT does something; the car hurtling down the track moves the frame, not this.
+    ///
+    /// That distinction is what the pilot's camera smooths against, so the chase looks identical at a
+    /// standstill and at 600 mph. Smoothing the world position instead makes the trail proportional to
+    /// the car's speed, which reads as the camera being dragged rather than as the ship being flown.</summary>
+    public Vector3 LocalOffset => defaultOffset
+                                + Vector3.right * pilotOffset.x
+                                + Vector3.up * pilotOffset.y
+                                + Vector3.forward * pilotOffset.z;
+
     /// <summary>Raised the instant it is downed, on the machine that noticed. Who reports that
     /// upstream differs by machine (see SupportShipAbility / SupportShipReplicator), so the ship
     /// itself stays ignorant of the network.</summary>
@@ -132,20 +159,21 @@ public class SupportShip : MonoBehaviour
         set => pilotOffset = ClampOffset(value);
     }
 
-    /// <summary>The pilot's aim angles in degrees: x = yaw (local Y), y = pitch (local X). Replicated
+    /// <summary>The pilot's aim angles in degrees: x = yaw (local Y), y = pitch (local X), z = roll
+    /// (local Z, on the bumpers). Replicated
     /// alongside the offset rather than derived from the ship's motion, because the two deliberately
     /// disagree — a pilot pinned against the movement box keeps AIMING the way they're pushing while
     /// no longer MOVING that way, and nothing about the ship's travel could reproduce that.</summary>
-    public Vector2 PilotLook
+    public Vector3 PilotLook
     {
         get => pilotLook;
-        set { pilotLook = value; pilotLookTarget = value; pilotLookVel = Vector2.zero; }
+        set { pilotLook = value; pilotLookTarget = value; pilotLookVel = Vector3.zero; }
     }
 
     private Vector3 pilotOffset;
-    private Vector2 pilotLook;         // current, smoothed
-    private Vector2 pilotLookTarget;   // what the pilot's stick is asking for
-    private Vector2 pilotLookVel;
+    private Vector3 pilotLook;         // current, smoothed
+    private Vector3 pilotLookTarget;   // what the pilot's controls are asking for
+    private Vector3 pilotLookVel;
     private Rigidbody rb;
     private Quaternion smoothedRot = Quaternion.identity;
     private bool posInitialised;
@@ -177,7 +205,7 @@ public class SupportShip : MonoBehaviour
         Car = car;
         posInitialised = false;   // re-snap onto the new car rather than flying over to it
         IsRagdolling = false;
-        PilotLook = Vector2.zero;   // a freshly attached ship starts level
+        PilotLook = Vector3.zero;   // a freshly attached ship starts level
 
         if (car == null) return;
         lastCarPosition = car.position;
@@ -227,6 +255,7 @@ public class SupportShip : MonoBehaviour
         maxForwardOffset = src.maxForwardOffset;
         maxYawAngle = src.maxYawAngle;
         maxPitchAngle = src.maxPitchAngle;
+        maxRollAngle = src.maxRollAngle;
         lookSmoothTime = src.lookSmoothTime;
 
         ragdollDuration = src.ragdollDuration;
@@ -242,22 +271,20 @@ public class SupportShip : MonoBehaviour
         laserLayerName = src.laserLayerName;
     }
 
-    /// <summary>Integrates one frame of the pilot's stick into the offset. Called only on the machine
-    /// whose player is actually flying it, so their own control has zero network latency; everyone
-    /// else receives the resulting offset and assigns <see cref="PilotOffset"/> directly.</summary>
     /// <summary>Integrates one frame of the pilot's controls. Called only on the machine whose player
     /// is actually flying, so their own input has zero network latency; everyone else receives the
     /// resulting offset and angles and assigns them directly.
     ///
     /// <paramref name="move"/> is the intent, in the car's frame: x = slide right, y = climb (left
-    /// stick), z = push forward (B/X). It does TWO independent things, and keeping them independent is
-    /// the point of this control scheme:
+    /// stick), z = push forward (B/X); `roll` is the bumpers. It does TWO independent things, and
+    /// keeping them independent is the point of this control scheme:
     ///  • It slides the offset at a UNIFORM speed, clamped to the movement box.
-    ///  • It sets the aim angles — yaw from the sideways push, pitch from the vertical one — from the
-    ///    STICK, not from whether the ship actually moved. So a pilot pinned against the edge of the
+    ///  • It sets the aim angles — yaw from the sideways push, pitch from the vertical one, roll from
+    ///    <paramref name="roll"/> (RB/LB, +1/-1, both = 0) — from the CONTROLS,
+    ///    not from whether the ship actually moved. So a pilot pinned against the edge of the
     ///    box keeps pointing the way they're pushing, which widens the arc of fire from a hard corner
     ///    of the box instead of leaving them stuck facing straight ahead.</summary>
-    public void ApplyPilotMove(Vector3 move, float deltaTime)
+    public void ApplyPilotMove(Vector3 move, float roll, float deltaTime)
     {
         Vector2 stick = new Vector2(move.x, move.y);
         // Flipped before the deadzone maths, which only reads the stick's LENGTH and direction — a sign
@@ -283,7 +310,12 @@ public class SupportShip : MonoBehaviour
 
         // Yaw follows the slide (push right, nose right). Pitch is NEGATIVE going up, per the spec —
         // which is also Unity's convention, where a negative X rotation raises the nose.
-        pilotLookTarget = new Vector2(planar.x * maxYawAngle, -planar.y * maxPitchAngle);
+        // Roll is a pure AIM angle — it never moves the ship, only banks it. RB gives +1, LB -1, and
+        // both together give 0, which is exactly the "they cancel out" rule: the target drops to level
+        // and the ship smooths back out of whatever roll it was in.
+        pilotLookTarget = new Vector3(planar.x * maxYawAngle,
+                                      -planar.y * maxPitchAngle,
+                                      Mathf.Clamp(roll, -1f, 1f) * maxRollAngle);
     }
 
     Vector3 ClampOffset(Vector3 raw) => new Vector3(
@@ -314,10 +346,7 @@ public class SupportShip : MonoBehaviour
         UpdateSmoothedRotation();
         UpdateLook();
 
-        Vector3 offset = defaultOffset
-                       + Vector3.right * pilotOffset.x
-                       + Vector3.up * pilotOffset.y
-                       + Vector3.forward * pilotOffset.z;
+        Vector3 offset = LocalOffset;
         Vector3 desired = Car.position + smoothedRot * offset;
 
         if (!posInitialised)
@@ -334,7 +363,7 @@ public class SupportShip : MonoBehaviour
         // Aim rides INSIDE the car-following frame, so the angles the pilot dials in are relative to
         // the ship's own level flight rather than to the world — a banked car doesn't skew the aim.
         // Euler order is (pitch about local X, yaw about local Y, no roll).
-        transform.rotation = smoothedRot * Quaternion.Euler(pilotLook.y, pilotLook.x, 0f);
+        transform.rotation = smoothedRot * Quaternion.Euler(pilotLook.y, pilotLook.x, pilotLook.z);
     }
 
     /// <summary>Eases the ship's reference rotation toward the car's with an independent lag per axis.
@@ -375,7 +404,7 @@ public class SupportShip : MonoBehaviour
     {
         pilotLook = lookSmoothTime <= 0f
             ? pilotLookTarget
-            : Vector2.SmoothDamp(pilotLook, pilotLookTarget, ref pilotLookVel, lookSmoothTime);
+            : Vector3.SmoothDamp(pilotLook, pilotLookTarget, ref pilotLookVel, lookSmoothTime);
     }
 
     // -------------------------------------------------------

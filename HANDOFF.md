@@ -139,7 +139,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_GRAPPLE_PULL` | GrappleReplicator | → victim (host relays) | acceleration applied on the OWNER's machine |
 | `GNRC_GRAPPLE_BREAK` | GrappleReplicator | victim → all | L3: release any hook attached to me |
 | `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | ship is out / put away; 2 Hz heartbeat, Reliable on change |
-| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector2 aim angles} for a named owner’s ship |
+| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector3 aim angles} for a named owner’s ship |
 | `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
 | `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X's lasers once; host spawns + NpcReplicator streams the round |
@@ -1283,6 +1283,9 @@ Each of these makes a finished feature silently do nothing until it's wired:
   ship out to the other five cars.
 - **Portal on the ship's `crashIgnoreMask`** (or off in the matrix), or driving the racer through the
   TrackScene's return portal will cost them their ship.
+- **`trackSkybox` on the PilotControlCenter** must point at `Assets/Prefabs/Skyboxes/SimpleSkybox.mat`
+  (the TrackScene's sky). Unassigned, a hub-bound pilot flies over the track under the HUB's sky, which
+  is Unity's plain built-in default.
 - **The guns (2026-08-16):** assign **`laserPrefab`** on the `SupportShip.prefab` ASSET (not just the
   Melody instance) — `TuningTemplateFor` reads the car prefab's nested ship to arm remote copies, so an
   instance-only assignment leaves every teammate's ship firing blanks. The
@@ -1617,20 +1620,81 @@ bugs to someone reading the code cold:
     work: a pilot pinned against the wall of the movement box keeps AIMING the way they're pushing
     while no longer MOVING that way. Nothing derived from the ship's motion could reproduce that —
     which is also why the angles had to start being **replicated** (`GNRC_SHIP_AIM` grew from a Vector2
-    offset to `{Vector3 offset, Vector2 look}`); viewers cannot infer them.
-  - Releasing the stick eases back to a level `(0,0)` over `lookSmoothTime`.
+    offset to `{Vector3 offset, Vector3 look}`); viewers cannot infer them.
+  - Releasing the controls eases back to a level `(0,0,0)` over `lookSmoothTime`.
   - The movement box became a **3D box**: `maxForwardOffset` on top of horizontal/vertical, driven by
     **B (forward) / X (back)**. Set all three equal for a true cube. The selected-gizmo draws the real
     box now.
+  - **ROLL on the bumpers (2026-08-16):** RB banks right, LB banks left, to `maxRollAngle` (80°) on
+    local Z. Holding BOTH gives 0, which falls out of the `+1 / -1` sum for free and is exactly the
+    "they cancel" rule — the target drops to level and the ship smooths out of whatever roll it was
+    in, using the same `lookSmoothTime` as the other two axes. Roll is a pure AIM angle: it never
+    moves the ship. Both bumpers were already free while piloting because `MenuState.AnyOpen` gates
+    the grapple (RB) and the voice-channel flip (LB). `PilotLook` is a **Vector3** (x yaw, y pitch,
+    z roll) and `GNRC_SHIP_AIM` carries `{Vector3 offset, Vector3 look}`.
+- **The pilot camera gets the TRACK's sky and NO post-processing (2026-08-16).** Both come from the same
+  root problem: the pilot is standing in the HUB but looking at the TRACK, and Unity's environment
+  settings are per-ACTIVE-scene, not per-camera.
+  - **Skybox.** The two scenes genuinely differ — `HubWorld` is assigned Unity's built-in Default-Skybox
+    and `TrackScene` the procedural `SimpleSkybox` — so a hub-bound pilot was flying over the track
+    under a plain grey sky while the racers saw the real one. Fixed with a per-camera **`Skybox`
+    component**, which overrides `RenderSettings.skybox` for that camera alone and leaves every other
+    view untouched. ⚠️ **`trackSkybox` must be assigned** on the PilotControlCenter (point it at
+    `Assets/Prefabs/Skyboxes/SimpleSkybox.mat`) or the override has nothing to show and falls back to
+    the hub's sky.
+  - **Matching the round's HUES needed a new path.** `SkyboxHueRandomizer` only recolours on
+    active-scene change, so a teammate who spends the whole session in the hub never recolours the
+    track's sky and `CurrentSky` is null for them. `BuildRecoloured` was therefore split out of
+    `Recolor` and exposed (with `CurrentSky` / `BuildRoundSky`) so the pad can build the track's sky
+    itself — and because the hues derive from the shared round seed, it lands on exactly the colours
+    everyone else got.
+  - **Post-processing is off** (`UniversalAdditionalCameraData.renderPostProcessing = false`). Volumes
+    are POSITIONAL, so a hub volume the pilot's parked car happens to sit inside would grade their view
+    of the track, and drifting in and out of one would change the grade for no visible reason.
+  - **The directional light needed nothing.** Lights are global once their scene is loaded, and both
+    scenes are additively loaded for everyone, so the track's light (including whatever
+    `RoundDirectionalLightToggle` has done to it that round) already lit the pilot's view correctly.
+    `renderShadows` is left ON so it still casts.
+- **The pilot camera IGNORES the ship's aim (2026-08-16).** It follows the ship's POSITION with a small
+  lag on its LOCAL offset only (`cameraFollowLag`, 0.08 s — see below) and takes its ORIENTATION from
+  `SupportShip.FollowFrame` — the lagged
+  car-following rotation, without the pilot's aim angles. If the camera swung with the yaw, angling the
+  ship to shoot left would simply drag the whole view left and nothing would look aimed; the widened
+  arc of fire would be invisible. Held apart, the camera keeps the car's heading and the ship visibly
+  angles inside the shot — the Star Fox arrangement.
+  **This is why `SupportShipCamAnchor` exists as its own component** rather than a method on
+  `PilotControlCenter`: CameraFollow derives both its placement and its aim from `target.rotation`, so
+  the target has to BE an aim-free transform. ⚠️ **Its `[DefaultExecutionOrder(-25)]` is load-bearing** —
+  it must run after the ship has moved (`SupportShip` is -50) and before the camera reads it
+  (`CameraFollow` is unordered, 0). Driving it from `PilotControlCenter` does NOT work: that runs at
+  +1000, after both, so the camera would frame a one-frame-stale anchor.
+- **⚠️ The camera smooths the ship's LOCAL offset, never its world position (2026-08-16).** The ship's
+  world position is "wherever the car is" **plus** "where the pilot has put it", and only the second
+  half is the pilot's doing. Lagging the world position made the camera trail by an amount proportional
+  to the car's SPEED — glued at a standstill, dragged along at 600 mph — which reads as the camera being
+  yanked about rather than as the ship being flown. `SupportShipCamAnchor` now eases
+  `SupportShip.LocalOffset` and rebuilds from the car's CURRENT position, so all of the car's travel is
+  carried rigidly and `followLag` shows up exactly where it was asked for: the pilot sliding the ship.
+- **The pilot camera's own frame smoothing is FORCED TO ZERO in `EnsureRig`, and that is not an
+  oversight.** `CameraFollow`'s `positionSmoothTime`/`pitchSmoothTime`/`rollSmoothTime` ease its frame
+  toward its target's rotation — but the target already carries the ship's `FollowFrame`, which the ship
+  has ALREADY smoothed against the car. Leaving them set stacked a second lag on a first, and being
+  ANGULAR it only bit while the car was TURNING: rock-steady at a standstill, ship sliding across the
+  screen through a fast corner. One layer of laziness (the ship's) is the design — **tune it on the
+  SHIP**, not the camera. The now-meaningless `matchPlayerCamera` / smooth-time fields were removed from
+  `PilotControlCenter` rather than left as inspector traps (Unity silently drops dead serialized fields,
+  so nothing had to be re-wired).
 - **Tuning:** `defaultOffset` (taken from the authored child, so move the prefab child to re-home the
-  ship), `positionSmoothTime`/`pitchSmoothTime`/`rollSmoothTime` (the CameraFollow-style lag — these are
+  ship), `positionSmoothTime`/`pitchSmoothTime`/`rollSmoothTime` (the ship’s CameraFollow-style lag
+  against the car — **this is the ONLY frame smoothing in the chase now**, and these are
   duplicated from `CameraFollow` and must be kept in sync by hand), `maxHorizontalOffset`/
   `maxVerticalOffset`/`maxForwardOffset` (the pilot's box; drawn as a gizmo when the ship is selected),
   `offsetMoveSpeed`, `invertPilotVertical` (**ON by default** — stick up dives, stick down climbs,
   flight-stick style rather than point-where-you-want; the aim angles follow the resulting MOVEMENT
   direction, so they stay correct either way),
-  `maxYawAngle`/`maxPitchAngle`/`lookSmoothTime` (aim rotation), and `ragdollDuration`.
-  On `PilotControlCenter`: `cameraOffset`/`fieldOfView` for the gunner's framing, `burstRounds`/
+  `maxYawAngle`/`maxPitchAngle`/`maxRollAngle`/`lookSmoothTime` (aim rotation), and `ragdollDuration`.
+  On `PilotControlCenter`: `cameraOffset`/`fieldOfView`/`cameraFollowLag` for the gunner’s framing,
+  `trackSkybox` (must be assigned — see above), `burstRounds`/
   `burstInterval` for the guns, and `teamOnly`.
 
 **PROCEDURAL SKYBOX with animated clouds + stars (user feature, 2026-07-23).**

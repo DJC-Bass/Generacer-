@@ -59,6 +59,21 @@ public class SkyboxHueRandomizer : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
+    public static SkyboxHueRandomizer Instance { get; private set; }
+
+    /// <summary>The live recoloured sky, or null before one has been built. A camera that needs the
+    /// TRACK's sky while the HUB is the active scene (the Support Ship pilot) reads this rather than
+    /// RenderSettings, which always reflects the active scene.</summary>
+    public static Material CurrentSky => Instance != null ? Instance.instance : null;
+
+    /// <summary>Builds a recoloured COPY of any base skybox with this round's hues — for a camera that
+    /// needs a sky the active scene isn't using. The caller owns the returned material and must destroy
+    /// it. Null if the randomizer isn't up yet or the material isn't a SimpleSkybox.</summary>
+    public static Material BuildRoundSky(Material baseSky) =>
+        Instance != null ? Instance.BuildRecoloured(baseSky) : null;
+
+    void Awake() => Instance = this;
+
     void OnEnable()
     {
         SceneManager.sceneLoaded += OnSceneLoaded;
@@ -87,17 +102,32 @@ public class SkyboxHueRandomizer : MonoBehaviour
 
     void Recolor()
     {
-        var sky = RenderSettings.skybox;
-        if (sky == null) return;
+        Material recoloured = BuildRecoloured(RenderSettings.skybox);
+        if (recoloured == null) return;
+
+        Material previous = instance;
+        instance = recoloured;
+        RenderSettings.skybox = instance;
+        DynamicGI.UpdateEnvironment();   // refresh ambient / reflections from the recoloured sky
+
+        if (previous != null) Destroy(previous);   // free the prior instance (already copied from if current)
+    }
+
+    /// <summary>Returns a recoloured COPY of <paramref name="sky"/>, or null if it isn't a SimpleSkybox.
+    /// Split out from <see cref="Recolor"/> so a camera showing a scene it isn't standing in — the
+    /// Support Ship pilot, framing the track from the hub — can get that scene's sky with THIS round's
+    /// hues instead of whatever the active scene happens to be using.</summary>
+    public Material BuildRecoloured(Material sky)
+    {
+        if (sky == null) return null;
 
         // Only our target SimpleSkybox (a Skybox/Procedural material with Sky Tint + Ground).
-        if (!sky.name.StartsWith(TargetName)) return;
-        if (!sky.HasProperty("_SkyTint") || !sky.HasProperty("_GroundColor")) return;
+        if (!sky.name.StartsWith(TargetName)) return null;
+        if (!sky.HasProperty("_SkyTint") || !sky.HasProperty("_GroundColor")) return null;
 
-        // Copy the CURRENT skybox (the shared asset, or our own instance if the scene didn't reset it)
-        // so the asset on disk is never modified.
-        Material previous = instance;
-        instance = new Material(sky) { name = TargetName + " (Random)" };
+        // Copy the SOURCE (the shared asset, or an existing instance) so the asset on disk is never
+        // modified.
+        var instance = new Material(sky) { name = TargetName + " (Random)" };
 
         // Independent random hue for each colour; each keeps its own saturation + value.
         // (0..1 == the full 0..360 hue wheel.) In a multiplayer round the hues derive from the
@@ -141,10 +171,7 @@ public class SkyboxHueRandomizer : MonoBehaviour
         if (instance.HasProperty(NightTintProp))
             ShiftHue(instance, NightTintProp, hNight, maxSaturation: nightTintMaxSaturation);
 
-        RenderSettings.skybox = instance;
-        DynamicGI.UpdateEnvironment();   // refresh ambient / reflections from the recoloured sky
-
-        if (previous != null) Destroy(previous);   // free the prior instance (already copied from if current)
+        return instance;
     }
 
     /// <summary>

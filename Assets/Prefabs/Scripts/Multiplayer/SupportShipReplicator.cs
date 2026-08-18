@@ -29,7 +29,7 @@ using UnityEngine;
 public class SupportShipReplicator : MonoBehaviour
 {
     const string MsgShip = "GNRC_SHIP";         // owner  → all: {ownerId, active}
-    const string MsgAim = "GNRC_SHIP_AIM";      // pilot  → all: {ownerId, offset(Vec3), look(Vec2)}
+    const string MsgAim = "GNRC_SHIP_AIM";      // pilot  → all: {ownerId, offset(Vec3), look(Vec3)}
     const string MsgPilot = "GNRC_SHIP_PILOT";  // client → server (request) / server → all (verdict)
     const string MsgDown = "GNRC_SHIP_DOWN";    // any    → server (report)  / server → all (verdict)
     const string MsgFire = "GNRC_SHIP_FIRE";    // pilot  → server: fire owner X's guns, once
@@ -59,8 +59,8 @@ public class SupportShipReplicator : MonoBehaviour
         public ulong pilotId = NoClient;
         public Vector3 offset;          // latest received (or locally flown) pilot offset
         public Vector3 smoothedOffset;
-        public Vector2 look;            // aim angles: x = yaw, y = pitch (degrees)
-        public Vector2 smoothedLook;
+        public Vector3 look;            // aim angles: x = yaw, y = pitch, z = roll (degrees)
+        public Vector3 smoothedLook;
         public bool hasSmoothed;
         public SupportShip ship;        // our local visual, null until their puppet exists
         public bool warnedLayer;
@@ -216,7 +216,7 @@ public class SupportShipReplicator : MonoBehaviour
         var msg = Msg;
         if (msg == null) return;
         Vector3 offset = ship.PilotOffset;
-        Vector2 look = ship.PilotLook;
+        Vector3 look = ship.PilotLook;
 
         using var writer = new FastBufferWriter(48, Allocator.Temp);
         writer.WriteValueSafe(LocalPilotOf);
@@ -451,7 +451,7 @@ public class SupportShipReplicator : MonoBehaviour
         {
             reader.ReadValueSafe(out ulong ownerId);
             reader.ReadValueSafe(out Vector3 offset);
-            reader.ReadValueSafe(out Vector2 look);
+            reader.ReadValueSafe(out Vector3 look);
 
             if (IsServer)
             {
@@ -566,7 +566,7 @@ public class SupportShipReplicator : MonoBehaviour
             }
             float t = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(AimSmoothTau, 1e-4f));
             entry.smoothedOffset = Vector3.Lerp(entry.smoothedOffset, entry.offset, t);
-            entry.smoothedLook = Vector2.Lerp(entry.smoothedLook, entry.look, t);
+            entry.smoothedLook = Vector3.Lerp(entry.smoothedLook, entry.look, t);
             ship.PilotOffset = entry.smoothedOffset;
             ship.PilotLook = entry.smoothedLook;
         }

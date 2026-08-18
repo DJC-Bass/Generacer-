@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using UnityEngine.Rendering.Universal;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -52,21 +53,22 @@ public class PilotControlCenter : MonoBehaviour
              "session, which is really only useful for testing.")]
     public bool teamOnly = true;
 
-    [Header("Pilot camera (mirrors the in-game camera feel)")]
-    [Tooltip("Copy the local player's live camera rig (smooth times, look-ahead, roll blend) so flying " +
-             "the ship feels like driving. Uncheck to hand-place it with the fields below.")]
-    public bool matchPlayerCamera = true;
-    [Tooltip("Camera offset behind/above the ship, in the ship's local frame — same as CameraFollow.")]
+    [Header("Pilot camera")]
+    [Tooltip("Camera offset behind/above the ship, in the ship's level-flight frame.")]
     public Vector3 cameraOffset = new Vector3(0f, 3f, -12f);
-    public float positionSmoothTime = 0.35f;   // yaw/orbit lag
-    public float pitchSmoothTime = 0.2f;
-    public float rollSmoothTime = 0.2f;
-    public float rotationSmoothTime = 0.1f;
     public float lookAheadDistance = 8f;
     public float fieldOfView = 75f;
     public float nearClip = 0.3f;
+    [Tooltip("The TrackScene's skybox material (SimpleSkybox). The pilot stands in the HUB, whose sky " +
+             "is Unity's default — but they are LOOKING at the track, so the camera is given the " +
+             "track's sky per-camera. Leave blank and the pilot sees the hub's sky over the track.")]
+    public Material trackSkybox;
     [Tooltip("Far clip — generous, since the ship looks out over a whole generated track.")]
     public float farClip = 20000f;
+    [Tooltip("Positional lag between the ship and the point the camera frames, in seconds. The camera " +
+             "IGNORES the ship's aim rotation entirely and follows only its position, so this is the " +
+             "only softness in the chase. Keep it small — a slight trail, not a drift. 0 = rigid.")]
+    public float cameraFollowLag = 0.08f;
 
     [Header("Row Style")]
     public Color rowNormal = new Color(0f, 0f, 0f, 0.55f);
@@ -91,6 +93,9 @@ public class PilotControlCenter : MonoBehaviour
     private Camera pilotCam;
     private CameraFollow pilotFollow;
     private AudioListener pilotListener;
+    private Skybox camSkybox;                  // per-camera sky override (the TRACK's, not the hub's)
+    private Material ownedSky;                 // our own recoloured copy, when we had to build one
+    private SupportShipCamAnchor camAnchor;    // carries the ship's POSITION and its aim-free frame
     private Camera suppressedCam;              // the hub camera we switched off
     private AudioListener suppressedListener;  // and its listener
     private int burstFired;              // rounds already fired from the CURRENT press of A
@@ -279,7 +284,7 @@ public class PilotControlCenter : MonoBehaviour
         shipLostSince = -1f;
         EnsureRig();
         BindCamera(ship);
-        ShowHint("Stick Fly    B / X Fwd / Back    A Fire    Select Release");
+        ShowHint("Stick Fly    B / X Fwd / Back    LB / RB Roll    A Fire    Select Release");
         // A fresh cockpit starts with the guns cold — the A press that TOOK the controls must not also
         // loose a burst on the way in.
         burstFired = Mathf.Max(1, burstRounds);
@@ -338,14 +343,15 @@ public class PilotControlCenter : MonoBehaviour
 
         if (ship == null) return;   // riding out the grace window — nothing to fly this frame
 
-        if (pilotFollow != null) pilotFollow.target = ship.transform;
+        if (camAnchor != null) camAnchor.ship = ship;   // the anchor follows it in its own LateUpdate
         if (gp == null) return;
-        // Left stick slides and aims; B pushes the ship forward, X pulls it back. All integrated
-        // LOCALLY so the pilot's own controls have no latency; the resulting offset and aim angles are
-        // what go on the wire.
+        // Left stick slides and aims; B/X push the ship forward and back; RB/LB bank it (both bumpers
+        // together cancel to level). All integrated LOCALLY so the pilot's own controls have no latency;
+        // the resulting offset and aim angles are what go on the wire.
         Vector2 stick = gp.leftStick.ReadValue();
         float depth = (gp.buttonEast.isPressed ? 1f : 0f) - (gp.buttonWest.isPressed ? 1f : 0f);
-        ship.ApplyPilotMove(new Vector3(stick.x, stick.y, depth), Time.deltaTime);
+        float roll = (gp.rightShoulder.isPressed ? 1f : 0f) - (gp.leftShoulder.isPressed ? 1f : 0f);
+        ship.ApplyPilotMove(new Vector3(stick.x, stick.y, depth), roll, Time.deltaTime);
         TickGuns(gp);
     }
 
@@ -397,6 +403,12 @@ public class PilotControlCenter : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        // We built this copy ourselves (SkyboxHueRandomizer owns the ones IT makes), so we free it.
+        if (ownedSky != null) Destroy(ownedSky);
+    }
+
     // -------------------------------------------------------
     //  The pilot's car
     // -------------------------------------------------------
@@ -434,6 +446,12 @@ public class PilotControlCenter : MonoBehaviour
     {
         if (pilotCam != null) return;
 
+        // The camera frames THIS, not the ship — see SupportShipCamAnchor for why.
+        var anchorGo = new GameObject("SupportShipCamAnchor");
+        DontDestroyOnLoad(anchorGo);
+        camAnchor = anchorGo.AddComponent<SupportShipCamAnchor>();
+        camAnchor.followLag = cameraFollowLag;
+
         var camGo = new GameObject("SupportShipPilotCam");
         DontDestroyOnLoad(camGo);
         pilotCam = camGo.AddComponent<Camera>();
@@ -443,18 +461,42 @@ public class PilotControlCenter : MonoBehaviour
         pilotCam.farClipPlane = farClip;
         pilotCam.enabled = false;
 
+        // POST-PROCESSING OFF. The pilot is standing in the HUB, so any hub post-process volume they
+        // happen to be inside would grade a view of the TRACK — and volumes are positional, so the
+        // grading would change as their parked car sits in or out of one. Off is both correct and
+        // predictable.
+        var urp = pilotCam.GetUniversalAdditionalCameraData();
+        if (urp != null)
+        {
+            urp.renderPostProcessing = false;
+            urp.renderShadows = true;    // the track's directional light should still cast
+        }
+
+        // PER-CAMERA SKYBOX. RenderSettings.skybox follows the ACTIVE scene, which for a hub-bound
+        // pilot is the hub — and the hub's sky is Unity's built-in default while the track's is the
+        // procedural SimpleSkybox. Without this override the pilot flies over the track under a plain
+        // grey sky while the racer sees the real one. A Skybox COMPONENT overrides RenderSettings for
+        // this camera alone, leaving everyone else's view untouched.
+        camSkybox = camGo.AddComponent<Skybox>();
         pilotFollow = camGo.AddComponent<CameraFollow>();
         pilotFollow.enableSwivel = false;              // the stick flies the ship, it doesn't orbit the camera
         pilotFollow.offset = cameraOffset;
-        pilotFollow.positionSmoothTime = positionSmoothTime;
-        pilotFollow.pitchSmoothTime = pitchSmoothTime;
-        pilotFollow.rollSmoothTime = rollSmoothTime;
-        pilotFollow.rotationSmoothTime = rotationSmoothTime;
         pilotFollow.lookAheadDistance = lookAheadDistance;
+
+        // ZERO frame smoothing, deliberately. CameraFollow's positionSmoothTime / pitchSmoothTime /
+        // rollSmoothTime ease its frame toward its TARGET's rotation — but our target already carries
+        // the ship's FollowFrame, which the ship has ALREADY smoothed against the car. Leaving them set
+        // stacks a second lag on a first, and because it is an ANGULAR lag it only bites while the car
+        // is turning: the ship would sit still on screen at a standstill and slide across it through a
+        // fast corner. One layer of laziness (the ship's) is the whole design; tune it on the SHIP.
+        pilotFollow.positionSmoothTime = 0f;
+        pilotFollow.pitchSmoothTime = 0f;
+        pilotFollow.rollSmoothTime = 0f;
+        pilotFollow.rotationSmoothTime = 0f;
+
         // The ship has a Rigidbody, so CameraFollow's speed-scaled FOV would breathe as it slides
         // around. Pin both ends to hold a constant framing.
         pilotFollow.baseFOV = pilotFollow.maxFOV = fieldOfView;
-        if (matchPlayerCamera) CopyPlayerCameraSettings();
 
         // Added last: CameraFollow.Start hangs the speed-barrier low-pass off whatever listener it
         // finds, and we want that to be inert here.
@@ -462,18 +504,32 @@ public class PilotControlCenter : MonoBehaviour
         pilotListener.enabled = false;
     }
 
-    void CopyPlayerCameraSettings()
+
+    /// <summary>Points the pilot camera at the TRACK's sky, with this round's hues.
+    ///
+    /// Three sources, in order of fidelity:
+    ///  1. <see cref="SkyboxHueRandomizer.CurrentSky"/> — the live recoloured instance. A pilot who has
+    ///     been to the track already has exactly the material the racers are seeing.
+    ///  2. A recoloured copy built from <see cref="trackSkybox"/>. A teammate who has spent the whole
+    ///     session in the hub never made the track their ACTIVE scene, so the randomizer never ran for
+    ///     it and (1) is null — but the hues are derived from the shared round seed, so building it
+    ///     here lands on the same colours everyone else got.
+    ///  3. The raw <see cref="trackSkybox"/> asset, un-hued. Single-player fallback.
+    /// Falling all the way through leaves the camera on RenderSettings, i.e. the hub's sky.</summary>
+    void ApplyTrackSkybox()
     {
-        var main = Camera.main;
-        var src = main != null ? main.GetComponent<CameraFollow>() : null;
-        if (src == null) return;
-        pilotFollow.positionSmoothTime = src.positionSmoothTime;
-        pilotFollow.pitchSmoothTime = src.pitchSmoothTime;
-        pilotFollow.rollSmoothTime = src.rollSmoothTime;
-        pilotFollow.rotationSmoothTime = src.rotationSmoothTime;
-        pilotFollow.rollBlendStart = src.rollBlendStart;
-        pilotFollow.rollBlendFull = src.rollBlendFull;
-        // Offset, look-ahead and FOV stay ours — the ship wants a wider, further-back framing than a car.
+        if (camSkybox == null) return;
+
+        Material live = SkyboxHueRandomizer.CurrentSky;
+        if (live != null) { camSkybox.material = live; return; }
+
+        if (trackSkybox == null) return;
+
+        // Rebuilt per binding rather than cached forever: the round seed changes between rounds, and
+        // taking the controls is exactly when a stale sky would be noticed.
+        if (ownedSky != null) Destroy(ownedSky);
+        ownedSky = SkyboxHueRandomizer.BuildRoundSky(trackSkybox);
+        camSkybox.material = ownedSky != null ? ownedSky : trackSkybox;
     }
 
     /// <summary>Cuts to the ship: our camera on, the hub camera (and its listener) off. Exactly one
@@ -491,7 +547,11 @@ public class PilotControlCenter : MonoBehaviour
             else suppressedListener = null;
         }
 
-        pilotFollow.target = ship.transform;
+        camAnchor.ship = ship;
+        camAnchor.followLag = cameraFollowLag;
+        camAnchor.Snap();                      // no swing on the way in
+        ApplyTrackSkybox();
+        pilotFollow.target = camAnchor.transform;
         pilotCam.enabled = true;
         if (pilotListener != null) pilotListener.enabled = true;
     }
@@ -500,6 +560,7 @@ public class PilotControlCenter : MonoBehaviour
     {
         if (pilotCam != null) pilotCam.enabled = false;
         if (pilotFollow != null) pilotFollow.target = null;
+        if (camAnchor != null) camAnchor.ship = null;   // stop it chasing a ship nobody is flying
         if (pilotListener != null) pilotListener.enabled = false;
 
         // Guarded: the hub camera may have been destroyed under us by a scene load.
