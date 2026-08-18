@@ -164,6 +164,13 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("One-shot (3D) when the Support Ship is downed by a collision or a projectile — plays at " +
              "the wreck, so it doubles as a positional cue for where the ship was lost.")]
     public AudioClip supportShipDestroyed;
+    [Tooltip("One-shot (3D) at the muzzle each time the pilot fires the twin lasers. Holding A fires a " +
+             "3-round burst, so this plays up to three times in quick succession — keep it short and dry.")]
+    public AudioClip supportShipLaserFire;
+    [Tooltip("One-shot when a laser round hits something. Plays AT THE IMPACT, which can be a long way " +
+             "from the ship, and is tuned by the round's own Audio 3D block on the laser prefab rather " +
+             "than by supportShipAudio3D.")]
+    public AudioClip supportShipLaserHit;
     [Tooltip("3D playback tuning shared by ALL FOUR Support Ship sounds above — spatial blend, volume, " +
              "min/max distance, rolloff, doppler. THIS is the block to edit when tuning how far away " +
              "the ship can be heard. Note the ship flies up to its offset limits away from its racer, " +

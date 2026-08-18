@@ -427,6 +427,13 @@ public class AudioManager : MonoBehaviour
     public static void PlaySupportShipDestroyed(Vector3 position) =>
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipDestroyed : null, position, Lib != null ? Lib.supportShipAudio3D : null);
 
+    // The gun. Firing is at the muzzle (so it shares the ship's 3D tuning); the IMPACT can be hundreds
+    // of metres downrange, so that one carries its own settings off the laser prefab.
+    public static void PlaySupportShipLaserFire(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipLaserFire : null, position, Lib != null ? Lib.supportShipAudio3D : null);
+    public static void PlaySupportShipLaserHit(Vector3 position, Spatial3DSettings settings = null) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipLaserHit : null, position, settings);
+
     // Positional obstacle one-shots (3D, at the event's world location). Optional Spatial3DSettings
     // let the caller (e.g. the LightningSpawner) tweak the 3D falloff.
     public static void PlayLightningWarning(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.lightningWarning : null, position, settings);

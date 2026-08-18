@@ -34,11 +34,19 @@ public class SupportShipAbility : MonoBehaviour
     public const string ShipChildName = "SupportShip";
 
     [Tooltip("Inventory item required to summon the ship. Consumed only when the ship is DESTROYED — " +
-             "summoning and dismissing cost nothing.")]
-    public string shipItem = "Support Ship";
+             "summoning and dismissing cost nothing. MUST match the store row's granted name EXACTLY " +
+             "(inventory keys are only trimmed, not space- or case-folded), so 'SupportShip' and " +
+             "'Support Ship' are two different items as far as the inventory is concerned.")]
+    public string shipItem = "SupportShip";
     [Tooltip("Layer applied to the summoned ship and all its children. Its collision matrix is what " +
              "decides what can down the ship — see SupportShip. Blank = keep the prefab's layer.")]
     public string shipLayerName = "SupportShip";
+    [Tooltip("How long the local player's car may be MISSING before a summoned ship is put away. A " +
+             "scene change leaves no car for a frame or two, and the ship is supposed to survive that " +
+             "and follow the player from the hub to the track and back — so this only needs to be long " +
+             "enough to outlast a load, and short enough that quitting to the menu doesn't strand a " +
+             "ship in the menu scene.")]
+    public float carLostGrace = 10f;
 
     /// <summary>True while this player's ship is out. Read by SupportShipReplicator to broadcast it,
     /// and by PilotControlCenter to list flyable ships.</summary>
@@ -52,6 +60,7 @@ public class SupportShipAbility : MonoBehaviour
     private SupportShip ship;        // the live clone, cut loose from the car
     private GameObject warnedCar;    // so the "no ship child" warning fires once per car, not per frame
     private bool warnedMissingLayer;
+    private float carLostSince = -1f;   // when the local car went missing (-1 = it's here)
 
     // 3D looping engine sound on its own object, moved to the ship each frame while it's out.
     // Tuned entirely from AudioLibrary.supportShipAudio3D (shared with the one-shots).
@@ -104,7 +113,11 @@ public class SupportShipAbility : MonoBehaviour
         var inv = PlayerInventory.Instance;
         if (inv == null || inv.GetCount(shipItem) <= 0)
         {
-            Debug.Log($"[SupportShip] No '{shipItem}' held — nothing to summon.");
+            // Named loudly, because the overwhelmingly likely cause is a spelling mismatch between the
+            // store row and this field rather than an genuinely empty inventory — and the two look
+            // identical from the player's side (they bought the thing, and L3+Y does nothing).
+            Debug.LogWarning($"[SupportShip] No '{shipItem}' held — nothing to summon. If you DID buy one, " +
+                             "check the store row grants this name character-for-character.");
             return;
         }
 
@@ -188,6 +201,12 @@ public class SupportShipAbility : MonoBehaviour
         // as `car.position + lookRotation * offset` with the car's scale already out of the picture.
         ship.defaultOffset = Vector3.Scale(car.InverseTransformPoint(template.position), car.lossyScale);
         ship.Attach(car);
+
+        // So NpcReplicator can build puppets for the rounds this ship fires — the laser prefab is only
+        // ever referenced from a car prefab's SupportShip component, so nothing else would find it.
+        // (No-op for a remote ship, whose prefab reference arrives a moment later via CopyTuningFrom;
+        // SupportShipReplicator registers it there.)
+        NpcReplicator.RegisterPrefab(ship.laserPrefab);
         return ship;
     }
 
@@ -254,23 +273,38 @@ public class SupportShipAbility : MonoBehaviour
     //  Template resolution
     // -------------------------------------------------------
 
-    /// <summary>(Re)finds the ship template on the current player car, and makes sure it stays hidden —
-    /// it's authored ACTIVE on the prefab (it's what the designer positions by eye), so it has to be
-    /// switched off or every car would drive around with a permanently welded ship. Re-runs when the
-    /// car is replaced (scene load / car swap), where the old reference goes null.</summary>
+    /// <summary>(Re)finds the ship template on the current player car, keeps it hidden, and — the part
+    /// that matters — keeps a SUMMONED ship alive across scene changes and car swaps.
+    ///
+    /// A summoned ship is meant to persist for as long as the player leaves it out: hub → track → hub,
+    /// all session, so a teammate can fly it the whole time without ever racing themselves. Two things
+    /// get in the way of that and are handled here:
+    ///  • During a scene load there is briefly NO local car at all (the old one is gone, PlayerCarSwapper
+    ///    hasn't spawned the replacement). Tearing the ship down on sight of a null car would kill it on
+    ///    every single transition, so a missing car is TOLERATED for <see cref="carLostGrace"/> seconds.
+    ///    Only a car that stays gone — quitting to the menu, session teardown — actually ends the ship.
+    ///  • When the car is REPLACED rather than teleported, the live ship is still escorting a destroyed
+    ///    transform and would simply freeze in place. It gets re-bound to the new car instead.
+    ///    (Multiplayer teleports the same car between areas, so this mostly bites single-player, where
+    ///    PlayerCarSwapper spawns a fresh car in each gameplay scene.)</summary>
     void EnsureTemplate()
     {
         GameObject car = PlayerRegistry.LocalCar;
 
-        // Car gone (menu scene, car swap, teardown): the ship can't outlive it.
         if (car == null)
         {
-            if (ship != null) { Destroy(ship.gameObject); ship = null; StopLoop(); }
+            if (carLostSince < 0f) carLostSince = Time.unscaledTime;
+            else if (ship != null && Time.unscaledTime - carLostSince > carLostGrace)
+            {
+                Debug.Log("[SupportShip] No player car for a while — putting the ship away.");
+                Dismiss();
+            }
             carGO = null;
             template = null;
             return;
         }
 
+        carLostSince = -1f;
         if (car == carGO && template != null) return;
 
         carGO = car;
@@ -289,6 +323,14 @@ public class SupportShipAbility : MonoBehaviour
         }
 
         template.gameObject.SetActive(false);   // template only — the flying ship is always a clone
+
+        // Hand a ship that's already out over to the new car.
+        if (ship != null)
+        {
+            ship.defaultOffset = Vector3.Scale(car.transform.InverseTransformPoint(template.position),
+                                               car.transform.lossyScale);
+            ship.Attach(car.transform);
+        }
     }
 
     /// <summary>Depth-first search for a child by name (case-insensitive), including inactive objects —

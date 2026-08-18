@@ -11,13 +11,14 @@ GameObject:
   - component: {fileID: 4822882886091285920}
   - component: {fileID: 8830010466043539734}
   - component: {fileID: 649667492114300926}
+  - component: {fileID: 2707947542225135691}
   m_Layer: 19
   m_Name: SupportShip
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &4822882886091285920
 Transform:
   m_ObjectHideFlags: 0
@@ -33,6 +34,7 @@ Transform:
   m_Children:
   - {fileID: 8547819983847374533}
   - {fileID: 1828002513596602490}
+  - {fileID: 8261804561023393863}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &8830010466043539734
@@ -61,7 +63,7 @@ Rigidbody:
   m_IsKinematic: 0
   m_Interpolate: 0
   m_Constraints: 0
-  m_CollisionDetection: 0
+  m_CollisionDetection: 3
 --- !u!114 &649667492114300926
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -74,24 +76,51 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d99b6f9a0871846f2be31d0750a927a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SupportShip
-  defaultOffset: {x: 0, y: 2.5, z: -7}
+  defaultOffset: {x: 0, y: 5, z: -7}
   positionSmoothTime: 0.5
   pitchSmoothTime: 0.25
   rollSmoothTime: 0.25
   maxHorizontalOffset: 10
   maxVerticalOffset: 10
-  offsetMoveSpeed: 22
+  offsetMoveSpeed: 10
   stickDeadzone: 0.15
+  invertPilotVertical: 1
   maxBankAngle: 40
-  maxNoseAngle: 18
+  maxNoseAngle: 40
   tiltFullRateSpeed: 20
   tiltSmoothTime: 0.18
+  laserPrefab: {fileID: 0}
+  muzzleOffset: {x: 0, y: 0, z: 3}
+  laserSpeed: 700
+  laserLayerName: Projectile
   ragdollDuration: 2
   ragdollTumbleTorque: 12
   crashIgnoreMask:
     serializedVersion: 2
-    m_Bits: 262144
+    m_Bits: 294912
+  teleportDistance: 500
   detectCrashes: 1
+--- !u!65 &2707947542225135691
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5306791506608684826}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 2, y: 1, z: 4}
+  m_Center: {x: 0, y: 0.5, z: 0}
 --- !u!1 &5685944749693300783
 GameObject:
   m_ObjectHideFlags: 0
@@ -275,3 +304,69 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1001 &5800114989035001763
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 4822882886091285920}
+    m_Modifications:
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -9
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2995498548506242398, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+      propertyPath: m_Name
+      value: SupportShipLasers
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+--- !u!4 &8261804561023393863 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+  m_PrefabInstance: {fileID: 5800114989035001763}
+  m_PrefabAsset: {fileID: 0}

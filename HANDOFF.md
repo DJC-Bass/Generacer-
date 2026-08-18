@@ -11,18 +11,22 @@ tutorial guide, event-system guard) or their own object (`AudioManager`, `GameLo
 
 ## NEXT TASK (this is why a fresh agent is here)
 
-**SUPPORT SHIP — FIRING CONTROLS.** The ship itself is **BUILT** (2026-08-16, detail below); what the
-user deferred is the *gun*: "unlimited. Will work on fire controls later." Everything else in the
-feature — summoning, the hub pilot station, the camera hand-off, flight, destruction, replication — is
-done and compiles. **Do not rebuild it.** What is left:
-- A **fire input** for the hub pilot (RT is the natural fit; the pilot's sticks are already spoken for).
-- Shots at **enemies**, and at the **racer themselves for a small jump** — the pop-up already exists in
-  `DroneProjectile.HitPlayer` / `ApplyRemoteHitToLocalPlayer`. Watch the **projectile i-frames**
-  (`DroneProjectile.PlayerInvulnerable`): a friendly boost either has to bypass that window or share it,
-  or a racer who was just shot can't be boosted for 2 s.
-- Firing is **host-authoritative** like every other projectile. The pilot presses; the effect has to be
-  routed to the machine that owns the target, exactly as `GNRC_GRAPPLE_PULL` and `GNRC_NPC_HIT` do.
-  A `GNRC_SHIP_FIRE` message alongside the four that already exist is the shape to reach for.
+**SUPPORT SHIP — WHAT THE LASERS DO ON HIT.** The ship and its **guns** are both **BUILT** (2026-08-16,
+detail below): summoning, the hub pilot station, camera hand-off, flight, destruction, replication, and
+Star Fox 64-style semi-auto fire on **A**. **Do not rebuild any of it.** What is deliberately NOT wired
+is what a round DOES to what it hits — the user has not specified it, and it is a real design choice:
+- **Enemies.** A round currently just despawns on contact. `DronePlane` already ragdolls on ANY
+  collision, so planes fall out of the sky for free — but `DroneCar` has no damage path, and nothing
+  awards the pilot (or the racer) anything for a kill. Decide who gets paid before wiring it.
+- **The racer, for a small jump** — the original design ("shoot the player themselves to give them a
+  small jump"). The pop-up already exists in `DroneProjectile.HitPlayer` /
+  `ApplyRemoteHitToLocalPlayer`. Two obstacles: rounds currently **pass straight through the owner's
+  car by design** (see below — the ship flies behind it, so every shot would otherwise hit the
+  teammate), and the **projectile i-frames** (`DroneProjectile.PlayerInvulnerable`) mean a racer who was
+  just shot by a drone can't be boosted for 2 s. A friendly boost must bypass or share that window.
+- Whatever it does, it must be applied **on the machine that owns the target** — `GNRC_NPC_HIT` for a
+  player's car, host-side directly for a drone. The round itself is already host-only, so that half is
+  done.
 
 > ⚠️ **The multiplayer sections below are the HISTORICAL design record.** Multiplayer is **BUILT** —
 > Phases 1–6 are code-complete (lobby/sessions, shared additive world, networked cars, server-authoritative
@@ -42,14 +46,18 @@ TrackScene *is the rail*. Four new files, plus the settled answers to the six qu
 | What the gunner sees/presses | Cuts to a chase camera on the ship, set up like the MainCamera (offset + Position/Pitch/Roll smooth times). Left stick slides the ship in a horizontal/vertical box. Nose tilts into the turn. |
 | Activation | The racer presses **L3 + Y together** to summon/dismiss, if they hold a "Support Ship". |
 | Lifetime | Lives as long as its car. **Any collision downs it** — 2 s ragdoll then despawn, exactly like a DronePlane. |
-| Cost of fire | Unlimited (deferred — see NEXT TASK above). |
+| Cost of fire | Unlimited. **Guns built 2026-08-16** — see the firing notes below. |
 | Visibility | Enemies see it and can shoot it down. **LavaBoulders must not target it** — they don't: `BoulderObstacle` targets via `MultiplayerWorld.PickStickyTarget`, which only ever returns player cars. |
 
 Plus four decisions the user made when asked:
 - **Destruction consumes one "Support Ship".** Summoning and dismissing are free. That's the whole point
   of dismissing it when nobody is flying it.
-- **The pilot's hub car is frozen** (`RigidbodyConstraints.FreezeAll` + `MenuState.AnyOpen`) and they must
-  stay on the pad; leaving the trigger or pressing B hands the ship back.
+- **The pilot's hub car is input-locked** (`CarController.InputSuppressed` + `MenuState.AnyOpen`) — NOT
+  frozen — and they must stay on the pad. **Revised 2026-08-16:** control is now held until one of
+  exactly four things happens: **SELECT** (manual hand-back), the ship is destroyed, its owner dismisses
+  it, or the pilot's car is **shoved off the pad by an external force**. That last one is why the car
+  can't be frozen: a pinned Rigidbody is unpushable, which would have made a rival knocking a distracted
+  pilot off the pad impossible.
 - **What can down the ship is the collision MATRIX** on a new `SupportShip` layer, not code.
 - **The pilot's AudioListener moves to the ship**, so they hear the racer's world, not the hub.
 
@@ -131,9 +139,10 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_GRAPPLE_PULL` | GrappleReplicator | → victim (host relays) | acceleration applied on the OWNER's machine |
 | `GNRC_GRAPPLE_BREAK` | GrappleReplicator | victim → all | L3: release any hook attached to me |
 | `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | ship is out / put away; 2 Hz heartbeat, Reliable on change |
-| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz Vector2 stick offset for a named owner's ship |
+| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector2 aim angles} for a named owner’s ship |
 | `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
+| `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X's lasers once; host spawns + NpcReplicator streams the round |
 
 **Four patterns this codebase leans on — copy them:**
 1. **Route effects to the authority.** A remote car is a kinematic puppet — pushing it locally is erased
@@ -1096,7 +1105,9 @@ As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carL
 `shieldActivate`, `shieldActiveLoop`, `shieldDeactivate` (+ the `shieldAudio3D` tuning block); Grappling
 hook: `grappleCraftLoop`, `grappleCrafted`, `grappleFire`, `grappleAttach`, `grappleRelease` (+ the
 `grappleAudio3D` block); Support Ship: `supportShipActivate`, `supportShipLoop`, `supportShipDeactivate`,
-`supportShipDestroyed` (+ the `supportShipAudio3D` block). **Each 3D block is the single tuning point for
+`supportShipDestroyed`, `supportShipLaserFire`, `supportShipLaserHit` (+ the `supportShipAudio3D`
+block — note the laser IMPACT is tuned by the round's own block on the laser prefab instead, since it
+can land hundreds of metres downrange). **Each 3D block is the single tuning point for
 its feature's sounds.** Two range gotchas: `grappleAttach` plays AT THE HIT POINT up to the hook's full
 range away, so give `grappleAudio3D` a generous max distance or long successful shots land silently; and
 `supportShipLoop` rides the SHIP, which the pilot can slide to the edge of its offset box, so a tight max
@@ -1260,10 +1271,26 @@ Each of these makes a finished feature silently do nothing until it's wired:
 - **A `PilotControlCenter` prefab in the HubWorld scene** with the `PilotControlCenter` component and a
   **trigger** box collider (adding the component sets `isTrigger` via `Reset()`). The `.blend` asset
   exists but is not yet placed or scripted.
-- **A `Support Ship` store row.** The item name must match `SupportShipAbility.shipItem` exactly. Note
-  the inventory trims keys now, so a trailing space is survivable — but the name still has to match.
+- **A `SupportShip` store row.** ⚠️ The name must match `SupportShipAbility.shipItem` **character for
+  character**. `Norm()` only TRIMS — it does not fold case or internal spaces — so `SupportShip` and
+  `Support Ship` are two unrelated items. This has now bitten twice (`'Plasma '`, then this), and the
+  symptom is always the same and always misleading: the player buys the item and the ability silently
+  does nothing. Settled on **`SupportShip`** (one word), matching the store row in `HubWorld.unity`.
+  `Summon()` now logs a warning naming the string it looked for.
+- **The BoxCollider is currently on the Melody INSTANCE, not the `SupportShip.prefab` asset.** The asset
+  itself has the script and a Rigidbody but no collider, so any other car that nests the prefab gets a
+  ship that can never be downed (nothing to trigger with). Move it onto the asset before rolling the
+  ship out to the other five cars.
 - **Portal on the ship's `crashIgnoreMask`** (or off in the matrix), or driving the racer through the
   TrackScene's return portal will cost them their ship.
+- **The guns (2026-08-16):** assign **`laserPrefab`** on the `SupportShip.prefab` ASSET (not just the
+  Melody instance) — `TuningTemplateFor` reads the car prefab's nested ship to arm remote copies, so an
+  instance-only assignment leaves every teammate's ship firing blanks. The
+  `SupportShipLasers` prefab needs a **Collider** (it currently has meshes only — without one nothing
+  can ever stop a round) and should sit on the **Projectile** layer; `FireLaser` re-applies the layer
+  regardless. A Rigidbody is added automatically by `[RequireComponent]` if absent. Check the
+  **Projectile** layer's matrix row allows the targets you want hit — it already collides with Player
+  for drone fire, which is why ignoring the owner's car is done in code instead.
 
 1. **Phases 0–5 are DONE in code** (full detail per phase in the roadmap section; everything compiles
    0-errors via `dotnet build Assembly-CSharp.csproj`; still ZERO editor asset setup beyond filling
@@ -1478,20 +1505,133 @@ bugs to someone reading the code cold:
   checks `active` before granting; without `BroadcastLocalShipState` writing `ships[LocalClientId]`, the
   host's own ship is invisible to its own arbitration and nobody can ever fly it.
 - **`MenuState.AnyOpen` does NOT stop a car driving.** It only gates the BUTTONS (turbo / jump / brake /
-  self-level) — throttle and steering are read unconditionally in `CarController.ReadInput`. Freezing
-  the pilot's car needs `RigidbodyConstraints.FreezeAll` as well, which is what `PilotControlCenter`
-  does (saving and restoring the previous constraints).
+  self-level) — throttle and steering are read unconditionally in `CarController.Update`. Taking the car
+  away properly needed a new **`CarController.InputSuppressed`** static, which zeroes every axis and
+  skips every button. Use that, not a Rigidbody freeze, whenever a system needs the sticks: the car
+  stays a normal dynamic body, so the world can still push it.
+- **⚠️ "Pilot gets booted out of the cockpit after ~1 second" — a protocol bug, 2026-08-16.** Symptom:
+  take control of a teammate's ship, view swaps correctly, then snaps back to your own car within about
+  half a second; re-entering the pad repeats it forever. Cause: `ReleaseClaimsInvolving(clientId)` freed
+  claims **held by** a client as well as claims **on** that client's ship — and every client heartbeats
+  its own ship state at 2 Hz, so a hub pilot who owns no ship continuously announces
+  `{theirId, active:false}`. The host read that as "release everything involving this player" and
+  revoked the claim they had just been granted. **Fix: split the two meanings.**
+  `ReleaseClaimsOnShip(ownerId)` for "this ship is gone" (dismissal, destruction);
+  `ReleaseClaimsHeldBy(clientId)` for "this client is gone" (disconnect only). Keep them separate —
+  the general lesson is that a level-triggered heartbeat saying "false" is NOT an event saying
+  "something just ended", and treating it as one makes routine traffic destructive.
+- **Losing the controls is debounced, deliberately.** A stray `OnTriggerExit` (physics re-filtering, a
+  collider toggling, a re-parent) must not eject a pilot, and a remote ship is legitimately null for a
+  frame or two whenever its owner's puppet is rebuilt. So `TickPiloting` requires the ship to stay
+  missing for 1 s, and the car to stay off the pad for `padExitGrace` (0.5 s) — where "off the pad" is
+  the AND of the trigger's own bookkeeping and an explicit `bounds.Contains` test, since the event is
+  edge-triggered and can glitch while the bounds test cannot.
+- **SELECT releases, not B.** B stays a pure menu button so it can't eject a pilot by reflex. Releasing
+  drops them back into the ship LIST (still parked on the pad) rather than closing the station.
+- **THE GUNS (2026-08-16).** `SupportShipLaser.cs` + `SupportShip.FireLaser()` + `GNRC_SHIP_FIRE`, fired
+  with **A** from the pad. Star Fox 64 semi-auto: a press arms a fresh burst and fires its first round on
+  the SAME frame (so a tap is instant and gives exactly one), holding walks the remaining `burstRounds`
+  (3) at `burstInterval` (0.12 s) then stops dead until A is released and pressed again. Four things
+  worth knowing:
+  - **Rounds ignore the owner's car, and that is load-bearing.** The ship's resting offset IS the chase
+    camera's, so it flies BEHIND its racer — "fire straight ahead" points directly at that car's back
+    bumper, and every single shot would detonate on the teammate you're supporting. `FireLaser` calls
+    `IgnoreCollisionsWith(Car)` (and with the ship itself, or a round would die in its own muzzle).
+    This is also what a friendly "boost the racer" mode would have to undo.
+  - **Firing is HOST-spawned, unlike aiming.** The offset is pure presentation so the pilot owns it
+    outright; a round that can knock a drone down is game state, so `RequestFire` routes the trigger
+    pull to the host, which spawns the round and streams it via `NpcReplicator.Track(NpcKind.Projectile)`
+    (clients get collider-less visuals — contact resolves once). The pilot therefore sees their own shot
+    a round trip late; nil when the pilot is the host. The host also checks `PilotOf(ownerId) == sender`
+    so only whoever holds the controls can fire that ship.
+  - **`ContinuousDynamic` collision detection is mandatory** at ~700 m/s — a round covers ~12 m per
+    physics step, so discrete detection tunnels it clean through the track. Set in `Awake`, not left to
+    the prefab.
+  - **The laser prefab must be `NpcReplicator.RegisterPrefab`'d on every machine** or clients cannot
+    build puppets for the rounds. It is only ever referenced from a car prefab's `SupportShip`
+    component, so nothing else would find it — registered in `SupportShipAbility.BuildShip` (local) and
+    `ResolveRemoteShip` (remote, after `CopyTuningFrom` supplies the reference).
+- **⚠️ "A teammate's ship stays rigid when I fly it" — TWO bugs in one symptom, 2026-08-16.** Flying your
+  OWN ship worked perfectly while flying someone else's did nothing, which is the tell: the local path
+  and the replicated path had diverged. `SyncRemoteShips` (now `SyncShips`) was:
+  1. **Overwriting the pilot's own input.** It assigned `ship.PilotOffset = smoothedOffset` for every
+     remote ship unconditionally, every frame — including one the local player was flying. A machine
+     never sends itself its own aim (the `MsgAim` handler early-returns on `LocalPilotOf == ownerId`),
+     so that stored offset stayed frozen at its initial value and dragged the ship straight back within
+     the same frame the stick had moved it. **The rule now has one exception: if WE are the pilot, our
+     writes are the truth** and the entry is updated FROM the ship instead (which also makes letting go
+     seamless — the stored value is already current, so nothing snaps).
+  2. **Skipping the owner's own ship entirely** (`if (ownerId == LocalClientId) continue;`). That was
+     right for LIFETIME — `SupportShipAbility` owns that object — but wrong for STEERING, because the
+     ability knows nothing about a teammate flying it. So even with (1) fixed, the racer would never
+     have seen their own ship move. The loop now covers every ship including our own; only the
+     build/destroy half is skipped for the local one.
+- **Remote ships must be re-tuned from the prefab ASSET.** A remote ship is cloned from the template on
+  that player's PUPPET, and `StripPuppet` destroys every MonoBehaviour — so the clone gets a freshly
+  `AddComponent`ed `SupportShip` carrying nothing but code defaults. Anything tuned in the Inspector
+  (movement box, speed, tilt, ragdoll, crash mask) would apply to your own ship and NOT to anyone
+  else's. `SupportShip.CopyTuningFrom` + `TuningTemplateFor(carName)` reads the untouched asset via
+  `PlayerRegistry.CarPrefabFor` — the same trick RemoteCarAudio/RemoteCarEffects already use. Any new
+  tuning field on `SupportShip` must be added to `CopyTuningFrom` or it will silently be local-only.
 - **Exactly one AudioListener may be enabled.** The pilot's listener is switched on only as the hub
   camera's is switched off, and `RestoreCamera` is null-guarded because a scene load can destroy the hub
   camera while someone is flying.
 - **`SupportShip` runs at `[DefaultExecutionOrder(-50)]`** so it moves before the (unordered) cameras;
   otherwise the pilot's chase camera frames the ship's *previous* frame and reads as a permanent jitter.
+- **A summoned ship PERSISTS across areas and scenes** — user requirement, so a teammate can fly it all
+  session without ever racing. Two things had to be handled for that (2026-08-16):
+  - **A scene load leaves NO local car for a frame or two** (old car destroyed, `PlayerCarSwapper` hasn't
+    spawned the replacement). Reacting to `PlayerRegistry.LocalCar == null` by tearing the ship down
+    killed it on every single transition. A missing car is now tolerated for `carLostGrace` (10 s); only
+    a car that stays gone — quitting to the menu, teardown — ends the ship.
+  - **A REPLACED car leaves the ship escorting a destroyed transform**, where it just freezes. It's
+    re-`Attach`ed and its `defaultOffset` recomputed from the new car's template. Note multiplayer
+    *teleports* the same car between areas rather than replacing it, so this is mainly a single-player
+    path — but both are covered.
+- **Hub↔track travel is a ~100 km TELEPORT, not movement.** Read as travel it banks the ship instantly to
+  its limit and unwinds the rotation lag over the next second. A single frame of car movement over
+  `teleportDistance` (500) re-snaps instead.
+- **⚠️ `MultiplayerWorld.TrackFrozen` must NOT gate the Support Ship (fixed 2026-08-16).** Symptom: at
+  round start the ship hung motionless in the air while its car drove away, then snapped back to it the
+  moment the portal opened. Cause: the freeze guard was copied from `DronePlane`/`DroneCar` without
+  re-checking that it applied. It doesn't — the flag means *"the preloaded TrackScene's AI must hold
+  still until the hub portal spawns"*, and it is only ever correct for things that **live in the track**.
+  The ship escorts a **player car**, and during preload every player is still in the hub driving around
+  normally. General rule for anything new: `TrackFrozen` asks "am I a TrackScene entity?", not "is the
+  round starting?" — a player-attached object should ignore it.
+- **Kinematic bodies only support Discrete and ContinuousSpeculative** collision detection. The prefab
+  was authored ContinuousDynamic, which makes Unity complain every time the ship is summoned, so `Awake`
+  forces **ContinuousSpeculative** — also the right choice, being the one that still catches a fast pass
+  through a trigger.
+- **`MenuState.AnyOpen` blocks the L3+Y chord**, so a player parked inside the STORE trigger (having just
+  bought a ship) cannot summon it until they drive out. Correct, but confusing the first time.
+- **⚠️ FLIGHT CONTROLS REWORKED (2026-08-16) — the travel-derived nose tilt is GONE.** The old model
+  banked the ship from how fast it was actually moving through the car's frame. That is now replaced by
+  **stick-driven AIM ANGLES**, and the difference is the whole point: the guns fire along
+  `transform.forward`, so the angles are what widen the arc of fire.
+  - Sideways push → **local Y** (yaw); vertical push → **local X** (pitch), **negative climbing,
+    positive descending**. Both scale with how far the stick is pushed, so the pilot picks the angle.
+  - Movement speed is **uniform and independent of the angles** — turning never speeds the ship up or
+    slows it down.
+  - **The angles come from the STICK, not from travel**, which is what makes the headline behaviour
+    work: a pilot pinned against the wall of the movement box keeps AIMING the way they're pushing
+    while no longer MOVING that way. Nothing derived from the ship's motion could reproduce that —
+    which is also why the angles had to start being **replicated** (`GNRC_SHIP_AIM` grew from a Vector2
+    offset to `{Vector3 offset, Vector2 look}`); viewers cannot infer them.
+  - Releasing the stick eases back to a level `(0,0)` over `lookSmoothTime`.
+  - The movement box became a **3D box**: `maxForwardOffset` on top of horizontal/vertical, driven by
+    **B (forward) / X (back)**. Set all three equal for a true cube. The selected-gizmo draws the real
+    box now.
 - **Tuning:** `defaultOffset` (taken from the authored child, so move the prefab child to re-home the
   ship), `positionSmoothTime`/`pitchSmoothTime`/`rollSmoothTime` (the CameraFollow-style lag — these are
   duplicated from `CameraFollow` and must be kept in sync by hand), `maxHorizontalOffset`/
-  `maxVerticalOffset` (the pilot's box; drawn as a gizmo when the ship is selected), `offsetMoveSpeed`,
-  `maxBankAngle`/`maxNoseAngle`/`tiltFullRateSpeed`/`tiltSmoothTime` (nose tilt), and `ragdollDuration`.
-  On `PilotControlCenter`: `cameraOffset`/`fieldOfView` for the gunner's framing, and `teamOnly`.
+  `maxVerticalOffset`/`maxForwardOffset` (the pilot's box; drawn as a gizmo when the ship is selected),
+  `offsetMoveSpeed`, `invertPilotVertical` (**ON by default** — stick up dives, stick down climbs,
+  flight-stick style rather than point-where-you-want; the aim angles follow the resulting MOVEMENT
+  direction, so they stay correct either way),
+  `maxYawAngle`/`maxPitchAngle`/`lookSmoothTime` (aim rotation), and `ragdollDuration`.
+  On `PilotControlCenter`: `cameraOffset`/`fieldOfView` for the gunner's framing, `burstRounds`/
+  `burstInterval` for the guns, and `teamOnly`.
 
 **PROCEDURAL SKYBOX with animated clouds + stars (user feature, 2026-07-23).**
 `Prefabs/Skyboxes/ProceduralSkyClouds.shader` — a URP skybox in the spirit of Unity's built-in

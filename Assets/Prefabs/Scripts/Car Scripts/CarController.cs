@@ -408,8 +408,32 @@ public class CarController : MonoBehaviour
     //  Input
     // -------------------------------------------------------
 
+    /// <summary>
+    /// Hard input lock for the local car: throttle, steering and the aerial stick all read as neutral,
+    /// and every button is ignored. Unlike <see cref="MenuState.AnyOpen"/> — which only gates the
+    /// BUTTONS, leaving the car fully drivable — this takes the car away from the player completely.
+    ///
+    /// Set while a hub player is flying a Support Ship from the PilotControlCenter: the sticks belong to
+    /// the ship, so the car must not respond to them. Deliberately NOT a physics freeze. The car stays a
+    /// normal dynamic body so a rival can still shove the distracted pilot off the pad — which is
+    /// exactly how the user wants that fight to work.
+    /// </summary>
+    public static bool InputSuppressed;
+
     void Update()
     {
+        if (InputSuppressed)
+        {
+            throttleInput = steerInput = manualPitchInput = manualYawInput = brakeInput = 0f;
+            selfLevelHeld = false;
+            selfLevelArmed = false;
+
+            UpdateWheelMeshes();
+            UpdateTurboTrails();
+            UpdateDriftAudio();
+            return;
+        }
+
         throttleInput = controls.Driving.Throttle.ReadValue<float>();   // RT - LT, -1..1
         steerInput = controls.Driving.Steer.ReadValue<float>();
         manualPitchInput = controls.Driving.Pitch.ReadValue<float>();

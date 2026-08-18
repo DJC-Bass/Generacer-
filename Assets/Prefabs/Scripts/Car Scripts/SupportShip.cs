@@ -10,7 +10,8 @@ using UnityEngine;
 /// that <see cref="CameraFollow"/> uses, placing <see cref="defaultOffset"/> inside that lagged frame.
 /// That is not a coincidence — the ship's authored position on the car prefab IS the camera's offset,
 /// so an unpiloted ship sits exactly where the driver's viewpoint is and reads as "the camera, made
-/// visible". The pilot then slides it around inside that frame with <see cref="PilotOffset"/>.
+/// visible". The pilot then slides it around inside a 3D box in that frame (<see cref="PilotOffset"/>)
+/// and angles it independently (<see cref="PilotLook"/>) to aim the guns.
 ///
 /// The maths below is duplicated from CameraFollow rather than shared: that camera is tuned and in
 /// daily use, and the two consumers want different things from it (the camera also does FOV kicks,
@@ -26,8 +27,8 @@ using UnityEngine;
 /// enemy's (both are on the Player layer).
 ///
 /// Multiplayer: every machine runs its own copy glued to its own copy of the owner's car — see
-/// <see cref="SupportShipReplicator"/>. Nothing about the flight is streamed; only the pilot's stick
-/// offset is.
+/// <see cref="SupportShipReplicator"/>. Nothing about the flight is streamed; only the pilot's offset
+/// and aim angles are.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 // Ahead of the cameras (which are unordered, i.e. 0) so the pilot's chase camera always frames the
@@ -47,25 +48,47 @@ public class SupportShip : MonoBehaviour
     [Tooltip("ROLL lag: how slowly the ship follows the car's banking. 0 = instant.")]
     public float rollSmoothTime = 0.25f;
 
-    [Header("Pilot Offset (hub gunner's stick)")]
+    [Header("Pilot Movement Box (hub gunner's controls)")]
     [Tooltip("How far the pilot may slide the ship LEFT/RIGHT of its resting position (units, each way).")]
     public float maxHorizontalOffset = 30f;
     [Tooltip("How far the pilot may slide the ship UP/DOWN from its resting position (units, each way).")]
     public float maxVerticalOffset = 20f;
-    [Tooltip("How fast the offset moves at full stick deflection (units/second).")]
+    [Tooltip("How far the pilot may push the ship FORWARD/BACK of its resting position (units, each " +
+             "way), on B and X. Set all three equal for a true cube.")]
+    public float maxForwardOffset = 20f;
+    [Tooltip("How fast the offset moves at full deflection (units/second). Uniform on every axis, and " +
+             "unaffected by the aim angles — turning the ship never speeds it up or slows it down.")]
     public float offsetMoveSpeed = 22f;
     [Tooltip("Stick deflection below this is ignored, so a resting stick never drifts the ship.")]
     public float stickDeadzone = 0.15f;
+    [Tooltip("Flips the pilot's vertical axis. ON (default): pushing the stick UP drops the ship and " +
+             "pulling DOWN climbs it — the classic flight-stick feel, where you're nosing the aircraft " +
+             "rather than pointing at where you want it to go. OFF: stick up = ship up.")]
+    public bool invertPilotVertical = true;
 
-    [Header("Nose Tilt")]
-    [Tooltip("How far the nose banks into a turn at full sideways travel (degrees).")]
-    public float maxBankAngle = 40f;
-    [Tooltip("How far the nose pitches up/down when climbing or diving (degrees).")]
-    public float maxNoseAngle = 18f;
-    [Tooltip("Sideways/vertical speed (units/s) that produces the FULL tilt angle. Lower = twitchier.")]
-    public float tiltFullRateSpeed = 20f;
-    [Tooltip("Lag easing the tilt in and out (seconds). 0 = instant.")]
-    public float tiltSmoothTime = 0.18f;
+    [Header("Aim Rotation")]
+    [Tooltip("Local Y rotation at full sideways push (degrees). Pushing right turns the nose right. " +
+             "This is what widens the arc of fire: the guns shoot along the nose, so angling the ship " +
+             "lets the pilot cover ground the ship itself can't reach inside its movement box.")]
+    public float maxYawAngle = 45f;
+    [Tooltip("Local X rotation at full vertical push (degrees). Applied NEGATIVE when climbing and " +
+             "POSITIVE when descending, which is Unity's convention for nose-up / nose-down.")]
+    public float maxPitchAngle = 35f;
+    [Tooltip("Lag easing the aim angles in, and easing them back to level (0,0) when the stick is " +
+             "released. 0 = instant/snappy.")]
+    public float lookSmoothTime = 0.12f;
+
+    [Header("Guns")]
+    [Tooltip("The twin-laser round prefab (one object containing BOTH bolts). Blank = the ship can't " +
+             "shoot. Must be on the Projectile layer — the layer is re-applied on spawn anyway.")]
+    public GameObject laserPrefab;
+    [Tooltip("Where rounds spawn, in the ship's own local frame. Push it forward far enough to clear " +
+             "the ship's own model.")]
+    public Vector3 muzzleOffset = new Vector3(0f, 0f, 3f);
+    [Tooltip("Round speed in m/s. Fast — this is a laser, not a lobbed shot.")]
+    public float laserSpeed = 700f;
+    [Tooltip("Layer applied to spawned rounds. Blank = keep the prefab's layer.")]
+    public string laserLayerName = "Projectile";
 
     [Header("Crash")]
     [Tooltip("Seconds the wreck tumbles under gravity after being downed, before it despawns.")]
@@ -76,6 +99,11 @@ public class SupportShip : MonoBehaviour
              "excludes. Portal is the one that matters — flying the racer through the return portal " +
              "must not cost them their ship.")]
     public LayerMask crashIgnoreMask;
+    [Tooltip("A single frame's car movement beyond this (units) is read as a TELEPORT rather than " +
+             "travel, and the ship re-snaps instead of banking. Hub↔track travel moves the car ~100 km " +
+             "in one frame, so anything comfortably above a real frame of driving works.")]
+    public float teleportDistance = 500f;
+
     [Tooltip("Whether THIS copy of the ship may decide it has been downed. True on the owner's own " +
              "machine and on the host (which is where enemy projectiles actually exist); false on every " +
              "other viewer, whose copy is a visual derived from an interpolated puppet and would " +
@@ -93,23 +121,35 @@ public class SupportShip : MonoBehaviour
     /// itself stays ignorant of the network.</summary>
     public System.Action<SupportShip> onCrashed;
 
-    /// <summary>The pilot's slide away from <see cref="defaultOffset"/>: x = right, y = up, in the
-    /// car's lagged frame. Set directly by the replicator when a REMOTE pilot is flying, or integrated
-    /// from the stick by <see cref="ApplyPilotStick"/> on the pilot's own machine. Held (not reset)
-    /// when nobody is flying — an abandoned ship stays where it was left.</summary>
-    public Vector2 PilotOffset
+    /// <summary>The pilot's slide away from <see cref="defaultOffset"/> inside the movement box:
+    /// x = right, y = up, z = forward, in the car's lagged frame. Set directly by the replicator when a
+    /// REMOTE pilot is flying, or integrated from the controls by <see cref="ApplyPilotMove"/> on the
+    /// pilot's own machine. Held (not reset) when nobody is flying — an abandoned ship stays where it
+    /// was left.</summary>
+    public Vector3 PilotOffset
     {
         get => pilotOffset;
         set => pilotOffset = ClampOffset(value);
     }
 
-    private Vector2 pilotOffset;
+    /// <summary>The pilot's aim angles in degrees: x = yaw (local Y), y = pitch (local X). Replicated
+    /// alongside the offset rather than derived from the ship's motion, because the two deliberately
+    /// disagree — a pilot pinned against the movement box keeps AIMING the way they're pushing while
+    /// no longer MOVING that way, and nothing about the ship's travel could reproduce that.</summary>
+    public Vector2 PilotLook
+    {
+        get => pilotLook;
+        set { pilotLook = value; pilotLookTarget = value; pilotLookVel = Vector2.zero; }
+    }
+
+    private Vector3 pilotOffset;
+    private Vector2 pilotLook;         // current, smoothed
+    private Vector2 pilotLookTarget;   // what the pilot's stick is asking for
+    private Vector2 pilotLookVel;
     private Rigidbody rb;
     private Quaternion smoothedRot = Quaternion.identity;
     private bool posInitialised;
-    private Vector2 tilt;          // x = bank (roll), y = nose (pitch), degrees
-    private Vector2 tiltVel;
-    private Vector3 lastPosition;
+    private Vector3 lastCarPosition;
     private Collider[] ownColliders;
 
     void Awake()
@@ -120,6 +160,10 @@ public class SupportShip : MonoBehaviour
         rb.isKinematic = true;
         rb.useGravity = false;
         rb.interpolation = RigidbodyInterpolation.None;
+        // Kinematic bodies only support Discrete and ContinuousSpeculative — leaving the prefab on
+        // Continuous/ContinuousDynamic makes Unity complain every time this runs. Speculative is also
+        // the right choice for us: it's the one that still catches a fast pass through a trigger.
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
 
         ownColliders = GetComponentsInChildren<Collider>(true);
         foreach (var col in ownColliders) col.isTrigger = true;
@@ -131,12 +175,12 @@ public class SupportShip : MonoBehaviour
     public void Attach(Transform car)
     {
         Car = car;
-        posInitialised = false;
+        posInitialised = false;   // re-snap onto the new car rather than flying over to it
         IsRagdolling = false;
-        tilt = Vector2.zero;
-        tiltVel = Vector2.zero;
+        PilotLook = Vector2.zero;   // a freshly attached ship starts level
 
         if (car == null) return;
+        lastCarPosition = car.position;
 
         // ACTIVE colliders only: Physics.IgnoreCollision errors out on a collider whose object is
         // disabled, and a car is full of those (the shield, jet flames, SD effects, the ship template
@@ -153,24 +197,99 @@ public class SupportShip : MonoBehaviour
         }
     }
 
+    /// <summary>Copies every tuning value off another SupportShip — used for a REMOTE player's ship,
+    /// which cannot inherit them.
+    ///
+    /// Why it's needed: a remote ship is cloned from the template on that player's PUPPET, and
+    /// `RemoteCarManager.StripPuppet` destroys every MonoBehaviour on a puppet — so the template there
+    /// has no SupportShip component and the clone gets a freshly `AddComponent`ed one carrying nothing
+    /// but code defaults. Anything tuned in the Inspector (movement box, speed, aim angles, ragdoll) would
+    /// silently apply to your own ship and not to anyone else's, so a teammate's ship would fly
+    /// differently from your own. Feeding it the untouched PREFAB ASSET's values fixes that — the same
+    /// trick RemoteCarEffects/RemoteCarAudio use for engine sound and VFX.
+    ///
+    /// <see cref="defaultOffset"/> is NOT copied (it's derived from where the template actually sits on
+    /// that car) and neither is <see cref="detectCrashes"/>, which is a per-machine authority decision.</summary>
+    public void CopyTuningFrom(SupportShip src)
+    {
+        if (src == null) return;
+
+        positionSmoothTime = src.positionSmoothTime;
+        pitchSmoothTime = src.pitchSmoothTime;
+        rollSmoothTime = src.rollSmoothTime;
+
+        maxHorizontalOffset = src.maxHorizontalOffset;
+        maxVerticalOffset = src.maxVerticalOffset;
+        offsetMoveSpeed = src.offsetMoveSpeed;
+        stickDeadzone = src.stickDeadzone;
+        invertPilotVertical = src.invertPilotVertical;
+
+        maxForwardOffset = src.maxForwardOffset;
+        maxYawAngle = src.maxYawAngle;
+        maxPitchAngle = src.maxPitchAngle;
+        lookSmoothTime = src.lookSmoothTime;
+
+        ragdollDuration = src.ragdollDuration;
+        ragdollTumbleTorque = src.ragdollTumbleTorque;
+        crashIgnoreMask = src.crashIgnoreMask;
+        teleportDistance = src.teleportDistance;
+
+        // The gun too — laserPrefab especially. A puppet-cloned ship has NO prefab reference at all, so
+        // without this a teammate's ship would be completely unarmed.
+        laserPrefab = src.laserPrefab;
+        muzzleOffset = src.muzzleOffset;
+        laserSpeed = src.laserSpeed;
+        laserLayerName = src.laserLayerName;
+    }
+
     /// <summary>Integrates one frame of the pilot's stick into the offset. Called only on the machine
     /// whose player is actually flying it, so their own control has zero network latency; everyone
     /// else receives the resulting offset and assigns <see cref="PilotOffset"/> directly.</summary>
-    public void ApplyPilotStick(Vector2 stick, float deltaTime)
+    /// <summary>Integrates one frame of the pilot's controls. Called only on the machine whose player
+    /// is actually flying, so their own input has zero network latency; everyone else receives the
+    /// resulting offset and angles and assigns them directly.
+    ///
+    /// <paramref name="move"/> is the intent, in the car's frame: x = slide right, y = climb (left
+    /// stick), z = push forward (B/X). It does TWO independent things, and keeping them independent is
+    /// the point of this control scheme:
+    ///  • It slides the offset at a UNIFORM speed, clamped to the movement box.
+    ///  • It sets the aim angles — yaw from the sideways push, pitch from the vertical one — from the
+    ///    STICK, not from whether the ship actually moved. So a pilot pinned against the edge of the
+    ///    box keeps pointing the way they're pushing, which widens the arc of fire from a hard corner
+    ///    of the box instead of leaving them stuck facing straight ahead.</summary>
+    public void ApplyPilotMove(Vector3 move, float deltaTime)
     {
-        float mag = stick.magnitude;
-        if (mag <= stickDeadzone) return;
+        Vector2 stick = new Vector2(move.x, move.y);
+        // Flipped before the deadzone maths, which only reads the stick's LENGTH and direction — a sign
+        // change leaves the magnitude untouched, so the radial deadzone and diagonals are unaffected.
+        if (invertPilotVertical) stick.y = -stick.y;
 
         // Radial deadzone, rescaled past its edge — same treatment the camera swivel gives the stick,
-        // so a gentle diagonal stays diagonal instead of snapping to a cardinal.
-        float t = Mathf.Clamp01((mag - stickDeadzone) / Mathf.Max(0.001f, 1f - stickDeadzone));
-        Vector2 dir = stick / mag;
-        PilotOffset = pilotOffset + dir * (t * offsetMoveSpeed * deltaTime);
+        // so a gentle diagonal stays diagonal instead of snapping to a cardinal. `planar` comes out as
+        // a 0..1 push in the direction the pilot means, and drives BOTH the slide and the angles, which
+        // is what lets a light push pick a shallow angle and a full push the maximum.
+        float mag = stick.magnitude;
+        Vector2 planar = Vector2.zero;
+        if (mag > stickDeadzone)
+        {
+            float t = Mathf.Clamp01((mag - stickDeadzone) / Mathf.Max(0.001f, 1f - stickDeadzone));
+            planar = (stick / mag) * t;
+        }
+
+        // B/X are buttons, so depth is already a clean -1/0/+1 and needs no deadzone.
+        float depth = Mathf.Clamp(move.z, -1f, 1f);
+
+        PilotOffset = pilotOffset + new Vector3(planar.x, planar.y, depth) * (offsetMoveSpeed * deltaTime);
+
+        // Yaw follows the slide (push right, nose right). Pitch is NEGATIVE going up, per the spec —
+        // which is also Unity's convention, where a negative X rotation raises the nose.
+        pilotLookTarget = new Vector2(planar.x * maxYawAngle, -planar.y * maxPitchAngle);
     }
 
-    Vector2 ClampOffset(Vector2 raw) => new Vector2(
+    Vector3 ClampOffset(Vector3 raw) => new Vector3(
         Mathf.Clamp(raw.x, -Mathf.Abs(maxHorizontalOffset), Mathf.Abs(maxHorizontalOffset)),
-        Mathf.Clamp(raw.y, -Mathf.Abs(maxVerticalOffset), Mathf.Abs(maxVerticalOffset)));
+        Mathf.Clamp(raw.y, -Mathf.Abs(maxVerticalOffset), Mathf.Abs(maxVerticalOffset)),
+        Mathf.Clamp(raw.z, -Mathf.Abs(maxForwardOffset), Mathf.Abs(maxForwardOffset)));
 
     // LateUpdate for the same reason the camera uses it: the car has finished moving for this frame,
     // so the ship never trails a stale pose.
@@ -179,32 +298,43 @@ public class SupportShip : MonoBehaviour
         if (IsRagdolling) return;   // physics owns the wreck now
         if (Car == null) return;
 
-        // Round preload: the track and its contents exist but are frozen until the hub portal spawns.
-        // The travel baseline has to be re-zeroed each frozen frame or the first frame after the thaw
-        // would read the whole frozen interval as one enormous sideways lurch and slam the tilt over.
-        if (MultiplayerWorld.TrackFrozen) { lastPosition = transform.position; return; }
+        // NOTE: deliberately NOT gated on MultiplayerWorld.TrackFrozen, unlike DroneCar/DronePlane.
+        // That flag means "the preloaded TrackScene's AI must hold still until the hub portal spawns",
+        // and it only applies to things that LIVE in the track. This ship escorts a PLAYER CAR, and
+        // during preload every player is still in the hub driving around normally — so honouring the
+        // freeze pinned the ship in mid-air while its car drove off, then snapped it back at GO.
+
+        // Moving between the hub and the track is a ~100 km TELEPORT of the car, not travel. Treated as
+        // movement the rotation lag would unwind over the following second; treated as a teleport it
+        // simply re-snaps, which is what the camera does too.
+        if (posInitialised && (Car.position - lastCarPosition).sqrMagnitude > teleportDistance * teleportDistance)
+            posInitialised = false;
+        lastCarPosition = Car.position;
 
         UpdateSmoothedRotation();
+        UpdateLook();
 
         Vector3 offset = defaultOffset
                        + Vector3.right * pilotOffset.x
-                       + Vector3.up * pilotOffset.y;
+                       + Vector3.up * pilotOffset.y
+                       + Vector3.forward * pilotOffset.z;
         Vector3 desired = Car.position + smoothedRot * offset;
 
         if (!posInitialised)
         {
-            // First frame: snap, so summoning the ship doesn't fly it in from wherever it was parked.
+            // First frame (or a teleport): snap everything, so summoning the ship doesn't fly it in
+            // from wherever it was parked and an area change doesn't throw the aim.
             smoothedRot = Car.rotation;
             desired = Car.position + smoothedRot * offset;
             transform.position = desired;
-            lastPosition = desired;
             posInitialised = true;
         }
 
-        UpdateTilt(desired);
         transform.position = desired;
-        transform.rotation = smoothedRot * Quaternion.Euler(tilt.y, 0f, -tilt.x);
-        lastPosition = desired;
+        // Aim rides INSIDE the car-following frame, so the angles the pilot dials in are relative to
+        // the ship's own level flight rather than to the world — a banked car doesn't skew the aim.
+        // Euler order is (pitch about local X, yaw about local Y, no roll).
+        transform.rotation = smoothedRot * Quaternion.Euler(pilotLook.y, pilotLook.x, 0f);
     }
 
     /// <summary>Eases the ship's reference rotation toward the car's with an independent lag per axis.
@@ -237,28 +367,81 @@ public class SupportShip : MonoBehaviour
     static float Approach(float smoothTime) =>
         smoothTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(smoothTime, 1e-5f));
 
-    /// <summary>Banks the nose into the turn and pitches it into a climb/dive. Derived from the ship's
-    /// ACTUAL travel through the car's frame, not from the stick, so it tilts both when the pilot
-    /// slides it sideways AND when the car corners hard enough to swing it around — which is what
-    /// makes an unpiloted ship still look like it's flying rather than being dragged.</summary>
-    void UpdateTilt(Vector3 desired)
+    /// <summary>Eases the aim angles toward whatever the pilot's stick is asking for — and, when the
+    /// stick is centred (or nobody is flying at all), back to a level 0,0. Driven by the TARGET rather
+    /// than by the ship's actual travel, which is the whole point of the rework: holding into the wall
+    /// of the movement box keeps the ship banked that way even though it has stopped moving.</summary>
+    void UpdateLook()
     {
-        float dt = Time.deltaTime;
-        Vector2 target = Vector2.zero;
-
-        if (dt > 1e-5f)
-        {
-            // Travel expressed in the ship's own lagged frame: sideways drives bank, vertical the nose.
-            Vector3 travel = Quaternion.Inverse(smoothedRot) * ((desired - lastPosition) / dt);
-            float full = Mathf.Max(tiltFullRateSpeed, 0.01f);
-            target.x = Mathf.Clamp(travel.x / full, -1f, 1f) * maxBankAngle;
-            target.y = -Mathf.Clamp(travel.y / full, -1f, 1f) * maxNoseAngle;   // climbing = nose up
-        }
-
-        tilt = tiltSmoothTime <= 0f
-            ? target
-            : Vector2.SmoothDamp(tilt, target, ref tiltVel, tiltSmoothTime);
+        pilotLook = lookSmoothTime <= 0f
+            ? pilotLookTarget
+            : Vector2.SmoothDamp(pilotLook, pilotLookTarget, ref pilotLookVel, lookSmoothTime);
     }
+
+    // -------------------------------------------------------
+    //  Guns
+    // -------------------------------------------------------
+
+    /// <summary>Fires one twin-bolt round straight along the ship's nose.
+    ///
+    /// ⚠️ Call this on the AUTHORITY only — <see cref="SupportShipReplicator.RequestFire"/> routes a
+    /// pilot's trigger pull to the host and calls it there, so the round is simulated once, on the
+    /// machine that owns the drones it might hit, and streamed to everyone else. Calling it directly on
+    /// a client spawns a round that exists on that screen alone.
+    ///
+    /// Direction is <c>transform.forward</c>, which includes the pilot's AIM ANGLES — so a ship yawed
+    /// left shoots left. That is the whole reason the aim angles exist: they widen the arc of fire well
+    /// beyond the movement box, including from a corner of it the ship cannot slide past.</summary>
+    public void FireLaser()
+    {
+        if (laserPrefab == null || IsRagdolling) return;
+
+        Vector3 origin = transform.TransformPoint(muzzleOffset);
+        Vector3 direction = transform.forward;
+
+        GameObject round = Instantiate(laserPrefab, origin, transform.rotation);
+        ApplyLayer(round, laserLayerName);
+
+        var laser = round.GetComponent<SupportShipLaser>();
+        if (laser == null) laser = round.AddComponent<SupportShipLaser>();
+
+        // Never shoot ourselves, and never shoot the teammate we're escorting — the ship flies BEHIND
+        // its car, so straight ahead is aimed right at that car's back.
+        laser.IgnoreCollisionsWith(transform);
+        laser.IgnoreCollisionsWith(Car);
+        laser.Launch(direction, laserSpeed);
+
+        AudioManager.PlaySupportShipLaserFire(origin);
+
+        // Host only (no-op elsewhere): stream it to the clients as a visual, hits staying host-side.
+        NpcReplicator.Track(round, NpcKind.Projectile, laserPrefab);
+    }
+
+    void ApplyLayer(GameObject go, string layerName)
+    {
+        if (go == null || string.IsNullOrEmpty(layerName)) return;
+        int layer = LayerMask.NameToLayer(layerName);
+        if (layer < 0)
+        {
+            if (!warnedMissingLaserLayer)
+            {
+                warnedMissingLaserLayer = true;
+                Debug.LogWarning($"[SupportShip] Layer '{layerName}' not found in Tags and Layers — " +
+                                 "laser rounds keep the prefab's layer.");
+            }
+            return;
+        }
+        SetLayerRecursively(go, layer);
+    }
+
+    static void SetLayerRecursively(GameObject go, int layer)
+    {
+        go.layer = layer;
+        foreach (Transform child in go.transform)
+            SetLayerRecursively(child.gameObject, layer);
+    }
+
+    private bool warnedMissingLaserLayer;
 
     // -------------------------------------------------------
     //  Being downed
@@ -331,8 +514,9 @@ public class SupportShip : MonoBehaviour
 
         Gizmos.color = new Color(0.35f, 0.9f, 1f, 0.9f);
         Gizmos.matrix = Matrix4x4.TRS(centre, frame, Vector3.one);
-        Gizmos.DrawWireCube(Vector3.zero,
-            new Vector3(Mathf.Abs(maxHorizontalOffset) * 2f, Mathf.Abs(maxVerticalOffset) * 2f, 0.1f));
+        Gizmos.DrawWireCube(Vector3.zero, new Vector3(Mathf.Abs(maxHorizontalOffset) * 2f,
+                                                      Mathf.Abs(maxVerticalOffset) * 2f,
+                                                      Mathf.Abs(maxForwardOffset) * 2f));
         Gizmos.matrix = Matrix4x4.identity;
 
         Gizmos.color = Color.yellow;

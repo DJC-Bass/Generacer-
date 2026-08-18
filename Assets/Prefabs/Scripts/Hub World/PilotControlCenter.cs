@@ -11,14 +11,14 @@ using UnityEngine.InputSystem;
 ///
 /// Driving in opens a list of every TEAMMATE currently flying a Support Ship. Pick one and this
 /// machine takes the controls of that ship: the view cuts to a chase camera riding it, the left stick
-/// slides it around inside its movement box, and the pilot's own hub car is frozen where it stands so
-/// it can't wander off while they're looking somewhere else. B (or driving out of the pad) hands the
+/// slides it around a 3D movement box (B/X for forward/back) and angles it to aim, A fires, and the pilot’s
+/// own hub car is input-locked so it can’t wander off. SELECT (or being shoved off the pad) hands the
 /// ship back.
 ///
 /// The pilot flies a LOCAL copy of the ship — the same trick <see cref="HubSpectatorTV"/> uses to show
 /// a racer on a hub screen. A remote player's actual camera can't cross the network, but the world is
 /// generated identically on every machine, so a chase camera stood up here and pointed at our own copy
-/// of their ship is a faithful live view. Only the resulting stick OFFSET goes on the wire; see
+/// of their ship is a faithful live view. Only the resulting offset and aim angles go on the wire; see
 /// <see cref="SupportShipReplicator"/>.
 ///
 /// The ship being flown belongs to someone in the TrackScene, ~100 km from the hub. Nothing special is
@@ -32,6 +32,20 @@ public class PilotControlCenter : MonoBehaviour
     [Header("Detection")]
     [Tooltip("Tag on the player car (or any of its colliders).")]
     public string playerTag = "Player";
+
+    [Header("Holding the controls")]
+    [Tooltip("How long the pilot's car must be OFF the pad before the controls are handed back. Exists " +
+             "so a bump at the edge, or one bad physics frame, can't eject a pilot — being shoved " +
+             "properly clear still ends it well inside a second.")]
+    public float padExitGrace = 0.5f;
+
+    [Header("Firing (A)")]
+    [Tooltip("Rounds one press can produce. Tap A and you get one; hold it and you get this many, then " +
+             "the guns stop until you release and press again. Star Fox 64's semi-auto feel.")]
+    public int burstRounds = 3;
+    [Tooltip("Seconds between the rounds of a held burst. The FIRST round is always instant, so a tap " +
+             "never waits on this.")]
+    public float burstInterval = 0.12f;
 
     [Header("Who may be flown")]
     [Tooltip("Only list ships belonging to the local player's OWN team. Off = any active ship in the " +
@@ -79,8 +93,13 @@ public class PilotControlCenter : MonoBehaviour
     private AudioListener pilotListener;
     private Camera suppressedCam;              // the hub camera we switched off
     private AudioListener suppressedListener;  // and its listener
-    private Rigidbody frozenCar;
-    private RigidbodyConstraints frozenCarConstraints;
+    private int burstFired;              // rounds already fired from the CURRENT press of A
+    private float nextRoundTime;
+    private float padExitSince = -1f;    // when the car left the pad (-1 = it's on it)
+    private float shipLostSince = -1f;   // when the flown ship went missing (-1 = it's there)
+    // A remote ship is destroyed and rebuilt whenever its owner's puppet is, so a frame or two of "no
+    // ship" is normal and must not eject the pilot.
+    private const float ShipLostGrace = 1f;
 
     // ---- built UI ----
     private GameObject root;
@@ -111,9 +130,30 @@ public class PilotControlCenter : MonoBehaviour
         if (playerColliders.Remove(other) && !PlayerInside)
         {
             suppressedUntilExit = false;
-            if (piloting) StopPiloting();
             if (isOpen) Close();
+            // Piloting is deliberately NOT ended here — a single spurious exit event must not eject a
+            // pilot mid-flight. See TickPadOccupancy, which confirms it against the pad's actual bounds
+            // and requires the car to stay out for padExitGrace.
         }
+    }
+
+    /// <summary>Is the player's car still on the pad? Belt-and-braces: the trigger's own bookkeeping OR
+    /// an explicit bounds test. Trigger enter/exit events are edge-triggered and can be re-fired by
+    /// unrelated physics changes (re-parenting, filtering resets, a collider toggling), and losing the
+    /// cockpit to one of those is exactly the failure the user hit. The bounds test is level-triggered
+    /// and cannot glitch, so the two together only agree the player has left when they really have —
+    /// which is what makes "shoved off the pad by a rival" a real, and the ONLY physical, way out.</summary>
+    bool CarOnPad()
+    {
+        if (PlayerInside) return true;
+
+        var car = PlayerRegistry.LocalCar;
+        if (car == null) return false;
+        var col = GetComponent<Collider>();
+        // bounds is the AABB, so this is slightly generous — deliberately, since it's the forgiving
+        // half of the pair. Works for any collider shape and can never throw (ClosestPoint does, on a
+        // non-convex MeshCollider).
+        return col != null && col.bounds.Contains(car.transform.position);
     }
 
     bool IsPlayer(Collider other)
@@ -234,38 +274,100 @@ public class PilotControlCenter : MonoBehaviour
         // Suppress everything the sticks would otherwise do: turbo, jump, the shield, the grapple, and
         // any other trigger menu opening under the parked car. This is the same flag the store uses.
         MenuState.AnyOpen = true;
-        FreezeLocalCar(true);
+        SuppressLocalCarInput(true);
+        padExitSince = -1f;
+        shipLostSince = -1f;
         EnsureRig();
         BindCamera(ship);
-        ShowHint("Left Stick Fly     B Release");
+        ShowHint("Stick Fly    B / X Fwd / Back    A Fire    Select Release");
+        // A fresh cockpit starts with the guns cold — the A press that TOOK the controls must not also
+        // loose a burst on the way in.
+        burstFired = Mathf.Max(1, burstRounds);
+        nextRoundTime = 0f;
     }
 
+    /// <summary>Flying. Control is held until ONE of exactly four things happens, and nothing else may
+    /// take it away:
+    ///   1. SELECT — the pilot hands it back deliberately.
+    ///   2. The ship is destroyed.
+    ///   3. Its owner dismisses it (or the server reassigns the controls).
+    ///   4. The car is pushed off the pad by an external force — a rival shoving or grappling them.
+    /// Notably NOT in that list: a stray trigger event, or one frame in which the replicated ship
+    /// happens to be missing. Both are debounced below.</summary>
     void TickPiloting()
     {
-        var ship = SupportShipReplicator.GetShip(pilotedOwner);
+        var gp = Gamepad.current;
 
-        // The ship was downed, dismissed by its owner, or the controls were taken away from us.
-        if (ship == null || ship.IsRagdolling || SupportShipReplicator.LocalPilotOf != pilotedOwner)
+        // 1. Manual release. SELECT (Xbox "View" / PS "Share") — B is left alone so it stays a pure
+        //    menu button and can't eject a pilot by reflex.
+        if (gp != null && gp.selectButton.wasPressedThisFrame)
         {
+            // Handing the ship back drops them into the LIST, not out of the station — they're still
+            // parked on the pad, and wanting to take a different ship is the likely next move. B from
+            // there closes it properly.
             StopPiloting();
             return;
         }
+
+        // 2 + 3. The ship is gone, wrecked, or no longer ours. A remote ship is rebuilt whenever its
+        //        owner's puppet is rebuilt, so it can be null for a frame or two through no fault of
+        //        the pilot — hence the grace window rather than an instant eject.
+        var ship = SupportShipReplicator.GetShip(pilotedOwner);
+        bool lost = ship == null || ship.IsRagdolling
+                 || SupportShipReplicator.LocalPilotOf != pilotedOwner;
+        if (lost)
+        {
+            if (shipLostSince < 0f) shipLostSince = Time.unscaledTime;
+            if (Time.unscaledTime - shipLostSince > ShipLostGrace) { StopPiloting(); return; }
+        }
+        else shipLostSince = -1f;
+
+        // 4. Shoved off the pad. This is the one physical way to break a pilot's concentration, and it
+        //    only works because their car is input-locked rather than frozen solid.
+        if (!CarOnPad())
+        {
+            if (padExitSince < 0f) padExitSince = Time.unscaledTime;
+            if (Time.unscaledTime - padExitSince > padExitGrace)
+            {
+                Debug.Log("[SupportShip] Pilot left the control pad — controls released.");
+                StopPiloting();
+                return;
+            }
+        }
+        else padExitSince = -1f;
+
+        if (ship == null) return;   // riding out the grace window — nothing to fly this frame
 
         if (pilotFollow != null) pilotFollow.target = ship.transform;
-
-        var gp = Gamepad.current;
         if (gp == null) return;
+        // Left stick slides and aims; B pushes the ship forward, X pulls it back. All integrated
+        // LOCALLY so the pilot's own controls have no latency; the resulting offset and aim angles are
+        // what go on the wire.
+        Vector2 stick = gp.leftStick.ReadValue();
+        float depth = (gp.buttonEast.isPressed ? 1f : 0f) - (gp.buttonWest.isPressed ? 1f : 0f);
+        ship.ApplyPilotMove(new Vector3(stick.x, stick.y, depth), Time.deltaTime);
+        TickGuns(gp);
+    }
 
-        if (gp.buttonEast.wasPressedThisFrame)
+    /// <summary>Semi-auto burst on A. A press ARMS a fresh burst and fires its first round on the same
+    /// frame — that's what makes a tap feel instant and produce exactly one shot. Holding walks through
+    /// the remaining <see cref="burstRounds"/> at <see cref="burstInterval"/> and then stops dead; the
+    /// guns don't speak again until the button is released and pressed anew.</summary>
+    void TickGuns(Gamepad gp)
+    {
+        if (gp.buttonSouth.wasPressedThisFrame)
         {
-            suppressedUntilExit = true;
-            StopPiloting();
-            return;
+            burstFired = 0;
+            nextRoundTime = 0f;   // fire the opening round immediately, below
         }
 
-        // x = slide right, y = climb. Integrated locally so the pilot's own control has no latency;
-        // the resulting offset is what goes on the wire.
-        ship.ApplyPilotStick(gp.leftStick.ReadValue(), Time.deltaTime);
+        if (!gp.buttonSouth.isPressed) return;
+        if (burstFired >= Mathf.Max(1, burstRounds)) return;
+        if (Time.time < nextRoundTime) return;
+
+        SupportShipReplicator.RequestFire(pilotedOwner);
+        burstFired++;
+        nextRoundTime = Time.time + Mathf.Max(0.01f, burstInterval);
     }
 
     void StopPiloting()
@@ -277,8 +379,10 @@ public class PilotControlCenter : MonoBehaviour
         SupportShipReplicator.RequestPilot(pilotedOwner, claim: false);
 
         RestoreCamera();
-        FreezeLocalCar(false);
+        SuppressLocalCarInput(false);
         MenuState.AnyOpen = false;
+        padExitSince = -1f;
+        shipLostSince = -1f;
         AudioManager.PlayStoreClose();
     }
 
@@ -297,26 +401,29 @@ public class PilotControlCenter : MonoBehaviour
     //  The pilot's car
     // -------------------------------------------------------
 
-    /// <summary>Pins the pilot's own car while they're flying. MenuState alone only suppresses the
-    /// BUTTONS (turbo / jump / brake) — throttle and steering are read unconditionally, so without
-    /// this the car would keep driving off under the same stick that's flying the ship.</summary>
-    void FreezeLocalCar(bool freeze)
+    /// <summary>Takes the pilot's car away from them while they're flying — WITHOUT freezing it.
+    ///
+    /// `MenuState.AnyOpen` alone is not enough: it only gates the BUTTONS (turbo / jump / brake), while
+    /// throttle and steering are read unconditionally, so the car would drive off under the very stick
+    /// that's flying the ship. `CarController.InputSuppressed` closes that.
+    ///
+    /// It deliberately does NOT pin the Rigidbody. An earlier version used
+    /// `RigidbodyConstraints.FreezeAll`, which made the car immovable — and therefore made "a rival
+    /// shoves you off the pad" impossible, when that is precisely one of the ways the user wants a
+    /// pilot to lose the controls. Input-locked but still a normal dynamic body is what allows both:
+    /// the pilot cannot drive, and everyone else can still push them around.</summary>
+    void SuppressLocalCarInput(bool suppress)
     {
-        if (freeze)
-        {
-            var car = PlayerRegistry.LocalCar;
-            frozenCar = car != null ? car.GetComponent<Rigidbody>() : null;
-            if (frozenCar == null) return;
+        CarController.InputSuppressed = suppress;
+        if (!suppress) return;
 
-            frozenCarConstraints = frozenCar.constraints;
-            frozenCar.linearVelocity = Vector3.zero;
-            frozenCar.angularVelocity = Vector3.zero;
-            frozenCar.constraints = RigidbodyConstraints.FreezeAll;
-            return;
-        }
-
-        if (frozenCar != null) frozenCar.constraints = frozenCarConstraints;
-        frozenCar = null;
+        // Kill any momentum they arrived with, so they don't coast straight back off the pad the
+        // instant they stop steering. Everything after this frame is somebody else pushing them.
+        var car = PlayerRegistry.LocalCar;
+        var rb = car != null ? car.GetComponent<Rigidbody>() : null;
+        if (rb == null) return;
+        rb.linearVelocity = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
     }
 
     // -------------------------------------------------------
@@ -411,7 +518,7 @@ public class PilotControlCenter : MonoBehaviour
         EnsureUI();
         selected = 0;
         RefreshRows();
-        ShowHint("↑↓ Select    A Take Controls    B Close");
+        ShowHint("↑↓ Choose    A Take Controls    B Close");   // "Select" is the release button now
         root.SetActive(true);
         isOpen = true;
         MenuState.AnyOpen = true;
