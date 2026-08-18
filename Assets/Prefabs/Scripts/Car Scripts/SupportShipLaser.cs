@@ -9,15 +9,23 @@ using UnityEngine;
 /// out is a single float compare per frame, which is why it's a timer rather than a travelled-distance
 /// check — same result, less work, and the speed is fixed so the two are equivalent anyway.
 ///
-/// It deliberately ignores TWO things (see <see cref="IgnoreCollisionsWith"/>):
-///  • the ship that fired it — a round spawning inside its own muzzle would die instantly;
-///  • the racer that ship is escorting — the ship flies BEHIND its car (its resting offset is the chase
-///    camera's), so "fire straight ahead" points directly at the car's back bumper. Without this every
-///    single shot would detonate on the teammate you're supporting.
+/// WHAT A ROUND DOES depends on what it hits:
+///  • A PLAYER CAR — including the gunner's OWN racer, which is deliberately shootable — gets popped
+///    into the air at half a lightning strike's force, keeping its momentum (a DronePissBall halts the
+///    car; this does not). Its own 2 s window then ignores further laser rounds. That window is kept
+///    SEPARATE from the DronePissBall one, so being lasered never grants immunity to drone fire.
+///  • A DRONE PLANE goes down in one hit, and the bounty is redirected to the GUNNER.
+///  • A DRONE CAR / CHALLENGER takes <see cref="droneHitsToDown"/> rounds with no window between them,
+///    then enters the same downed state a player ram produces. The credits are settled at the kill
+///    floor and go to whoever touched it LAST — gunner or driver.
+///  • A LAVA BOULDER is destroyed outright for <see cref="boulderBounty"/>.
 ///
-/// Multiplayer: spawned only by the HOST (routed there by SupportShipReplicator) and streamed to
-/// clients as a collider-less visual via <see cref="NpcReplicator"/>, exactly like drone fire — so
-/// contact is resolved once, on the machine that owns the drones.
+/// It still ignores the ship that fired it — a round spawning inside its own muzzle would die instantly
+/// — but nothing else. Watching your own racer is the pilot's problem.
+///
+/// Multiplayer: spawned only by the HOST (routed there by SupportShipReplicator), so every one of these
+/// judgements is made once, on the machine that owns the drones and obstacles. Effects that land on a
+/// player car are routed to the machine that owns THAT car.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 public class SupportShipLaser : MonoBehaviour
@@ -27,14 +35,62 @@ public class SupportShipLaser : MonoBehaviour
              "this is also what sets its effective range.")]
     public float maxLifetime = 3f;
 
+    [Header("Player Hit")]
+    [Tooltip("Upward impulse applied to a player car on hit (velocity change, m/s). Half a lightning " +
+             "strike's 80 by default. Their forward momentum is NOT halted — unlike a DronePissBall, " +
+             "this bumps a car into the air without stopping it.")]
+    public float popUpForce = 40f;
+    [Tooltip("Seconds a car ignores further SUPPORT SHIP rounds after one lands. Deliberately its own " +
+             "window, separate from DroneProjectile's: being lasered must not make you immune to drone " +
+             "fire, and vice versa.")]
+    public float hitInvulnerabilitySeconds = 2f;
+    [Tooltip("Tag identifying the local player's car.")]
+    public string playerTag = "Player";
+
+    [Header("Damage")]
+    [Tooltip("Rounds needed to down a DroneCar or Challenger. They get NO window between hits, so a " +
+             "steady burst can drop one; a DronePlane always goes down in one.")]
+    public int droneHitsToDown = 3;
+    [Tooltip("Credits paid to the GUNNER for destroying a LavaBoulder outright.")]
+    public int boulderBounty = 25;
+
     [Header("Audio (3D)")]
     [Tooltip("3D playback settings for the impact sound. The FIRING sound is played by the ship and " +
              "tuned from AudioLibrary.supportShipAudio3D with the rest of the ship's audio.")]
     public Spatial3DSettings audio3D = new Spatial3DSettings();
 
+    /// <summary>Who is flying the ship that fired this — every bounty this round earns goes to them.
+    /// Stamped at spawn by <see cref="SupportShip.FireLaser"/>.</summary>
+    [HideInInspector] public ulong pilotClientId;
+    /// <summary>True when that pilot is playing on THIS machine, so bounties land in the local
+    /// inventory instead of going out over the wire.</summary>
+    [HideInInspector] public bool pilotIsLocal = true;
+
     private Rigidbody rb;
     private float spawnTime;
     private bool consumed;
+
+    // ---- The local player's LASER invulnerability window (STATIC = shared by every round in flight,
+    //      which is the point: the window belongs to the CAR, not to any one round). Each machine owns
+    //      its own car's window — the host tracks its own, a client applies the same test to a
+    //      host-reported hit — so nothing about it has to be replicated. ----
+    static float invulnerableUntil = -999f;
+
+    /// <summary>True while the local player is still immune to Support Ship rounds. Completely
+    /// independent of <see cref="DroneProjectile.PlayerInvulnerable"/>.</summary>
+    public static bool PlayerInvulnerable => Time.time < invulnerableUntil;
+
+    /// <summary>Opens (or extends) the local player's immunity window.</summary>
+    public static void BeginInvulnerability(float seconds)
+    {
+        if (seconds <= 0f) return;
+        invulnerableUntil = Mathf.Max(invulnerableUntil, Time.time + seconds);
+    }
+
+    // Statics survive a play-mode restart when domain reload is disabled, and Time.time restarts at 0 —
+    // a stale future value would leave the player permanently immune. Clear it on every load.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetStatics() => invulnerableUntil = -999f;
 
     void Awake()
     {
@@ -76,15 +132,107 @@ public class SupportShipLaser : MonoBehaviour
         if (Time.time - spawnTime > maxLifetime) Destroy(gameObject);
     }
 
-    /// <summary>Dies on the first contact. What it does TO that thing is whatever that thing does about
-    /// being hit — a DronePlane, for instance, already ragdolls on any collision, so it falls out of the
-    /// sky for free. Nothing is applied from this side yet.</summary>
+    // -------------------------------------------------------
+    //  Impact
+    // -------------------------------------------------------
+
+    /// <summary>Dies on the first contact, having applied whatever that contact deserves. Ordered
+    /// most-specific first: the drone/obstacle checks look at the object itself, while the player check
+    /// walks UP the hierarchy for a tag — so doing the player walk first would claim hits on anything
+    /// that merely happens to be parented under a car.</summary>
     void OnCollisionEnter(Collision collision)
     {
         if (consumed) return;
         consumed = true;
 
+        var hit = collision.collider;
+
+        if (TryHitDronePlane(hit)) { Finish(); return; }
+        if (TryHitDroneCar(hit)) { Finish(); return; }
+        if (TryHitBoulder(hit)) { Finish(); return; }
+        TryHitPlayer(hit);
+        Finish();
+    }
+
+    void Finish()
+    {
         AudioManager.PlaySupportShipLaserHit(transform.position, audio3D);
         Destroy(gameObject);
+    }
+
+    /// <summary>One round downs a plane outright, and the gunner is paid for it.</summary>
+    bool TryHitDronePlane(Collider hit)
+    {
+        var plane = hit.GetComponentInParent<DronePlane>();
+        if (plane == null) return false;
+        plane.DownedByPilot(pilotClientId, pilotIsLocal);
+        return true;
+    }
+
+    /// <summary>Drone cars and Challengers (the same script, different reward) need several rounds.
+    /// The drone records the gunner as its last attacker, so if nobody else touches it before it
+    /// reaches the kill floor the credits are theirs.</summary>
+    bool TryHitDroneCar(Collider hit)
+    {
+        var drone = hit.GetComponentInParent<DroneCar>();
+        if (drone == null) return false;
+        drone.TakeLaserHit(pilotClientId, pilotIsLocal, droneHitsToDown);
+        return true;
+    }
+
+    /// <summary>Boulders pop in one hit for a small bounty.</summary>
+    bool TryHitBoulder(Collider hit)
+    {
+        var boulder = hit.GetComponentInParent<BoulderObstacle>();
+        if (boulder == null) return false;
+
+        SupportShipReplicator.AwardPilot(pilotClientId, pilotIsLocal, boulderBounty);
+        Destroy(boulder.gameObject);
+        return true;
+    }
+
+    /// <summary>Pops a player car — the gunner's own racer included, which is the point: the ship flies
+    /// behind its car, so hitting your own teammate is entirely possible and entirely the pilot's
+    /// responsibility.</summary>
+    bool TryHitPlayer(Collider hit)
+    {
+        Transform t = hit.transform;
+        while (t != null)
+        {
+            if (t.CompareTag(playerTag))
+            {
+                // The local car's window is owned right here.
+                if (!PlayerInvulnerable)
+                {
+                    ApplyPopUp(t.gameObject, popUpForce);
+                    BeginInvulnerability(hitInvulnerabilitySeconds);
+                }
+                return true;
+            }
+            if (t.CompareTag("RemotePlayer"))
+            {
+                // Their car lives on their machine and their window is theirs to judge — pushing a
+                // kinematic puppet here would be erased by its next state update anyway.
+                if (MultiplayerWorld.TryGetCarOwner(t, out ulong clientId, out bool isLocal) && !isLocal)
+                    SupportShipReplicator.SendLaserHitToOwner(clientId);
+                return true;
+            }
+            t = t.parent;
+        }
+        return false;
+    }
+
+    /// <summary>The pop itself: an upward impulse with the car's existing momentum left alone, plus the
+    /// suspension trick that lets a grounded car actually leave the road (without it the wheels hold it
+    /// down and the impulse does almost nothing).</summary>
+    public static void ApplyPopUp(GameObject car, float force)
+    {
+        if (car == null) return;
+
+        var rb = car.GetComponent<Rigidbody>();
+        if (rb != null) rb.AddForce(Vector3.up * force, ForceMode.VelocityChange);
+
+        var controller = car.GetComponent<CarController>();
+        if (controller != null) controller.ShortenSuspensionRayForPopUp();
     }
 }

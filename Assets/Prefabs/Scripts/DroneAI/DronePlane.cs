@@ -478,21 +478,72 @@ public class DronePlane : MonoBehaviour
 
     /// <summary>ANY solid contact downs the plane — scenery, a car, or another DronePlane. Trigger
     /// volumes (the track's Return Portal among them) don't raise collisions, so flying through the
-    /// portal neither wrecks the plane nor counts for anything.</summary>
-    void OnCollisionEnter(Collision collision) => Crash();
+    /// portal neither wrecks the plane nor counts for anything.
+    ///
+    /// The laser check has to be HERE, not only in SupportShipLaser: both objects receive
+    /// OnCollisionEnter for the same contact and Unity does not define which runs first. Without it, a
+    /// coin flip decided whether the wreck paid the GUNNER who shot it down or the racer it happened to
+    /// be hunting. Now either ordering reaches DownedByPilot, and the second call no-ops on the state
+    /// check.</summary>
+    void OnCollisionEnter(Collision collision)
+    {
+        var laser = collision.collider.GetComponentInParent<SupportShipLaser>();
+        if (laser != null) DownedByPilot(laser.pilotClientId, laser.pilotIsLocal);
+        else Crash();
+    }
+
+    // Set when a Support Ship gunner shoots this plane down, so the wreck bounty goes to THEM rather
+    // than to whoever the plane happened to be hunting.
+    private bool downedByPilot;
+    private ulong pilotClientId;
+    private bool pilotIsLocal;
+
+    /// <summary>Shot down by a Support Ship laser. Same ragdoll as any other crash — but the kill
+    /// reward is redirected to the GUNNER, since they earned it, instead of to the plane's target who
+    /// had nothing to do with it.</summary>
+    public void DownedByPilot(ulong clientId, bool isLocal)
+    {
+        if (state == State.Ragdoll) return;
+        downedByPilot = true;
+        pilotClientId = clientId;
+        pilotIsLocal = isLocal;
+        Crash();
+    }
 
     void Crash()
     {
         if (state == State.Ragdoll) return;
 
-        // Pay the player it was hunting for the wreck — nothing if it was just patrolling.
-        if (target != null) AwardKillReward(target);
+        // Pay whoever earned it: the Support Ship gunner who shot it down, else the player it was
+        // hunting. Nothing if it was just patrolling and fell over on its own.
+        if (downedByPilot) AwardPilotKill();
+        else if (target != null) AwardKillReward(target);
 
         state = State.Ragdoll;
         target = null;
         rb.useGravity = true;               // go limp and tumble
         rb.constraints = RigidbodyConstraints.None;
         Destroy(gameObject, ragdollDuration);
+    }
+
+    /// <summary>Routes the wreck bounty to the Support Ship gunner who shot this plane down — their
+    /// own inventory if they're on this machine, otherwise across the wire.</summary>
+    void AwardPilotKill()
+    {
+        if (killReward <= 0) return;
+
+        if (!pilotIsLocal)
+        {
+            NpcReplicator.SendBounty(pilotClientId, killReward);
+            Debug.Log($"[DronePlane] Shot down by client {pilotClientId}'s Support Ship — " +
+                      $"bounty {killReward} sent.");
+            return;
+        }
+
+        if (PlayerInventory.Instance == null) return;
+        PlayerInventory.Instance.AddCredits(killReward);
+        AudioManager.PlayKnockoffBounty();
+        Debug.Log($"[DronePlane] Shot down by the local Support Ship — awarded {killReward} credits.");
     }
 
     /// <summary>Routes the wreck bounty to whoever this plane was hunting: straight into the local

@@ -421,7 +421,7 @@ public class SupportShip : MonoBehaviour
     /// Direction is <c>transform.forward</c>, which includes the pilot's AIM ANGLES — so a ship yawed
     /// left shoots left. That is the whole reason the aim angles exist: they widen the arc of fire well
     /// beyond the movement box, including from a corner of it the ship cannot slide past.</summary>
-    public void FireLaser()
+    public void FireLaser(ulong pilotClientId, bool pilotIsLocal)
     {
         if (laserPrefab == null || IsRagdolling) return;
 
@@ -434,10 +434,12 @@ public class SupportShip : MonoBehaviour
         var laser = round.GetComponent<SupportShipLaser>();
         if (laser == null) laser = round.AddComponent<SupportShipLaser>();
 
-        // Never shoot ourselves, and never shoot the teammate we're escorting — the ship flies BEHIND
-        // its car, so straight ahead is aimed right at that car's back.
+        // Never shoot ourselves — a round spawning inside our own muzzle would die on the spot. The
+        // OWNER'S CAR is deliberately NOT excluded: the ship flies behind it, so the racer is squarely
+        // in the line of fire and keeping them out of it is the pilot's job, not the code's.
         laser.IgnoreCollisionsWith(transform);
-        laser.IgnoreCollisionsWith(Car);
+        laser.pilotClientId = pilotClientId;
+        laser.pilotIsLocal = pilotIsLocal;
         laser.Launch(direction, laserSpeed);
 
         AudioManager.PlaySupportShipLaserFire(origin);

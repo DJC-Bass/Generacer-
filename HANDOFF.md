@@ -1,32 +1,15 @@
-# Generacer — Session Handoff
-
-Arcade racing game, **Unity 6, URP**. Persistent-singleton architecture: systems self-bootstrap via
-`RuntimeInitializeOnLoadMethod` onto a DontDestroyOnLoad `PlayerSystems` object (inventory, HUDs, menus,
-tutorial guide, event-system guard) or their own object (`AudioManager`, `GameLoopManager`,
-`SkyboxHueRandomizer`). Most UI is **code-built** (no scene canvases). Scene flow:
-`MainMenu → CarSelection → Bootstrap → HubWorld ⇄ TrackScene`, plus `Tutorial`, `GeneracersEnding`,
-`ClipperEnding`.
-
----
-
 ## NEXT TASK (this is why a fresh agent is here)
 
-**SUPPORT SHIP — WHAT THE LASERS DO ON HIT.** The ship and its **guns** are both **BUILT** (2026-08-16,
-detail below): summoning, the hub pilot station, camera hand-off, flight, destruction, replication, and
-Star Fox 64-style semi-auto fire on **A**. **Do not rebuild any of it.** What is deliberately NOT wired
-is what a round DOES to what it hits — the user has not specified it, and it is a real design choice:
-- **Enemies.** A round currently just despawns on contact. `DronePlane` already ragdolls on ANY
-  collision, so planes fall out of the sky for free — but `DroneCar` has no damage path, and nothing
-  awards the pilot (or the racer) anything for a kill. Decide who gets paid before wiring it.
-- **The racer, for a small jump** — the original design ("shoot the player themselves to give them a
-  small jump"). The pop-up already exists in `DroneProjectile.HitPlayer` /
-  `ApplyRemoteHitToLocalPlayer`. Two obstacles: rounds currently **pass straight through the owner's
-  car by design** (see below — the ship flies behind it, so every shot would otherwise hit the
-  teammate), and the **projectile i-frames** (`DroneProjectile.PlayerInvulnerable`) mean a racer who was
-  just shot by a drone can't be boosted for 2 s. A friendly boost must bypass or share that window.
-- Whatever it does, it must be applied **on the machine that owns the target** — `GNRC_NPC_HIT` for a
-  player's car, host-side directly for a drone. The round itself is already host-only, so that half is
-  done.
+**THE SUPPORT SHIP IS FEATURE-COMPLETE (2026-08-16).** Summoning, the hub pilot station, camera
+hand-off, flight and aim, destruction, replication, Star Fox 64-style semi-auto fire on **A**, and what
+every round does on hit — all built and compiling. **Do not rebuild any of it**; the detail is in the
+"SUPPORT SHIP" section further down and the message index just below.
+
+What remains is **editor wiring, not code** — see "⚠️ OUTSTANDING EDITOR WIRING". The load-bearing ones
+for the Support Ship: the `SupportShip` layer's collision matrix, `trackSkybox` and `laserPrefab`
+assignments, a collider on `SupportShipLasers`, and the ship child on the five car prefabs that lack it.
+
+Nothing else is queued. Ask the user what they want next.
 
 > ⚠️ **The multiplayer sections below are the HISTORICAL design record.** Multiplayer is **BUILT** —
 > Phases 1–6 are code-complete (lobby/sessions, shared additive world, networked cars, server-authoritative
@@ -142,7 +125,8 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector3 aim angles} for a named owner’s ship |
 | `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
-| `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X's lasers once; host spawns + NpcReplicator streams the round |
+| `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X’s lasers once; host spawns + NpcReplicator streams the round |
+| `GNRC_SHIP_LHIT` | SupportShipReplicator | server → victim | a Support Ship round popped YOUR car — victim applies the pop-up and judges its own i-frames |
 
 **Four patterns this codebase leans on — copy them:**
 1. **Route effects to the authority.** A remote car is a kinematic puppet — pushing it locally is erased
@@ -1536,11 +1520,11 @@ bugs to someone reading the code cold:
   the SAME frame (so a tap is instant and gives exactly one), holding walks the remaining `burstRounds`
   (3) at `burstInterval` (0.12 s) then stops dead until A is released and pressed again. Four things
   worth knowing:
-  - **Rounds ignore the owner's car, and that is load-bearing.** The ship's resting offset IS the chase
-    camera's, so it flies BEHIND its racer — "fire straight ahead" points directly at that car's back
-    bumper, and every single shot would detonate on the teammate you're supporting. `FireLaser` calls
-    `IgnoreCollisionsWith(Car)` (and with the ship itself, or a round would die in its own muzzle).
-    This is also what a friendly "boost the racer" mode would have to undo.
+  - **Rounds NO LONGER ignore the owner's car (changed 2026-08-16 — see the hit table below).** They
+    originally did — the ship's resting offset IS the chase camera's, so it flies BEHIND its racer and
+    "fire straight ahead" points at that car's back bumper. The user's call is that watching for that is
+    the PILOT's job, so only the firing ship is excluded now (a round would otherwise die inside its own
+    muzzle). This is what makes shooting your own racer for a boost possible.
   - **Firing is HOST-spawned, unlike aiming.** The offset is pure presentation so the pilot owns it
     outright; a round that can knock a drone down is game state, so `RequestFire` routes the trigger
     pull to the host, which spawns the round and streams it via `NpcReplicator.Track(NpcKind.Projectile)`
@@ -1554,6 +1538,42 @@ bugs to someone reading the code cold:
     build puppets for the rounds. It is only ever referenced from a car prefab's `SupportShip`
     component, so nothing else would find it — registered in `SupportShipAbility.BuildShip` (local) and
     `ResolveRemoteShip` (remote, after `CopyTuningFrom` supplies the reference).
+- **WHAT A ROUND DOES ON HIT (2026-08-16).** All of it resolves on the HOST, the only machine lasers
+  exist on, so each judgement is made once.
+
+  | Target | Effect | Credits |
+  |---|---|---|
+  | Player car (**including the gunner's own racer**) | Popped up at `popUpForce` 40 — half a lightning strike's 80 — with **momentum kept**, unlike a DronePissBall which halts the car. Then 2 s immune to further rounds. | — |
+  | DronePlane | Down in ONE hit, straight into its normal ragdoll. | 50 → **gunner** |
+  | DroneCar / Challenger | `droneHitsToDown` (3) rounds, **no window between them**, then the same downed state a player ram causes. | its own `creditReward` (100/200) at the kill floor → **last toucher** |
+  | LavaBoulder | Destroyed outright. | 25 → **gunner** |
+
+  - **Rounds no longer ignore the owner's car.** They did, because the ship flies behind its racer and
+    every shot would otherwise hit them; the user's call is that watching for that is the pilot's job.
+    Only the firing SHIP is still excluded, or a round would die inside its own muzzle.
+  - **The player i-frame window is SEPARATE from DroneProjectile's**, kept as its own static on
+    `SupportShipLaser`. Being lasered must not grant immunity to drone fire or vice versa. Same
+    domain-reload reset (`RuntimeInitializeOnLoadMethod`) the drone one needed, for the same reason.
+  - **Credit attribution reuses the drones' existing "last toucher wins" fields** (`lastHitByRemote` /
+    `lastHitClientId`) rather than adding a parallel system — which is what makes the user's rule fall
+    out for free: a driver who shoulder-checks a softened drone overwrites the gunner in
+    `RegisterPlayerContact` and takes the credits, and vice versa. Nothing new was needed at the kill
+    floor.
+  - **⚠️ `ChallengerCar.cs` is an EMPTY STUB — a Challenger is a `DroneCar` prefab** with
+    `creditReward` 200 instead of 100 (confirmed: the prefab references the DroneCar script). So the
+    DroneCar path covers both, and anything targeting "drone cars" must NOT look for a ChallengerCar
+    component.
+  - **⚠️ Unity does not define which object's `OnCollisionEnter` runs first, and that decided who got
+    paid.** `DronePlane.OnCollisionEnter` unconditionally called `Crash()`, which awards the racer the
+    plane was HUNTING. If it won the coin flip against the laser's own handler, the gunner lost the
+    kill they had just made. Fixed by having the PLANE recognise a laser (`GetComponentInParent<
+    SupportShipLaser>()`) and route to `DownedByPilot` itself; both orderings now reach the same place
+    and the loser no-ops on the ragdoll state check. Worth remembering for any future projectile that
+    hits something which also reacts to being hit.
+  - A hit on a REMOTE player's car cannot be applied to their kinematic puppet (it would be erased by
+    their next state update), so `GNRC_SHIP_LHIT` routes it to the machine that owns that car, which
+    also judges its own invulnerability window — the same shape as `GNRC_NPC_HIT` and
+    `GNRC_GRAPPLE_PULL`.
 - **⚠️ "A teammate's ship stays rigid when I fly it" — TWO bugs in one symptom, 2026-08-16.** Flying your
   OWN ship worked perfectly while flying someone else's did nothing, which is the tell: the local path
   and the replicated path had diverged. `SyncRemoteShips` (now `SyncShips`) was:
@@ -1632,9 +1652,9 @@ bugs to someone reading the code cold:
     moves the ship. Both bumpers were already free while piloting because `MenuState.AnyOpen` gates
     the grapple (RB) and the voice-channel flip (LB). `PilotLook` is a **Vector3** (x yaw, y pitch,
     z roll) and `GNRC_SHIP_AIM` carries `{Vector3 offset, Vector3 look}`.
-- **The pilot camera gets the TRACK's sky and NO post-processing (2026-08-16).** Both come from the same
-  root problem: the pilot is standing in the HUB but looking at the TRACK, and Unity's environment
-  settings are per-ACTIVE-scene, not per-camera.
+- **The pilot camera gets the TRACK's sky, lighting and post-processing (2026-08-16).** All three come
+  from the same root problem: the pilot is standing in the HUB but looking at the TRACK, and Unity's
+  environment settings are per-ACTIVE-scene, not per-camera.
   - **Skybox.** The two scenes genuinely differ — `HubWorld` is assigned Unity's built-in Default-Skybox
     and `TrackScene` the procedural `SimpleSkybox` — so a hub-bound pilot was flying over the track
     under a plain grey sky while the racers saw the real one. Fixed with a per-camera **`Skybox`
@@ -1648,9 +1668,12 @@ bugs to someone reading the code cold:
     `Recolor` and exposed (with `CurrentSky` / `BuildRoundSky`) so the pad can build the track's sky
     itself — and because the hues derive from the shared round seed, it lands on exactly the colours
     everyone else got.
-  - **Post-processing is off** (`UniversalAdditionalCameraData.renderPostProcessing = false`). Volumes
-    are POSITIONAL, so a hub volume the pilot's parked car happens to sit inside would grade their view
-    of the track, and drifting in and out of one would change the grade for no visible reason.
+  - **Post-processing is ON** (`UniversalAdditionalCameraData.renderPostProcessing`, exposed as
+    `enablePostProcessing`). This is the right default and not merely a preference: URP blends volumes
+    at the **camera's** position, not the player's car — and this camera sits ~100 km away in the track
+    area, so it picks up the TRACK's volumes and the pilot gets the same grade a racer's camera would
+    get standing there. (An earlier note here claimed hub volumes would leak in because the pilot's car
+    is parked in the hub; that was wrong — the car's position is irrelevant to volume blending.)
   - **The directional light needed nothing.** Lights are global once their scene is loaded, and both
     scenes are additively loaded for everyone, so the track's light (including whatever
     `RoundDirectionalLightToggle` has done to it that round) already lit the pilot's view correctly.

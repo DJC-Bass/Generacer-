@@ -33,6 +33,7 @@ public class SupportShipReplicator : MonoBehaviour
     const string MsgPilot = "GNRC_SHIP_PILOT";  // client → server (request) / server → all (verdict)
     const string MsgDown = "GNRC_SHIP_DOWN";    // any    → server (report)  / server → all (verdict)
     const string MsgFire = "GNRC_SHIP_FIRE";    // pilot  → server: fire owner X's guns, once
+    const string MsgLaserHit = "GNRC_SHIP_LHIT"; // server → victim: a Support Ship round popped YOUR car
 
     // The aim stream is the only fast one, and only while somebody is actually flying.
     const float AimRate = 20f;
@@ -109,6 +110,7 @@ public class SupportShipReplicator : MonoBehaviour
             msg.UnregisterNamedMessageHandler(MsgPilot);
             msg.UnregisterNamedMessageHandler(MsgDown);
             msg.UnregisterNamedMessageHandler(MsgFire);
+            msg.UnregisterNamedMessageHandler(MsgLaserHit);
         }
         foreach (var kv in ships)
             if (kv.Value.ship != null) Destroy(kv.Value.ship.gameObject);
@@ -349,8 +351,8 @@ public class SupportShipReplicator : MonoBehaviour
     {
         // No session (single-player, or the pad used solo for testing): there IS no host, so the only
         // copy of the world is this one. Fire it here.
-        if (Msg == null) { FireOnAuthority(ownerId); return; }
-        if (IsServer) { FireOnAuthority(ownerId); return; }
+        if (Msg == null) { FireOnAuthority(ownerId, LocalClientId); return; }
+        if (IsServer) { FireOnAuthority(ownerId, LocalClientId); return; }
 
         using var writer = new FastBufferWriter(16, Allocator.Temp);
         writer.WriteValueSafe(ownerId);
@@ -360,10 +362,66 @@ public class SupportShipReplicator : MonoBehaviour
     /// <summary>Spawns the round off this machine's copy of that player's ship. `FireLaser` calls
     /// `NpcReplicator.Track`, which is a host-only no-op elsewhere, so the same call does the right
     /// thing whether this is a real host or a solo session.</summary>
-    static void FireOnAuthority(ulong ownerId)
+    static void FireOnAuthority(ulong ownerId, ulong pilotClientId)
     {
         var ship = GetShip(ownerId);
-        if (ship != null) ship.FireLaser();
+        if (ship != null) ship.FireLaser(pilotClientId, pilotClientId == LocalClientId);
+    }
+
+    /// <summary>Pays a Support Ship gunner for something their round destroyed. Called from the HOST
+    /// (the only machine lasers exist on), so the remote branch is always available.</summary>
+    public static void AwardPilot(ulong pilotClientId, bool pilotIsLocal, int credits)
+    {
+        if (credits <= 0) return;
+
+        if (!pilotIsLocal)
+        {
+            NpcReplicator.SendBounty(pilotClientId, credits);
+            Debug.Log($"[SupportShip] Gunner (client {pilotClientId}) paid {credits} for a laser kill.");
+            return;
+        }
+
+        if (PlayerInventory.Instance == null) return;
+        PlayerInventory.Instance.AddCredits(credits);
+        AudioManager.PlayKnockoffBounty();
+        Debug.Log($"[SupportShip] Local gunner awarded {credits} for a laser kill.");
+    }
+
+    /// <summary>HOST → the machine that owns a car a laser round just hit. Movement is
+    /// owner-authoritative, so the pop-up has to be applied over there on the real car rather than to
+    /// the kinematic puppet the host was actually shooting at — the same routing
+    /// <see cref="GrappleReplicator.SendPullToOwner"/> and <c>GNRC_NPC_HIT</c> use. The victim also
+    /// judges their OWN invulnerability window, which is where that state lives.</summary>
+    public static void SendLaserHitToOwner(ulong targetClientId)
+    {
+        var msg = Msg;
+        if (msg == null || !IsServer) return;
+        if (targetClientId == LocalClientId) return;   // our own car is popped directly, not messaged
+
+        using var writer = new FastBufferWriter(16, Allocator.Temp);
+        writer.WriteValueSafe(targetClientId);
+        msg.SendNamedMessage(MsgLaserHit, targetClientId, writer, NetworkDelivery.ReliableSequenced);
+    }
+
+    /// <summary>A Support Ship round hit OUR car — apply it to the real thing on this machine, gated by
+    /// our own laser window (which is deliberately separate from the DronePissBall one).</summary>
+    static void ApplyLaserHitLocally()
+    {
+        if (SupportShipLaser.PlayerInvulnerable) return;
+
+        var car = PlayerRegistry.LocalCar;
+        if (car == null) return;
+
+        // Read the tuned values off the prefab where possible so the felt effect is identical wherever
+        // the round happened to be simulated.
+        var ship = SupportShipAbility.Instance != null ? SupportShipAbility.Instance.Ship : null;
+        var template = ship != null && ship.laserPrefab != null
+            ? ship.laserPrefab.GetComponent<SupportShipLaser>() : null;
+        float force = template != null ? template.popUpForce : 40f;
+        float seconds = template != null ? template.hitInvulnerabilitySeconds : 2f;
+
+        SupportShipLaser.ApplyPopUp(car, force);
+        SupportShipLaser.BeginInvulnerability(seconds);
     }
 
     // -------------------------------------------------------
@@ -496,7 +554,13 @@ public class SupportShipReplicator : MonoBehaviour
             // Only whoever actually holds the controls may fire this ship. Cheap, and it means a
             // malformed or stale request can't have someone else's guns going off.
             if (PilotOf(ownerId) != sender) return;
-            FireOnAuthority(ownerId);
+            FireOnAuthority(ownerId, sender);
+        });
+
+        msg.RegisterNamedMessageHandler(MsgLaserHit, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out ulong targetClientId);
+            if (targetClientId == LocalClientId) ApplyLaserHitLocally();
         });
     }
 

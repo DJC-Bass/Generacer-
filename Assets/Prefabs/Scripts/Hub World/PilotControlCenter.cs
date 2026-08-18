@@ -63,6 +63,10 @@ public class PilotControlCenter : MonoBehaviour
              "is Unity's default — but they are LOOKING at the track, so the camera is given the " +
              "track's sky per-camera. Leave blank and the pilot sees the hub's sky over the track.")]
     public Material trackSkybox;
+    [Tooltip("Render post-processing on the pilot's view. ON matches what a racer sees: URP blends " +
+             "volumes at the CAMERA's position, and this camera is out in the track area, so it picks " +
+             "up the track's volumes rather than the hub's. Turn off only if a hub effect leaks in.")]
+    public bool enablePostProcessing = true;
     [Tooltip("Far clip — generous, since the ship looks out over a whole generated track.")]
     public float farClip = 20000f;
     [Tooltip("Positional lag between the ship and the point the camera frames, in seconds. The camera " +
@@ -461,14 +465,14 @@ public class PilotControlCenter : MonoBehaviour
         pilotCam.farClipPlane = farClip;
         pilotCam.enabled = false;
 
-        // POST-PROCESSING OFF. The pilot is standing in the HUB, so any hub post-process volume they
-        // happen to be inside would grade a view of the TRACK — and volumes are positional, so the
-        // grading would change as their parked car sits in or out of one. Off is both correct and
-        // predictable.
+        // POST-PROCESSING. On by default, and correctly so: URP blends volumes at the CAMERA's
+        // position, not the player's car. This camera sits ~100 km away in the track area, so it picks
+        // up the TRACK's volumes — the pilot gets the same grade a racer's camera would get standing
+        // there, which is the whole point of the view. Global volumes apply either way.
         var urp = pilotCam.GetUniversalAdditionalCameraData();
         if (urp != null)
         {
-            urp.renderPostProcessing = false;
+            urp.renderPostProcessing = enablePostProcessing;
             urp.renderShadows = true;    // the track's directional light should still cast
         }
 

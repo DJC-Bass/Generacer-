@@ -522,6 +522,28 @@ public class DroneCar : MonoBehaviour
                   $"awarded {creditReward} credits");
     }
 
+    // Support Ship laser damage. Unlike a player ramming it, one bolt isn't enough — it takes
+    // `hitsToDown` of them, with NO invulnerability between (deliberately: a gunner walking rounds onto
+    // a drone should be rewarded for accuracy, not throttled).
+    private int laserHits;
+
+    /// <summary>A Support Ship laser round landed. Once enough have, the drone enters exactly the same
+    /// downed state a player ram produces — soft correction, downforce, off the track — and the PILOT is
+    /// recorded as the last one to hit it, so the kill-floor bounty follows them.
+    ///
+    /// Attribution reuses the existing "last toucher wins" fields rather than adding a parallel system,
+    /// which is what makes the user's rule fall out for free: a player who shoulder-checks the drone
+    /// AFTER the gunner softened it simply overwrites these in RegisterPlayerContact and takes the
+    /// credits, and vice versa.</summary>
+    public void TakeLaserHit(ulong pilotClientId, bool pilotIsLocal, int hitsToDown)
+    {
+        if (++laserHits < Mathf.Max(1, hitsToDown)) return;
+
+        playerHit = true;
+        lastHitByRemote = !pilotIsLocal;
+        lastHitClientId = pilotClientId;
+    }
+
     void OnCollisionEnter(Collision collision) => RegisterPlayerContact(collision.collider);
     void OnCollisionStay(Collision collision) => RegisterPlayerContact(collision.collider);
 
