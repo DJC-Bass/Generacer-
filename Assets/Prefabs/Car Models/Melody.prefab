@@ -1503,38 +1503,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 8785508124420503923}
     m_Modifications:
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: laserSpeed
-      value: 500
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: laserPrefab
-      value: 
-      objectReference: {fileID: 2995498548506242398, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxYawAngle
-      value: 40
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxRollAngle
-      value: -80
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: lookSmoothTime
-      value: 0.25
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: muzzleOffset.y
-      value: -0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: muzzleOffset.z
-      value: -20
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxHorizontalOffset
-      value: 15
-      objectReference: {fileID: 0}
     - target: {fileID: 4822882886091285920, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -1582,10 +1550,6 @@ PrefabInstance:
     - target: {fileID: 5306791506608684826, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: m_IsActive
       value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 8830010466043539734, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: m_AngularDamping
-      value: 0.25
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

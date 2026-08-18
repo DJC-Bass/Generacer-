@@ -56,6 +56,13 @@ public class MultiplayerLobbyUI : MonoBehaviour
 
     // Room screen
     private TextMeshProUGUI roomTitle, roomCode, teamOneList, teamTwoList;
+    private RectTransform roomCodePlate;   // grey backing behind the join code, hugged to the text
+
+    // Join-code line geometry, shared between building the plate and re-fitting it to the text.
+    const float CodeY = 66f;        // distance below the panel top
+    const float CodeHeight = 44f;
+    const float CodePadX = 16f;     // matches the team columns, so the plates read as a set
+    const float CodePadY = 8f;
     private Button switchTeamButton, readyButton, startButton, leaveButton;
     private OptionSelector carCycler;
     private string[] carNames;
@@ -526,12 +533,22 @@ public class MultiplayerLobbyUI : MonoBehaviour
 
         roomTitle = AddHeader(panel.transform, "LOBBY");
 
+        // Backing plate FIRST, for the same reason MakeTeamColumn builds its own first: uGUI draws
+        // siblings in hierarchy order, so a plate added after the text would paint over it.
+        var codePlateGO = new GameObject("JoinCodePlate", typeof(RectTransform), typeof(Image));
+        codePlateGO.transform.SetParent(panel.transform, false);
+        codePlateGO.GetComponent<Image>().color = owner.buttonNormalColor;
+        roomCodePlate = (RectTransform)codePlateGO.transform;
+        roomCodePlate.anchorMin = roomCodePlate.anchorMax = roomCodePlate.pivot = new Vector2(0f, 1f);
+        roomCodePlate.anchoredPosition = new Vector2(-CodePadX, -(CodeY - CodePadY));
+        roomCodePlate.sizeDelta = new Vector2(360f, CodeHeight + CodePadY * 2f);   // FitRoomCodePlate resizes it
+
         roomCode = SettingsUI.NewText(panel.transform, "JoinCode", 34f, TextAlignmentOptions.TopLeft);
         roomCode.color = owner.buttonHighlightedColor;
         var crt = roomCode.rectTransform;
         crt.anchorMin = crt.anchorMax = crt.pivot = new Vector2(0f, 1f);
-        crt.sizeDelta = new Vector2(700f, 44f);
-        crt.anchoredPosition = new Vector2(0f, -66f);
+        crt.sizeDelta = new Vector2(700f, CodeHeight);
+        crt.anchoredPosition = new Vector2(0f, -CodeY);
 
         // Left: the local player's controls.
         var column = NewButtonColumn(panel.transform, new Vector2(0f, -130f));
@@ -560,23 +577,48 @@ public class MultiplayerLobbyUI : MonoBehaviour
         return panel;
     }
 
+    /// <summary>One team's roster: a header plus the list of players on it, sat on a backing plate.
+    ///
+    /// The plate is not decoration. The lobby renders over the live menu background — spinning track
+    /// ribbons on a bright sky — and white text on that was genuinely unreadable in places. It uses the
+    /// buttons' own unselected colour, so the rosters read as part of the same panel family rather than
+    /// as a new element, and it darkens whatever happens to be behind them.
+    ///
+    /// It is created BEFORE the two texts on purpose: uGUI draws siblings in hierarchy order, so the
+    /// plate must be the FIRST child added or it paints over the very text it exists to support.</summary>
     TextMeshProUGUI MakeTeamColumn(Transform parent, string header, float x)
     {
+        const float width = 480f;      // text width, matched by both header and list
+        const float headerY = 110f;    // distance below the panel top
+        const float listY = 166f;
+        const float listHeight = 420f;
+        const float padX = 16f;        // breathing room so glyphs never touch the plate edge
+        const float padTop = 10f;
+        const float padBottom = 14f;
+
+        var plateGO = new GameObject(header + "Plate", typeof(RectTransform), typeof(Image));
+        plateGO.transform.SetParent(parent, false);
+        plateGO.GetComponent<Image>().color = owner.buttonNormalColor;
+        var prt = (RectTransform)plateGO.transform;
+        prt.anchorMin = prt.anchorMax = prt.pivot = new Vector2(0f, 1f);
+        prt.sizeDelta = new Vector2(width + padX * 2f, (listY - headerY) + listHeight + padTop + padBottom);
+        prt.anchoredPosition = new Vector2(x - padX, -(headerY - padTop));
+
         var head = SettingsUI.NewText(parent, header + "Header", 36f, TextAlignmentOptions.TopLeft);
         head.text = header;
         head.fontStyle |= FontStyles.Bold;
         head.color = owner.buttonTextColor;
         var hrt = head.rectTransform;
         hrt.anchorMin = hrt.anchorMax = hrt.pivot = new Vector2(0f, 1f);
-        hrt.sizeDelta = new Vector2(480f, 46f);
-        hrt.anchoredPosition = new Vector2(x, -110f);
+        hrt.sizeDelta = new Vector2(width, 46f);
+        hrt.anchoredPosition = new Vector2(x, -headerY);
 
         var list = SettingsUI.NewText(parent, header + "List", 27f, TextAlignmentOptions.TopLeft);
         list.color = owner.buttonTextColor;
         var lrt = list.rectTransform;
         lrt.anchorMin = lrt.anchorMax = lrt.pivot = new Vector2(0f, 1f);
-        lrt.sizeDelta = new Vector2(480f, 420f);
-        lrt.anchoredPosition = new Vector2(x, -166f);
+        lrt.sizeDelta = new Vector2(width, listHeight);
+        lrt.anchoredPosition = new Vector2(x, -listY);
         return list;
     }
 
@@ -644,6 +686,7 @@ public class MultiplayerLobbyUI : MonoBehaviour
 
         roomTitle.text = string.IsNullOrEmpty(session.Name) ? "LOBBY" : session.Name;
         roomCode.text = "JOIN CODE: " + (string.IsNullOrEmpty(session.Code) ? "—" : session.Code);
+        FitRoomCodePlate();   // the code arrives after the panel is built, so re-hug the plate to it
 
         var one = new System.Text.StringBuilder();
         var two = new System.Text.StringBuilder();
@@ -719,6 +762,29 @@ public class MultiplayerLobbyUI : MonoBehaviour
         rt.anchoredPosition = new Vector2(96f, -250f);
         go.SetActive(false);
         return go;
+    }
+
+
+    /// <summary>Shrinks the join-code plate to the width of the text actually in it.
+    ///
+    /// The text's RECT is 700 wide — plenty of room for any code — but the string is only ever about
+    /// "JOIN CODE: ABCDEF". A plate matching the rect would be a long grey bar three-quarters empty, so
+    /// it is measured against the glyphs instead.
+    ///
+    /// ⚠️ ONLY safe on an ACTIVE object. SettingsUI.NewText never assigns a font asset — TMP resolves
+    /// one from TMP_Settings during its own Awake — and panels here are built INACTIVE, so a TMP that
+    /// has never been enabled still has a null font. ForceMeshUpdate on one of those throws inside
+    /// MaterialReference's constructor and takes the whole menu down with it. ForceMeshUpdate is needed
+    /// at all because preferredWidth is stale until TMP regenerates its mesh at end of frame, so
+    /// without it the plate sizes itself to the PREVIOUS code.</summary>
+    void FitRoomCodePlate()
+    {
+        if (roomCodePlate == null || roomCode == null) return;
+        if (!roomCode.gameObject.activeInHierarchy) return;   // see above — TMP isn't initialised yet
+
+        roomCode.ForceMeshUpdate();
+        float text = Mathf.Min(roomCode.preferredWidth, roomCode.rectTransform.sizeDelta.x);
+        roomCodePlate.sizeDelta = new Vector2(text + CodePadX * 2f, CodeHeight + CodePadY * 2f);
     }
 
     TextMeshProUGUI AddHeader(Transform parent, string title)
