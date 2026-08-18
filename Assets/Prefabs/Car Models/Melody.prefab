@@ -1516,14 +1516,6 @@ PrefabInstance:
       value: 40
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxBankAngle
-      value: 50
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxNoseAngle
-      value: 25
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: maxRollAngle
       value: -80
       objectReference: {fileID: 0}
@@ -1540,36 +1532,8 @@ PrefabInstance:
       value: -20
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: tiltSmoothTime
-      value: 0.1
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: offsetMoveSpeed
-      value: 10
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxForwardOffset
-      value: 20
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: maxVerticalOffset
-      value: 10
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: tiltFullRateSpeed
-      value: 20
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: invertPilotVertical
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: maxHorizontalOffset
       value: 15
-      objectReference: {fileID: 0}
-    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
-      propertyPath: crashIgnoreMask.m_Bits
-      value: 294912
       objectReference: {fileID: 0}
     - target: {fileID: 4822882886091285920, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1624,8 +1588,7 @@ PrefabInstance:
       value: 0.25
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects:
-    - {fileID: 8785401187348265725, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
+    m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}

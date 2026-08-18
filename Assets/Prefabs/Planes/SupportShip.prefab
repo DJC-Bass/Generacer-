@@ -34,7 +34,6 @@ Transform:
   m_Children:
   - {fileID: 8547819983847374533}
   - {fileID: 1828002513596602490}
-  - {fileID: 8261804561023393863}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &8830010466043539734
@@ -47,7 +46,7 @@ Rigidbody:
   serializedVersion: 5
   m_Mass: 1
   m_LinearDamping: 0
-  m_AngularDamping: 0.05
+  m_AngularDamping: 0.25
   m_CenterOfMass: {x: 0, y: 0, z: 0}
   m_InertiaTensor: {x: 1, y: 1, z: 1}
   m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
@@ -80,18 +79,19 @@ MonoBehaviour:
   positionSmoothTime: 0.5
   pitchSmoothTime: 0.25
   rollSmoothTime: 0.25
-  maxHorizontalOffset: 10
+  maxHorizontalOffset: 15
   maxVerticalOffset: 10
+  maxForwardOffset: 20
   offsetMoveSpeed: 10
   stickDeadzone: 0.15
   invertPilotVertical: 1
-  maxBankAngle: 40
-  maxNoseAngle: 40
-  tiltFullRateSpeed: 20
-  tiltSmoothTime: 0.18
-  laserPrefab: {fileID: 0}
-  muzzleOffset: {x: 0, y: 0, z: 3}
-  laserSpeed: 700
+  maxYawAngle: 40
+  maxPitchAngle: 35
+  maxRollAngle: -80
+  lookSmoothTime: 0.25
+  laserPrefab: {fileID: 2995498548506242398, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
+  muzzleOffset: {x: 0, y: -0.5, z: -20}
+  laserSpeed: 500
   laserLayerName: Projectile
   ragdollDuration: 2
   ragdollTumbleTorque: 12
@@ -304,69 +304,3 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!1001 &5800114989035001763
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 4822882886091285920}
-    m_Modifications:
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 5
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: -9
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2995498548506242398, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-      propertyPath: m_Name
-      value: SupportShipLasers
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
---- !u!4 &8261804561023393863 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 2511309449429907428, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-  m_PrefabInstance: {fileID: 5800114989035001763}
-  m_PrefabAsset: {fileID: 0}
