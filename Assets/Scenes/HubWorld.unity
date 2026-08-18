@@ -383,9 +383,9 @@ MonoBehaviour:
   playerTag: Player
   padExitGrace: 0.5
   burstRounds: 3
-  burstInterval: 0.6
-  teamOnly: 0
-  cameraOffset: {x: 0, y: 3, z: -12}
+  burstInterval: 0.06
+  teamOnly: 1
+  cameraOffset: {x: 0, y: 2.5, z: -7}
   lookAheadDistance: 8
   fieldOfView: 75
   nearClip: 0.3
@@ -1169,7 +1169,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].price
-      value: 100
+      value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].itemName
@@ -5601,7 +5601,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].price
-      value: 100
+      value: 200
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].itemName
@@ -6400,9 +6400,9 @@ MonoBehaviour:
   playerTag: Player
   padExitGrace: 0.5
   burstRounds: 3
-  burstInterval: 0.6
-  teamOnly: 0
-  cameraOffset: {x: 0, y: 3, z: -12}
+  burstInterval: 0.06
+  teamOnly: 1
+  cameraOffset: {x: 0, y: 2.5, z: -7}
   lookAheadDistance: 8
   fieldOfView: 75
   nearClip: 0.3

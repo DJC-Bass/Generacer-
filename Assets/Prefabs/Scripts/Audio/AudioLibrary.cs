@@ -167,10 +167,17 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("One-shot (3D) at the muzzle each time the pilot fires the twin lasers. Holding A fires a " +
              "3-round burst, so this plays up to three times in quick succession — keep it short and dry.")]
     public AudioClip supportShipLaserFire;
-    [Tooltip("One-shot when a laser round hits something. Plays AT THE IMPACT, which can be a long way " +
-             "from the ship, and is tuned by the round's own Audio 3D block on the laser prefab rather " +
+    [Tooltip("One-shot when a laser round hits something it does NOTHING to — the track, a wall, " +
+             "scenery. The dull 'that was a miss' tick. Plays AT THE IMPACT, which can be a long way " +
+             "from the ship, and is tuned by the laser prefab's own Environment Audio 3D block rather " +
              "than by supportShipAudio3D.")]
-    public AudioClip supportShipLaserHit;
+    public AudioClip supportShipLaserHitEnvironment;
+    [Tooltip("One-shot when a laser round actually DOES something — pops a player car, damages a drone, " +
+             "bursts a boulder. This is the gunner's feedback that a shot counted, so it wants to read " +
+             "clearly different from the environment tick. Tuned by the laser prefab's Entity Audio 3D " +
+             "block. NOTE: a round absorbed by a car's invulnerability window plays the ENVIRONMENT " +
+             "sound instead, because nothing happened — same convention DroneProjectile uses.")]
+    public AudioClip supportShipLaserHitEntity;
     [Tooltip("3D playback tuning shared by ALL FOUR Support Ship sounds above — spatial blend, volume, " +
              "min/max distance, rolloff, doppler. THIS is the block to edit when tuning how far away " +
              "the ship can be heard. Note the ship flies up to its offset limits away from its racer, " +

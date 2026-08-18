@@ -1085,17 +1085,18 @@ Three sessions have layered up here, so read the labels rather than assuming "th
 ### AudioLibrary slots STILL EMPTY (`{fileID: 0}`) — assign clips (OGG/WAV)
 As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carLanding`,
 `lightningWarning`, `sdActiveLoop`, `portalSpawn`, `portalDespawn`, `victoryBanner`.
-**PLUS the 14 slots added this session, all unassigned** — Shield: `shieldCraftLoop`, `shieldCrafted`,
+**PLUS the 17 slots added this session, all unassigned** — Shield: `shieldCraftLoop`, `shieldCrafted`,
 `shieldActivate`, `shieldActiveLoop`, `shieldDeactivate` (+ the `shieldAudio3D` tuning block); Grappling
 hook: `grappleCraftLoop`, `grappleCrafted`, `grappleFire`, `grappleAttach`, `grappleRelease` (+ the
 `grappleAudio3D` block); Support Ship: `supportShipActivate`, `supportShipLoop`, `supportShipDeactivate`,
-`supportShipDestroyed`, `supportShipLaserFire`, `supportShipLaserHit` (+ the `supportShipAudio3D`
-block — note the laser IMPACT is tuned by the round's own block on the laser prefab instead, since it
-can land hundreds of metres downrange). **Each 3D block is the single tuning point for
-its feature's sounds.** Two range gotchas: `grappleAttach` plays AT THE HIT POINT up to the hook's full
-range away, so give `grappleAudio3D` a generous max distance or long successful shots land silently; and
-`supportShipLoop` rides the SHIP, which the pilot can slide to the edge of its offset box, so a tight max
-distance will make an escort fade out exactly when it's being flown.
+`supportShipDestroyed`, `supportShipLaserFire`, `supportShipLaserHitEnvironment`,
+`supportShipLaserHitEntity` (+ the `supportShipAudio3D` block). **Each 3D block is the single tuning
+point for its feature's sounds** — except the two laser IMPACTS, which carry their own
+`environmentAudio3D` / `entityAudio3D` blocks on the LASER PREFAB, since they land downrange rather than
+at the ship and a miss should not carry as far as a kill. Two range gotchas: `grappleAttach` plays AT
+THE HIT POINT up to the hook's full range away, so give `grappleAudio3D` a generous max distance or long
+successful shots land silently; and `supportShipLoop` rides the SHIP, which the pilot can slide to the
+edge of its offset box, so a tight max distance will make an escort fade out exactly when it's flown.
 (The user has been assigning clips live; several slots intentionally reuse a **placeholder** clip and may
 want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`==`projectileHitPlayer`;
 `loopBoost`/`boostGateBoost` reuse `turboBoost`; `menuOpen` reuses `menuSelect`; `windowsEnter`==
@@ -1234,7 +1235,9 @@ Each of these makes a finished feature silently do nothing until it's wired:
 - **Vivox must be enabled in the Unity Cloud Dashboard** or voice throws at login and degrades to silence.
 - **Skybox material** must be named with the **`SimpleSkybox` prefix** to receive the per-scene hue
   randomisation; add `Skybox/ProceduralSkyClouds` to Always Included Shaders if it renders in-editor only.
-- **14 unassigned AudioLibrary slots** (shield ×5, grapple ×5, support ship ×4) — see the empty-slots section.
+- **17 unassigned AudioLibrary slots** (shield ×5, grapple ×5, support ship ×7 — including the two
+  SEPARATE laser impacts: one for hitting scenery, one for actually hitting something) — see the
+  empty-slots section.
 
 **Support Ship (2026-08-16) — all of this is required before it does anything:**
 - **A `SupportShip` layer** must be added in Tags and Layers. As of writing, `TagManager.asset` has
@@ -1547,6 +1550,15 @@ bugs to someone reading the code cold:
   | DronePlane | Down in ONE hit, straight into its normal ragdoll. | 50 → **gunner** |
   | DroneCar / Challenger | `droneHitsToDown` (3) rounds, **no window between them**, then the same downed state a player ram causes. | its own `creditReward` (100/200) at the kill floor → **last toucher** |
   | LavaBoulder | Destroyed outright. | 25 → **gunner** |
+
+  **Impact audio is SPLIT by outcome.** `supportShipLaserHitEnvironment` for a round that changed
+  nothing — scenery, walls, and a shot absorbed by a car's i-frame window, since nothing happened and it
+  must not sound like it did (the same convention DroneProjectile uses). `supportShipLaserHitEntity` for
+  one that landed. Each carries its OWN 3D block on the laser prefab (`environmentAudio3D` /
+  `entityAudio3D`) so a miss can carry less far than a kill. This is the gunner's only hit feedback —
+  they are flying from the hub with no hit markers — so the distinction earns more here than it would on
+  an ordinary weapon. Known imprecision: a hit routed to a REMOTE car is assumed to land, because their
+  window lives on their machine and asking would cost a round trip.
 
   - **Rounds no longer ignore the owner's car.** They did, because the ship flies behind its racer and
     every shot would otherwise hit them; the user's call is that watching for that is the pilot's job.

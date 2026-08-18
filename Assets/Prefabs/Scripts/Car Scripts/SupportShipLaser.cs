@@ -54,10 +54,16 @@ public class SupportShipLaser : MonoBehaviour
     [Tooltip("Credits paid to the GUNNER for destroying a LavaBoulder outright.")]
     public int boulderBounty = 25;
 
-    [Header("Audio (3D)")]
-    [Tooltip("3D playback settings for the impact sound. The FIRING sound is played by the ship and " +
-             "tuned from AudioLibrary.supportShipAudio3D with the rest of the ship's audio.")]
-    public Spatial3DSettings audio3D = new Spatial3DSettings();
+    [Header("Audio (3D, at the impact)")]
+    [Tooltip("3D tuning for the round hitting something it does NOTHING to — the track, a wall. A miss " +
+             "wants a tighter max distance than a kill: the gunner should hear their own strays, but " +
+             "the whole lobby shouldn't.")]
+    public Spatial3DSettings environmentAudio3D = new Spatial3DSettings();
+    [Tooltip("3D tuning for the round actually DOING something — popping a car, damaging a drone, " +
+             "bursting a boulder. Give this the more generous range of the two; it is the sound that " +
+             "tells everyone nearby a shot counted. (The FIRING sound is separate again, tuned from " +
+             "AudioLibrary.supportShipAudio3D with the rest of the ship's audio.)")]
+    public Spatial3DSettings entityAudio3D = new Spatial3DSettings();
 
     /// <summary>Who is flying the ship that fired this — every bounty this round earns goes to them.
     /// Stamped at spawn by <see cref="SupportShip.FireLaser"/>.</summary>
@@ -147,16 +153,25 @@ public class SupportShipLaser : MonoBehaviour
 
         var hit = collision.collider;
 
-        if (TryHitDronePlane(hit)) { Finish(); return; }
-        if (TryHitDroneCar(hit)) { Finish(); return; }
-        if (TryHitBoulder(hit)) { Finish(); return; }
-        TryHitPlayer(hit);
-        Finish();
+        if (TryHitDronePlane(hit)) { Finish(true); return; }
+        if (TryHitDroneCar(hit)) { Finish(true); return; }
+        if (TryHitBoulder(hit)) { Finish(true); return; }
+        Finish(TryHitPlayer(hit));
     }
 
-    void Finish()
+    /// <summary>Impact sound, then despawn. <paramref name="effective"/> picks WHICH sound: a round that
+    /// changed something gets the solid hit, everything else gets the dull environment tick. That
+    /// distinction is the gunner's only feedback on whether a shot counted — they're flying from the
+    /// hub with no hit markers — so it is worth getting right rather than playing one sound for both.
+    ///
+    /// A round ABSORBED by a car's invulnerability window counts as environment: nothing happened, and
+    /// it should not sound like it did. Same convention DroneProjectile uses for its own absorbed hits.
+    /// (One known imprecision: a hit routed to a REMOTE player is assumed to land, because their window
+    /// lives on their machine and asking would cost a round trip. DroneProjectile has the same limit.)</summary>
+    void Finish(bool effective)
     {
-        AudioManager.PlaySupportShipLaserHit(transform.position, audio3D);
+        if (effective) AudioManager.PlaySupportShipLaserHitEntity(transform.position, entityAudio3D);
+        else AudioManager.PlaySupportShipLaserHitEnvironment(transform.position, environmentAudio3D);
         Destroy(gameObject);
     }
 
@@ -193,7 +208,10 @@ public class SupportShipLaser : MonoBehaviour
 
     /// <summary>Pops a player car — the gunner's own racer included, which is the point: the ship flies
     /// behind its car, so hitting your own teammate is entirely possible and entirely the pilot's
-    /// responsibility.</summary>
+    /// responsibility.
+    ///
+    /// Returns whether anything actually HAPPENED, not whether a player was struck: a round absorbed by
+    /// the invulnerability window returns false so it sounds like the nothing it was.</summary>
     bool TryHitPlayer(Collider hit)
     {
         Transform t = hit.transform;
@@ -202,20 +220,23 @@ public class SupportShipLaser : MonoBehaviour
             if (t.CompareTag(playerTag))
             {
                 // The local car's window is owned right here.
-                if (!PlayerInvulnerable)
-                {
-                    ApplyPopUp(t.gameObject, popUpForce);
-                    BeginInvulnerability(hitInvulnerabilitySeconds);
-                }
+                if (PlayerInvulnerable) return false;
+
+                ApplyPopUp(t.gameObject, popUpForce);
+                BeginInvulnerability(hitInvulnerabilitySeconds);
                 return true;
             }
             if (t.CompareTag("RemotePlayer"))
             {
                 // Their car lives on their machine and their window is theirs to judge — pushing a
-                // kinematic puppet here would be erased by its next state update anyway.
+                // kinematic puppet here would be erased by its next state update anyway. We report it
+                // as effective because we cannot know otherwise without a round trip.
                 if (MultiplayerWorld.TryGetCarOwner(t, out ulong clientId, out bool isLocal) && !isLocal)
+                {
                     SupportShipReplicator.SendLaserHitToOwner(clientId);
-                return true;
+                    return true;
+                }
+                return false;
             }
             t = t.parent;
         }
