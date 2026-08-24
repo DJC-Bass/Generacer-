@@ -14,7 +14,9 @@ using UnityEngine;
 ///    into the air at half a lightning strike's force, keeping its momentum (a DronePissBall halts the
 ///    car; this does not). Its own 2 s window then ignores further laser rounds. That window is kept
 ///    SEPARATE from the DronePissBall one, so being lasered never grants immunity to drone fire.
-///  • A DRONE PLANE goes down in one hit, and the bounty is redirected to the GUNNER.
+///  • A DRONE PLANE spends one point of its health pool (`DronePlane.maxHits`, 1 by default so the
+///    stock plane still dies in one) and the bounty is redirected to the GUNNER. The PLANE counts the
+///    round, not this script — see TryHitDronePlane.
 ///  • A DRONE CAR / CHALLENGER takes <see cref="droneHitsToDown"/> rounds with no window between them,
 ///    then enters the same downed state a player ram produces. The credits are settled at the kill
 ///    floor and go to whoever touched it LAST — gunner or driver.
@@ -49,7 +51,7 @@ public class SupportShipLaser : MonoBehaviour
 
     [Header("Damage")]
     [Tooltip("Rounds needed to down a DroneCar or Challenger. They get NO window between hits, so a " +
-             "steady burst can drop one; a DronePlane always goes down in one.")]
+             "steady burst can drop one. DronePlanes have their OWN pool — see DronePlane.maxHits.")]
     public int droneHitsToDown = 3;
     [Tooltip("Credits paid to the GUNNER for destroying a LavaBoulder outright.")]
     public int boulderBounty = 25;
@@ -175,14 +177,14 @@ public class SupportShipLaser : MonoBehaviour
         Destroy(gameObject);
     }
 
-    /// <summary>One round downs a plane outright, and the gunner is paid for it.</summary>
-    bool TryHitDronePlane(Collider hit)
-    {
-        var plane = hit.GetComponentInParent<DronePlane>();
-        if (plane == null) return false;
-        plane.DownedByPilot(pilotClientId, pilotIsLocal);
-        return true;
-    }
+    /// <summary>Reports a hit on a drone plane for the IMPACT SOUND only — it deliberately applies no
+    /// damage.
+    ///
+    /// ⚠️ The plane counts this round itself, in its own OnCollisionEnter. Both objects receive the
+    /// event for a single contact, so damaging it from here as well would spend TWO points of its
+    /// health pool per round. That was harmless while planes died in one hit and would have silently
+    /// halved every tougher plane's durability the moment one existed.</summary>
+    bool TryHitDronePlane(Collider hit) => hit.GetComponentInParent<DronePlane>() != null;
 
     /// <summary>Drone cars and Challengers (the same script, different reward) need several rounds.
     /// The drone records the gunner as its last attacker, so if nobody else touches it before it

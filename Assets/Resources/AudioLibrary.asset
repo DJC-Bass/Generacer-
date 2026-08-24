@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4a6b8c0d2e1f3a5b7c9d0e2f4a6b8c0d, type: 3}
   m_Name: AudioLibrary
   m_EditorClassIdentifier: 
-  mainMenuMusic: {fileID: 8300000, guid: 55c2eae55c38eb642b2989db4465c73f, type: 3}
+  mainMenuMusic: {fileID: 8300000, guid: ba4cd1bd7175e9847a290daf439f573b, type: 3}
   carSelectionMusic: {fileID: 8300000, guid: a3787bd3e37ab9640addcaeed2b4810b, type: 3}
   tutorialMusic: {fileID: 8300000, guid: 0b067a2bf76270e45917a06c903bf066, type: 3}
   hubMusic: {fileID: 8300000, guid: 8e66316843aadb9489d2d124162f5daf, type: 3}

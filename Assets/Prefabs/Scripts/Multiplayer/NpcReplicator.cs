@@ -34,6 +34,7 @@ public class NpcReplicator : MonoBehaviour
 {
     const string MsgSpawn = "GNRC_NPC_SPAWN";     // {id, kind, prefabKey, scale, pos, rot}
     const string MsgState = "GNRC_NPC_STATE";     // {id, seq, pos, rot, linVel, angVel}
+    const string MsgDamage = "GNRC_NPC_DMG";      // {id, hitsTaken, maxHits} — event, not streamed
     const string MsgDespawn = "GNRC_NPC_DESPAWN"; // {id}
     const string MsgStrike = "GNRC_STRIKE";       // {point, height} — lightning, event-replicated
     const string MsgHit = "GNRC_NPC_HIT";         // server → victim: projectile hit YOUR car
@@ -157,6 +158,49 @@ public class NpcReplicator : MonoBehaviour
         using var writer = new FastBufferWriter(sizeof(byte), Allocator.Temp);
         writer.WriteValueSafe((byte)1);
         msg.SendNamedMessage(MsgHit, clientId, writer, NetworkDelivery.ReliableSequenced);
+    }
+
+    /// <summary>Host: tell everyone a tracked NPC just took a hit, so their copy can flash and tint.
+    ///
+    /// Sent as an EVENT rather than folded into the 15/20 Hz state stream: damage is rare and the
+    /// stream is per-entity-per-tick, so a byte there would cost far more bandwidth than an occasional
+    /// message. Reliable, because a missed flash cannot be recovered — there is no level-triggered
+    /// state to heal it on the next tick the way the car-effect flags do.</summary>
+    public static void SendNpcDamage(GameObject go, int hitsTaken, int maxHits)
+    {
+        if (Instance == null || !IsServer || go == null) return;
+
+        ushort id = 0;
+        bool found = false;
+        foreach (var entity in Instance.hostEntities)
+            if (entity.go == go) { id = entity.id; found = true; break; }
+        if (!found) return;   // not replicated (single-player, or spawned before the session)
+
+        var msg = Msg;
+        if (msg == null) return;
+
+        using var writer = new FastBufferWriter(16, Allocator.Temp);
+        writer.WriteValueSafe(id);
+        writer.WriteValueSafe((byte)Mathf.Clamp(hitsTaken, 0, 255));
+        writer.WriteValueSafe((byte)Mathf.Clamp(maxHits, 1, 255));
+        SendToRemoteClients(MsgDamage, writer, NetworkDelivery.ReliableSequenced);
+    }
+
+    /// <summary>Client: flash and tint our puppet of that NPC. The component is ADDED here because the
+    /// puppet was stripped of every script on spawn — and its tuning is copied off the registered
+    /// prefab, so a client's damage colours match the host's instead of falling back to code defaults.</summary>
+    void ApplyNpcDamage(ushort id, int hitsTaken, int maxHits)
+    {
+        if (!clientPuppets.TryGetValue(id, out var puppet) || puppet.go == null) return;
+
+        var tint = puppet.go.GetComponent<DroneDamageTint>();
+        if (tint == null)
+        {
+            tint = puppet.go.AddComponent<DroneDamageTint>();
+            if (prefabs.TryGetValue(puppet.prefabKey, out var prefab) && prefab != null)
+                tint.CopyTuningFrom(prefab.GetComponentInChildren<DroneDamageTint>(true));
+        }
+        tint.RegisterHit(hitsTaken, maxHits);
     }
 
     /// <summary>Host: pay a knockoff bounty to the client whose car shoved the drone off.</summary>
@@ -324,6 +368,14 @@ public class NpcReplicator : MonoBehaviour
             reader.ReadValueSafe(out Vector3 angVel);
             HandleState(id, seq, pos, rot, linVel, angVel);
         });
+
+        msg.RegisterNamedMessageHandler(MsgDamage, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out ushort id);
+            reader.ReadValueSafe(out byte hitsTaken);
+            reader.ReadValueSafe(out byte maxHits);
+            ApplyNpcDamage(id, hitsTaken, maxHits);
+        });
         msg.RegisterNamedMessageHandler(MsgDespawn, (sender, reader) =>
         {
             reader.ReadValueSafe(out ushort id);
@@ -358,6 +410,7 @@ public class NpcReplicator : MonoBehaviour
         if (msg == null) return;
         msg.UnregisterNamedMessageHandler(MsgSpawn);
         msg.UnregisterNamedMessageHandler(MsgState);
+        msg.UnregisterNamedMessageHandler(MsgDamage);
         msg.UnregisterNamedMessageHandler(MsgDespawn);
         msg.UnregisterNamedMessageHandler(MsgStrike);
         msg.UnregisterNamedMessageHandler(MsgHit);

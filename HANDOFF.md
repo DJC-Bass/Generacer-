@@ -115,6 +115,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_RIVALS` | MultiplayerScoring | server → all | rival pairings |
 | `GNRC_RIVAL_BONUS` | MultiplayerScoring | server → one | beat-your-rival credits |
 | `GNRC_NPC_SPAWN` / `_STATE` / `_DESPAWN` | NpcReplicator | server → all | host-simulated AI + obstacles |
+| `GNRC_NPC_DMG` | NpcReplicator | server → all | an NPC took a hit — puppets flash + tint. EVENT, not streamed |
 | `GNRC_STRIKE` | NpcReplicator | server → all | lightning, event-replicated |
 | `GNRC_NPC_HIT` | NpcReplicator | server → victim | projectile hit YOUR car (victim applies it) |
 | `GNRC_BOUNTY` | NpcReplicator | server → one | knockoff credits |
@@ -1541,13 +1542,57 @@ bugs to someone reading the code cold:
     build puppets for the rounds. It is only ever referenced from a car prefab's `SupportShip`
     component, so nothing else would find it — registered in `SupportShipAbility.BuildShip` (local) and
     `ResolveRemoteShip` (remote, after `CopyTuningFrom` supplies the reference).
+- **DRONEPLANE HEALTH POOL (`maxHits`, 2026-08-16).** `DronePlane` no longer dies on contact — it spends
+  a point of a pool. **Default is 1**, so the stock plane behaves exactly as before and existing prefabs
+  are untouched (a new int field with an initializer comes up at its default on already-serialized
+  prefabs). Make a **prefab VARIANT with `maxHits = 10`** for a tough plane that has to be worn through.
+  - **Every solid contact costs a point** — scenery, a car, another plane, a laser round alike. A 10-hit
+    plane that clips the track has 9 left, exactly as the user specified.
+  - **⚠️ Environmental hits are throttled by `collisionHitCooldown` (0.25 s); LASER hits are not.** One
+    physical impact raises several contacts as the plane bounces and scrapes, so without the throttle a
+    single brush with the track burns a whole pool in a few frames. The throttle deliberately does NOT
+    apply to laser rounds: the burst interval is 0.12 s, so throttling them would silently swallow half
+    of every burst — and DroneCars already take every round with no window.
+  - **⚠️ The PLANE counts laser rounds, not `SupportShipLaser`.** Both objects receive
+    `OnCollisionEnter` for the same contact, so applying damage on both sides spends TWO points per
+    round. `TryHitDronePlane` was reduced to a pure "did I hit one?" test for the impact SOUND and
+    applies nothing. This was harmless while planes died in one hit — it is exactly the kind of bug that
+    only appears once someone adds durability, and then reads as "my 10-hit plane dies in 5".
+  - **Credit follows the DroneCar rule**: the last player-attributable hit wins. A gunner who wore the
+    plane down keeps the kill even if it clips a wall on the way out; if no gunner ever touched it, it
+    falls back to paying whoever it had locked.
+- **DAMAGE FEEDBACK — `DroneDamageTint` (2026-08-16).** A white hit FLASH per round landed, over a
+  colour TINT that deepens as the health pool empties. Together they answer the gunner's two questions
+  — "did that connect?" and "how close is it to going down?" — without a health bar, which is what makes
+  a 10-hit plane readable at all.
+  - **It writes colour REGISTERS through a `MaterialPropertyBlock`, never `Renderer.material`.** Reading
+    `.material` silently CLONES the material: one leaked instance per drone per round, and every one of
+    them dropped out of batching. A property block writes the override into the draw call instead, and
+    the shared asset on disk is never touched.
+  - Original colours are cached **per renderer per material slot**, so the tint lerps from whatever the
+    model was authored as rather than assuming white — a drone with a red panel and a grey hull stays
+    recognisably itself while both darken. `_BaseColor` (URP) or `_Color` (built-in), whichever the
+    shader has.
+  - **Emission is optional and conditional.** A property block CANNOT enable the `_EMISSION` shader
+    keyword, so `boostEmission` only shows on materials that already have Emission ticked. On a dark
+    model at night that glow is doing most of the work, so it is worth enabling on the drone material.
+  - **No editor wiring required**: `DronePlane.ShowDamage` and the client-side handler both ADD the
+    component if it's missing. Put one on the prefab only to TUNE it, and those values then win.
+  - **⚠️ Clients needed a message.** Drones are host-simulated and clients render stripped puppets with
+    no DronePlane to tell them anything — so without `GNRC_NPC_DMG` a client-side gunner would see no
+    feedback at all, and the gunner is the entire audience. It's an EVENT (Reliable, on damage only),
+    not a byte added to the per-entity state stream: damage is rare, that stream is per-entity-per-tick,
+    and a missed flash can't be healed by a later tick the way level-triggered flags can.
+  - The component is deliberately named `DroneDamageTint`, not `DronePlane…` — **DroneCars take 3 laser
+    rounds and have no feedback yet**; wiring the same component into `DroneCar.TakeLaserHit` is the
+    obvious next step if wanted.
 - **WHAT A ROUND DOES ON HIT (2026-08-16).** All of it resolves on the HOST, the only machine lasers
   exist on, so each judgement is made once.
 
   | Target | Effect | Credits |
   |---|---|---|
   | Player car (**including the gunner's own racer**) | Popped up at `popUpForce` 40 — half a lightning strike's 80 — with **momentum kept**, unlike a DronePissBall which halts the car. Then 2 s immune to further rounds. | — |
-  | DronePlane | Down in ONE hit, straight into its normal ragdoll. | 50 → **gunner** |
+  | DronePlane | Spends one point of its `maxHits` pool (1 by default = down in one). The PLANE counts the round, not the laser. | 50 → **gunner**, if one ever hit it |
   | DroneCar / Challenger | `droneHitsToDown` (3) rounds, **no window between them**, then the same downed state a player ram causes. | its own `creditReward` (100/200) at the kill floor → **last toucher** |
   | LavaBoulder | Destroyed outright. | 25 → **gunner** |
 
@@ -1731,6 +1776,29 @@ bugs to someone reading the code cold:
   On `PilotControlCenter`: `cameraOffset`/`fieldOfView`/`cameraFollowLag` for the gunner’s framing,
   `trackSkybox` (must be assigned — see above), `burstRounds`/
   `burstInterval` for the guns, and `teamOnly`.
+
+**DRONEPLANE PATROL — closed loop, catch-up speed, velocity-aligned nose (2026-08-16).**
+Symptom the user spotted from the gizmo: planes flew far outside their patrol circles with a long
+straight line to a target they never reached, noses pointing somewhere other than their direction of
+travel. Three compounding causes, all now fixed:
+- **The patrol target ran on its own clock.** `patrolAngle += (patrolSpeed / radius) * dt` advanced
+  independently of where the plane actually was — and since that target sweeps the ring at exactly
+  `patrolSpeed` while `SteerToward` CAPS the plane at the same `patrolSpeed`, it was a stern chase at
+  equal speed that could never be won. Now the angle is DERIVED from the plane's own bearing
+  (`atan2(z, x)` around `patrolCenter`) plus `patrolLeadDistance` of arc, so the target is always just
+  ahead of it and reachable. Expressed as a distance, not an angle, so the feel holds across the
+  spawner's 150–320 radius range. Dead-centre falls back to the old clock, since atan2 is undefined
+  there.
+- **Every plane starts one full radius off-ring.** `DronePlaneSpawner` instantiates at `spawnPos` and
+  calls `Initialize(spawnPos, …)`, so the circle is centred on the plane — it begins at the middle and
+  has to fly all the way out. `ResumePatrol` does the same thing after a chase. With the old open loop
+  it never made it; `catchUpSpeedMultiplier` (2.2x, easing to 1x over `catchUpDistance`) now gives it
+  the headroom to close, keyed on true distance to the ring (radial error and altitude error combined).
+- **The nose used the ring's TANGENT**, i.e. where the plane would be pointed if it were ON the circle.
+  While closing on one that can be 90° from actual travel, which is what made them fly sideways. Patrol
+  now aims the nose along `rb.linearVelocity`, falling back to the tangent only when barely moving
+  (spawn frame, resume frame). **CHASE deliberately still aims at the target**, not at velocity — the
+  vision cone and muzzle have to track the player there, so don't "unify" the two.
 
 **PROCEDURAL SKYBOX with animated clouds + stars (user feature, 2026-07-23).**
 `Prefabs/Skyboxes/ProceduralSkyClouds.shader` — a URP skybox in the spirit of Unity's built-in

@@ -8,12 +8,18 @@ using UnityEngine;
 /// Three states:
 ///  • PATROL — flies a horizontal circle around its spawn point at <see cref="patrolSpeed"/>, holding
 ///    its spawn altitude (the spawner varies that per plane, so some are skyline and some buzz low).
+///    It chases a point a short way AHEAD of its own bearing on that ring, sprinting while still off it
+///    and pointing its nose along its real velocity — see <see cref="Patrol"/> for why all three of
+///    those matter.
 ///  • CHASE — on spotting a player, locks on and pursues, HOLDING <see cref="standoffDistance"/> and
 ///    hovering <see cref="chaseHeightOffset"/> above them so it strafes rather than rams. If its target
 ///    leaves the track (LRA / kill floor / return portal) it drops back to PATROL around wherever it is.
-///  • RAGDOLL — the instant it collides with ANYTHING (scenery, a car, another plane) it goes limp:
-///    AI off, gravity on, tumbling for <see cref="ragdollDuration"/> before despawning. If it had a
-///    player locked at that moment, THAT player is paid <see cref="killReward"/> credits for the wreck.
+///  • RAGDOLL — once its health pool runs out it goes limp: AI off, gravity on, tumbling for
+///    <see cref="ragdollDuration"/> before despawning. EVERY solid contact spends a point of that pool
+///    — scenery, a car, another plane, a Support Ship laser round alike — so with the default
+///    <see cref="maxHits"/> of 1 this is still "touch anything and you're down". Raise it on a prefab
+///    VARIANT for a tougher plane that has to be worn through; a 10-hit plane that clips the track has
+///    9 left. The wreck pays the Support Ship gunner if one ever hit it, else the player it had locked.
 ///
 /// NOT A RACER: unlike DroneCar this never calls NotifyRacerFinished, so a plane can never cost the
 /// player first place or score a round for the drones — including flying through the track's Return
@@ -40,6 +46,22 @@ public class DronePlane : MonoBehaviour
     public float patrolRadius = 220f;
     [Tooltip("Cruising speed while patrolling (units/s) — a moderate pace, well under chase speed.")]
     public float patrolSpeed = 55f;
+    [Tooltip("How far AHEAD of the plane's own bearing the patrol target sits, measured along the ring " +
+             "(units). This is what closes the loop: the target is derived from where the plane ACTUALLY " +
+             "is, not from a clock, so a plane that falls behind still has a reachable point just ahead " +
+             "of it. Too small and it wobbles chasing its own nose; too large and it cuts across the " +
+             "circle. Expressed as a distance rather than an angle so the feel is the same on a 150-unit " +
+             "ring and a 320-unit one.")]
+    public float patrolLeadDistance = 70f;
+    [Tooltip("Top speed multiplier while the plane is still OFF its ring, easing back to 1x as it " +
+             "arrives. Without headroom above Patrol Speed a plane can never close the gap at all: the " +
+             "target sweeps the ring at exactly Patrol Speed, so an equal cap makes it a stern chase " +
+             "it cannot win. 1 = no catch-up (the old behaviour).")]
+    public float catchUpSpeedMultiplier = 2.2f;
+    [Tooltip("Distance from the ring at which the full catch-up multiplier applies, blending down to " +
+             "normal cruising speed as the plane closes. Roughly the biggest gap you want it to fix " +
+             "quickly — planes spawn one full radius out, so this wants to be a good fraction of that.")]
+    public float catchUpDistance = 150f;
 
     [Header("Chase")]
     [Tooltip("Top speed while chasing a player (units/s). Must be high enough to keep up with a " +
@@ -94,6 +116,20 @@ public class DronePlane : MonoBehaviour
     public float ragdollDuration = 1f;
     [Tooltip("Credits paid to the player this plane was hunting when it crashes. No target = no payout.")]
     public int killReward = 50;
+
+    [Header("Durability")]
+    [Tooltip("How many hits this plane survives. 1 (the default) is the original glass-jaw behaviour: " +
+             "ANY contact downs it instantly. Raise it on a prefab VARIANT to make a tougher plane — a " +
+             "10-hit version has to be worn down, and a scrape against the track costs it one of those " +
+             "10 just as a laser round does.")]
+    public int maxHits = 1;
+    [Tooltip("Minimum seconds between two ENVIRONMENTAL hits (track, scenery, another plane). One " +
+             "physical impact often raises several contacts as the plane bounces and scrapes, and " +
+             "without this a single brush with the track would burn a whole health pool in a few " +
+             "frames. Laser rounds are deliberately NOT throttled by this — every round counts, the " +
+             "same rule DroneCars follow — so a burst is never partly swallowed.")]
+    public float collisionHitCooldown = 0.25f;
+
 
     [Header("Gizmos (Scene view only)")]
     [Tooltip("Draw the vision cone — green while searching, red once a player is locked.")]
@@ -177,18 +213,60 @@ public class DronePlane : MonoBehaviour
     //  Patrol
     // -------------------------------------------------------
 
-    /// <summary>Flies a steady horizontal circle around the patrol centre at the plane's own altitude.</summary>
+    /// <summary>Flies a steady horizontal circle around the patrol centre.
+    ///
+    /// The target point is CLOSED-LOOP: it is the plane's own bearing around the ring plus
+    /// <see cref="patrolLeadDistance"/>, so it always sits just ahead of wherever the plane actually is.
+    /// The original version advanced an angle on its own clock, independent of the plane — and since
+    /// that target swept the ring at exactly <see cref="patrolSpeed"/> while the plane was CAPPED at the
+    /// same speed, a plane that started off-ring (every plane does: the spawner centres the circle on
+    /// the spawn point, so they all begin one full radius out) could never catch up. They trailed their
+    /// own circles forever, with the gizmo drawing a long straight line to a target they were chasing
+    /// and never reaching.
+    ///
+    /// Two more things fall out of that fix:
+    ///  • <see cref="catchUpSpeedMultiplier"/> gives the plane headroom above its cruising speed while
+    ///    it is still off-ring, easing back to 1x as it arrives — otherwise even a reachable target is
+    ///    approached at exactly the speed it retreats.
+    ///  • The NOSE now follows the plane's actual velocity rather than the ring's tangent. The tangent
+    ///    is where it would be pointed if it were ON the circle; while it is closing on one, that can be
+    ///    90° from where it is really going, which is what made patrolling planes fly sideways.</summary>
     void Patrol()
     {
-        // Advance around the circle at the cruising speed (v = ωr ⇒ ω = v / r).
         float radius = Mathf.Max(patrolRadius, 1f);
-        patrolAngle += (patrolSpeed / radius) * Time.fixedDeltaTime;
+
+        Vector3 offset = transform.position - patrolCenter;
+        Vector2 flat = new Vector2(offset.x, offset.z);
+
+        if (flat.sqrMagnitude > 0.01f)
+        {
+            // The ring is parameterised (cos θ, 0, sin θ), so the plane's own bearing is atan2(z, x).
+            float bearing = Mathf.Atan2(flat.y, flat.x);
+            float lead = Mathf.Clamp(patrolLeadDistance / radius, 0.02f, Mathf.PI * 0.5f);
+            patrolAngle = bearing + lead;
+        }
+        else
+        {
+            // Dead centre: the bearing is undefined there, so fall back to advancing the old way until
+            // the plane drifts far enough out for atan2 to mean something.
+            patrolAngle += (patrolSpeed / radius) * Time.fixedDeltaTime;
+        }
 
         Vector3 targetPos = patrolCenter + new Vector3(Mathf.Cos(patrolAngle), 0f, Mathf.Sin(patrolAngle)) * radius;
-        // Tangent of the circle = the direction of travel (derivative of the position above).
-        Vector3 heading = new Vector3(-Mathf.Sin(patrolAngle), 0f, Mathf.Cos(patrolAngle));
+        Vector3 tangent = new Vector3(-Mathf.Sin(patrolAngle), 0f, Mathf.Cos(patrolAngle));
 
-        SteerToward(targetPos, patrolSpeed, heading);
+        // Distance to the nearest point ON the ring — radial error and altitude error combined.
+        float radial = flat.magnitude - radius;
+        float ringError = Mathf.Sqrt(radial * radial + offset.y * offset.y);
+
+        float blend = catchUpDistance > 0.01f ? Mathf.Clamp01(ringError / catchUpDistance) : 0f;
+        float maxSpeed = patrolSpeed * Mathf.Lerp(1f, Mathf.Max(1f, catchUpSpeedMultiplier), blend);
+
+        // Face where it is actually flying; the tangent is only a fallback for a plane barely moving
+        // (spawn frame, or the instant it resumes patrol), where velocity has no direction worth using.
+        Vector3 nose = rb.linearVelocity.sqrMagnitude > 1f ? rb.linearVelocity : tangent;
+
+        SteerToward(targetPos, maxSpeed, nose);
     }
 
     /// <summary>Returns to patrolling around wherever the plane currently is (used when a target is lost),
@@ -476,25 +554,88 @@ public class DronePlane : MonoBehaviour
     //  Crash → ragdoll → despawn (+ bounty)
     // -------------------------------------------------------
 
-    /// <summary>ANY solid contact downs the plane — scenery, a car, or another DronePlane. Trigger
-    /// volumes (the track's Return Portal among them) don't raise collisions, so flying through the
-    /// portal neither wrecks the plane nor counts for anything.
+    /// <summary>ANY solid contact damages the plane — scenery, a car, a laser round, another
+    /// DronePlane. With <see cref="maxHits"/> at 1 that is still "one touch and you're down"; raise it
+    /// and the plane has to be worn through. Trigger volumes (the track's Return Portal among them)
+    /// don't raise collisions, so flying through the portal costs it nothing.
     ///
-    /// The laser check has to be HERE, not only in SupportShipLaser: both objects receive
-    /// OnCollisionEnter for the same contact and Unity does not define which runs first. Without it, a
-    /// coin flip decided whether the wreck paid the GUNNER who shot it down or the racer it happened to
-    /// be hunting. Now either ordering reaches DownedByPilot, and the second call no-ops on the state
-    /// check.</summary>
+    /// ⚠️ The laser check has to be HERE, and the laser must NOT also apply the damage itself. Both
+    /// objects receive OnCollisionEnter for the same contact, so counting it on both sides would make
+    /// every round cost TWO hits — invisible while planes died in one, and quietly halving the health
+    /// pool the moment one didn't. SupportShipLaser therefore only reports the hit for its audio and
+    /// leaves the arithmetic to us.</summary>
     void OnCollisionEnter(Collision collision)
     {
         var laser = collision.collider.GetComponentInParent<SupportShipLaser>();
-        if (laser != null) DownedByPilot(laser.pilotClientId, laser.pilotIsLocal);
+        if (laser != null)
+        {
+            TakeHit(true, laser.pilotClientId, laser.pilotIsLocal);
+            return;
+        }
+
+        // Environmental contacts only: one impact usually raises several of these as the plane bounces
+        // and scrapes along, and each would otherwise be a separate point of damage.
+        if (Time.time - lastCollisionHitTime < collisionHitCooldown) return;
+        lastCollisionHitTime = Time.time;
+        TakeHit(false, 0, false);
+    }
+
+    /// <summary>Spends one point of the health pool and downs the plane when it runs out.
+    ///
+    /// Credit follows the DroneCar rule the user set for laser damage: the last player-attributable hit
+    /// wins. A gunner who wore the plane down doesn't lose the kill because it clipped a wall on the
+    /// way out — but if no gunner ever touched it, it falls back to the original behaviour and pays
+    /// whoever it was hunting.</summary>
+    void TakeHit(bool fromPilot, ulong clientId, bool isLocal)
+    {
+        if (state == State.Ragdoll) return;
+
+        if (fromPilot)
+        {
+            damagedByPilot = true;
+            lastPilotId = clientId;
+            lastPilotIsLocal = isLocal;
+        }
+
+        if (++hitsTaken < Mathf.Max(1, maxHits))
+        {
+            // Survived: flash and deepen the tint so the gunner can see the pool draining. Sent to the
+            // clients too — the Support Ship pilot is very often one of them, and they are the whole
+            // audience for this feedback.
+            ShowDamage();
+            NpcReplicator.SendNpcDamage(gameObject, hitsTaken, Mathf.Max(1, maxHits));
+            return;
+        }
+
+        if (damagedByPilot) DownedByPilot(lastPilotId, lastPilotIsLocal);
         else Crash();
+    }
+
+    /// <summary>Flashes and re-tints this plane's own copy. Cached because a 10-hit plane calls it nine
+    /// times and GetComponentInChildren is not free.
+    ///
+    /// The component is ADDED if the prefab doesn't carry one, so damage feedback needs no editor
+    /// wiring to work at all — put a DroneDamageTint on the prefab only when you want to TUNE it, and
+    /// those values then win.</summary>
+    void ShowDamage()
+    {
+        if (damageTint == null)
+        {
+            damageTint = GetComponentInChildren<DroneDamageTint>(true);
+            if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
+        }
+        damageTint.RegisterHit(hitsTaken, Mathf.Max(1, maxHits));
     }
 
     // Set when a Support Ship gunner shoots this plane down, so the wreck bounty goes to THEM rather
     // than to whoever the plane happened to be hunting.
     private bool downedByPilot;
+    private int hitsTaken;                  // health pool spent so far (see maxHits)
+    private float lastCollisionHitTime = -999f;
+    private bool damagedByPilot;            // a gunner has landed at least one round on this plane
+    private ulong lastPilotId;
+    private bool lastPilotIsLocal;
+    private DroneDamageTint damageTint;
     private ulong pilotClientId;
     private bool pilotIsLocal;
 

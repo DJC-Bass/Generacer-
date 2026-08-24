@@ -29,7 +29,7 @@ public class ShieldAbility : MonoBehaviour
     [Tooltip("Inventory item consumed per activation.")]
     public string shieldItem = "Shield";
     [Tooltip("Seconds the shield stays up before vanishing. One activation = one shield spent.")]
-    public float shieldDuration = 4f;
+    public float shieldDuration = 8f;
     [Tooltip("Name of the shield child object on the player-car prefab (the ellipsoid). Must be on the " +
              "'Shield' layer. Matched case-insensitively anywhere under the car root.")]
     public string shieldChildName = "Shield";
