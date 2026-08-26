@@ -36,13 +36,15 @@ Plus four decisions the user made when asked:
 - **Destruction consumes one "Support Ship".** Summoning and dismissing are free. That's the whole point
   of dismissing it when nobody is flying it.
 - **The pilot's hub car is input-locked** (`CarController.InputSuppressed` + `MenuState.AnyOpen`) — NOT
-  frozen — and they must stay on the pad. **Revised 2026-08-16:** control is now held until one of
-  exactly four things happens: **SELECT** (manual hand-back), the ship is destroyed, its owner dismisses
-  it, or the pilot's car is **shoved off the pad by an external force**. That last one is why the car
-  can't be frozen: a pinned Rigidbody is unpushable, which would have made a rival knocking a distracted
-  pilot off the pad impossible.
+  frozen — and they must stay on the pad. **Revised 2026-08-16, again 2026-08-24:** control is held
+  until one of exactly FIVE things happens: **SELECT** (manual hand-back), the ship is destroyed, its
+  owner dismisses it, the pilot's car is **shoved off the pad by an external force**, or **the ship's
+  owner stops racing** (return portal / abort / sent back). The shove is why the car can't be frozen: a
+  pinned Rigidbody is unpushable, which would have made a rival knocking a distracted pilot off the pad
+  impossible.
 - **What can down the ship is the collision MATRIX** on a new `SupportShip` layer, not code.
-- **The pilot's AudioListener moves to the ship**, so they hear the racer's world, not the hub.
+- **The pilot's AudioListener moves to the ship**, so they hear the racer's world, not the hub. As of
+  2026-08-24 the rest of the presentation follows it: the track's sky (per-camera), lights and music.
 
 **`SupportShip.cs`** (Car Scripts) — the flyer. Deliberately NOT a physics flyer like `DronePlane`: it is
 a FOLLOWER, and the follow model is *the chase camera's*. The lazy-Susan per-axis lag (yaw/pitch/roll) is
@@ -86,8 +88,9 @@ its own ship to its own copy of the owner's car.
 flies a LOCAL copy of the ship the same way `HubSpectatorTV` films a local copy of a remote racer. Claims
 are **server-arbitrated, never optimistic** — two hub players can reach for the same ship in the same frame
 and exactly one must get it — so the pad waits for the verdict, with a 3 s timeout because a refusal looks
-identical to a slow network. **Your own ship is listed too**, which is what makes the whole feature
-testable solo: summon a ship, park on the pad, fly it.
+identical to a slow network. **Your own ship is listed too**, though since 2026-08-24 a ship is only
+flyable while its OWNER is in the TrackScene — so it now lists as IN HUB for a solo tester standing on
+the pad, and the pad can no longer be exercised single-handed. Test it with two instances.
 
 ---
 
@@ -124,7 +127,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_GRAPPLE` | GrappleReplicator | owner → all (host relays) | state + **anchor KIND** + ids/offsets |
 | `GNRC_GRAPPLE_PULL` | GrappleReplicator | → victim (host relays) | acceleration applied on the OWNER's machine |
 | `GNRC_GRAPPLE_BREAK` | GrappleReplicator | victim → all | L3: release any hook attached to me |
-| `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | ship is out / put away; 2 Hz heartbeat, Reliable on change |
+| `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | {active, ownerInTrack}: ship is out / put away, and whether its owner is RACING (a ship is only pilotable while they are); 2 Hz heartbeat, Reliable on change |
 | `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector3 aim angles} for a named owner’s ship |
 | `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
@@ -141,6 +144,12 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
    replicated object always lags and snaps. `GNRC_SHIP_AIM` is the same idea one step further: it sends
    only the pilot's *offset*, and every machine derives the ship's world pose from its own copy of the
    racer's car.
+3b. **`MultiplayerWorld.LocalInTrackArea` is the ONE answer to "am I racing right now" (2026-08-24).**
+  Multiplayer presence is per-player (the shared world's phase never reaches `InTrack` — the server
+  holds it at `HubPortalActive` all round) while single-player really does load the track as a scene, so
+  the two need different questions. `LraAbortController` and the Support Ship heartbeat both go through
+  it; anything else that needs to know should too, rather than re-deriving it.
+
 3. **Level-triggered flags self-heal.** The `GNRC_CAR` effect byte and `GNRC_SHIP` are the owner's current
    state, not edge events, so a dropped Unreliable packet fixes itself on the next tick.
 4. **Whoever supplies the input owns the result.** `GNRC_SHIP_AIM` is broadcast by the PILOT, not by the
@@ -1526,6 +1535,48 @@ bugs to someone reading the code cold:
   edge-triggered and can glitch while the bounds test cannot.
 - **SELECT releases, not B.** B stays a pure menu button so it can't eject a pilot by reflex. Releasing
   drops them back into the ship LIST (still parked on the pad) rather than closing the station.
+- **PILOTABLE ONLY WHILE THE OWNER IS RACING (2026-08-24).** A ship may be summoned in the hub and
+  persists across the portal, but there is nothing to fly over until its owner is actually on the
+  track — so the pad refuses it until then, and hands the controls back the moment they leave.
+  - The owner's machine is the authority (it is the one doing the travelling) and reports it on the
+    EXISTING `GNRC_SHIP` heartbeat as a second bool. No new message: this is the same fact that
+    heartbeat already carries, one field wider. Crossing the portal counts as a `changed` state, so it
+    goes out reliably and immediately rather than up to half a second late.
+  - **Refused in THREE places, and all three are needed.** The pad greys the row (`IN HUB`), the A
+    press re-checks before asking, and `ResolvePilotRequest` re-checks on the SERVER before granting.
+    The first two are UI over a heartbeat that can be stale; only the third can actually stop someone
+    pressing A on the exact frame their teammate crosses the return portal.
+  - **The row is greyed, not hidden.** "No teammates are flying a Support Ship" would be a lie when
+    they demonstrably are — and the waiting pilot wants to see the ship coming.
+  - **Release is belt-and-braces.** The host frees the claim (`ReleaseClaimsOnShip`) the moment a
+    heartbeat says the owner stopped racing, which reaches the pilot as a `GNRC_SHIP_PILOT` verdict and
+    trips `TickPiloting`'s existing "no longer ours" test. `TickPiloting` ALSO checks `IsPilotable`
+    directly (condition 5, `OwnerLeftGrace` 1.5 s) so an offline host, or a lost verdict, still ends it.
+  - Releasing this way is deliberately identical to pressing SELECT: the pilot lands back in the LIST,
+    still parked, ready for next round — not dumped out of the station.
+- **THE PILOT SEES THE TRACK'S WORLD, NOT THE HUB'S (2026-08-24).** Their car is parked in the hub, so
+  each piece has to be borrowed separately:
+  - **Sky** — per-CAMERA `Skybox` component (was already there; see `ApplyTrackSkybox`).
+  - **Lights + music** — `MultiplayerWorld.SetPilotPresentation(true)`, which folds a
+    `pilotPresentation` flag into `ApplyAreaPresentation` and sets `AudioManager.MusicSceneOverride`.
+    Blackout rounds still read correctly, because `SetAreaLights` restores each light's RECORDED state
+    rather than forcing it on.
+  - **⚠️ It deliberately does NOT call `SetActiveScene`.** That would send everything the hub
+    instantiates from then on into the track scene, to be destroyed with it at round end. The active
+    scene stays keyed on where the CAR is. Same reasoning as the per-camera sky: override the specific
+    thing, never the machine's idea of where it is.
+  - The track SPEEDOMETER is deliberately excluded — it reads the pilot's own parked car and would
+    report 0 mph over someone else's race.
+  - **Round end force-clears it** (`EndRound`, before `trackLights.Clear()`). Order matters: clearing
+    after the Clear would leave a pilot who was still flying at the bell standing in an unlit hub.
+- **A DEFAULT LRA DESTROYS THE SHIP (2026-08-24).** `SupportShipAbility.DestroyShip()` from
+  `LraAbortController.CompleteAbort`, on the default tier only.
+  - The inventory wipe does NOT cover this. Wiping the item removes the right to summon ANOTHER; a
+    ship already in the air is a live object that would sail on above a race its owner just quit.
+  - **PREMIUM keeps it**, for the same reason it keeps everything else — that is what was paid for.
+  - It routes through `Crash()`, not `Dismiss()`. Dismiss is the free put-away the owner gets for
+    L3+Y; this is a LOSS, and the kill path already handles the item, the replication, the wreck a
+    watching pilot sees, and the red tint.
 - **THE GUNS (2026-08-16).** `SupportShipLaser.cs` + `SupportShip.FireLaser()` + `GNRC_SHIP_FIRE`, fired
   with **A** from the pad. Star Fox 64 semi-auto: a press arms a fresh burst and fires its first round on
   the SAME frame (so a tap is instant and gives exactly one), holding walks the remaining `burstRounds`
@@ -1542,9 +1593,32 @@ bugs to someone reading the code cold:
     (clients get collider-less visuals — contact resolves once). The pilot therefore sees their own shot
     a round trip late; nil when the pilot is the host. The host also checks `PilotOf(ownerId) == sender`
     so only whoever holds the controls can fire that ship.
+  - **⚠️ `laserSpeed` is MUZZLE velocity, added on top of the ship's own (fixed 2026-08-24).**
+    Symptom in multiplayer: rounds barely left the ship and were being destroyed almost immediately.
+    Cause: a ship escorting a car at ~600 m/s fired 700 m/s rounds that made only ~100 m/s of
+    HEADWAY, so they hung in the ship's face long enough to be run down by the car, by each other,
+    or by the ship overtaking them. `Launch` now takes an `inheritedVelocity` and the round leaves at
+    `forward * laserSpeed + shipVelocity`, so it outruns the ship by `laserSpeed` at ANY speed. Same
+    rule `GrappleHook` already fired by (`carGO.transform.forward * fireSpeed + carRb.linearVelocity`).
+    - **The ship's velocity has to be MEASURED, not read.** It is a kinematic follower moved by
+      assigning `transform.position`, so its Rigidbody velocity is flatly zero however fast it is
+      going. Borrowing the CAR's velocity is also wrong: the pilot slides the ship inside its box and
+      the car's rotation swings it, both real motion the car knows nothing about. `TrackWorldVelocity`
+      therefore differences `transform.position` at the END of `LateUpdate`, where the pose is final.
+    - **A snap frame must report ZERO, not a measurement.** Summoning the ship and the ~100 km hub
+      — track teleport both move it an arbitrary distance in one frame; dividing that by `deltaTime`
+      would hand the next round a muzzle velocity in the millions. `LateUpdate` passes its existing
+      snap flag straight through.
+    - `velocitySmoothTime` (0.05 s) guards against a single hitched frame. It is in `CopyTuningFrom`.
+      Keep it SMALL — it lags the inheritance, and a long value lets rounds fall behind again under
+      hard acceleration.
+    - Nothing is replicated for this: rounds are host-spawned, and every machine's copy of a ship
+      measures its own velocity from its own `LateUpdate`, so the host's copy is already correct.
   - **`ContinuousDynamic` collision detection is mandatory** at ~700 m/s — a round covers ~12 m per
     physics step, so discrete detection tunnels it clean through the track. Set in `Awake`, not left to
     the prefab.
+    Note the round's WORLD speed is now `laserSpeed` + the ship's, so the margin is wider than before,
+    not narrower.
   - **The laser prefab must be `NpcReplicator.RegisterPrefab`'d on every machine** or clients cannot
     build puppets for the rounds. It is only ever referenced from a car prefab's `SupportShip`
     component, so nothing else would find it — registered in `SupportShipAbility.BuildShip` (local) and

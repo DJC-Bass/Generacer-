@@ -44,6 +44,38 @@ public class MultiplayerWorld : MonoBehaviour
     /// the LRA abort gates on it.</summary>
     public bool InTrackLocally => inTrackLocally;
 
+    /// <summary>True when the local player is racing, in EITHER mode. Multiplayer presence is
+    /// per-player (the shared world's phase never reaches InTrack, since the server holds it at
+    /// HubPortalActive for the whole round), while single-player really does load the track as a
+    /// scene — so the two have to be asked different questions. One definition, so callers that need
+    /// "am I on the track right now" cannot drift apart.</summary>
+    public static bool LocalInTrackArea =>
+        IsMultiplayerGame
+            ? Instance.inTrackLocally
+            : GameLoopManager.Instance != null
+              && GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.InTrack;
+
+    /// <summary>Show the TRACK's world to a player whose CAR is still in the hub.
+    ///
+    /// Exists for the Support Ship pilot, who stands on a hub pad flying a ship ~100 km away: their
+    /// camera is out there, so they should get the track's lighting and music rather than the hub's
+    /// they are physically standing in. Their car really is still in the hub, so this cannot be done
+    /// by moving them — it is a PRESENTATION lie, and deliberately a narrow one.
+    ///
+    /// It covers lights and music ONLY. Notably it does NOT call SetActiveScene: that would send every
+    /// object the hub instantiates from here on into the track scene, to be destroyed with it at the
+    /// end of the round. The sky is handled per-CAMERA by PilotControlCenter for the same reason —
+    /// a targeted override beats moving the whole machine's idea of where it is.</summary>
+    public static void SetPilotPresentation(bool showTrack)
+    {
+        if (pilotPresentation == showTrack) return;
+        pilotPresentation = showTrack;
+        AudioManager.MusicSceneOverride = showTrack ? "TrackScene" : null;
+        if (Instance != null) Instance.ApplyAreaPresentation();
+        else AudioManager.RefreshSceneMusic();   // single-player: no area machinery, music still applies
+    }
+    private static bool pilotPresentation;
+
     /// <summary>True on a multiplayer CLIENT that is not the host. The AI/obstacle spawners gate on
     /// this (Phase 5): the host runs the one real simulation, clients render replicated puppets.</summary>
     public static bool IsClientOnly =>
@@ -532,12 +564,19 @@ public class MultiplayerWorld : MonoBehaviour
     /// snap so the follow rigs don't swoosh 35 km across the world.</summary>
     void ApplyAreaPresentation()
     {
+        // Keyed on the CAR, never on the pilot override: the active scene decides where newly
+        // instantiated objects land, and a hub player must keep spawning things into the hub.
         var scene = inTrackLocally ? trackScene : hubScene;
         if (scene.IsValid() && scene.isLoaded)
             SceneManager.SetActiveScene(scene);   // fires activeSceneChanged → SkyboxHueRandomizer recolors
 
-        SetAreaLights(hubLights, !inTrackLocally);
-        SetAreaLights(trackLights, inTrackLocally);
+        // A hub-bound Support Ship pilot is LOOKING at the track, so they get its lights — including
+        // a blackout round's, since SetAreaLights restores each light's recorded state rather than
+        // forcing it on. The speedometer is deliberately left out: it reads the pilot's own parked
+        // car, so showing it would just report a stationary 0 mph over someone else's race.
+        bool showTrack = inTrackLocally || pilotPresentation;
+        SetAreaLights(hubLights, !showTrack);
+        SetAreaLights(trackLights, showTrack);
 
         if (trackSpeedometerRoot != null) trackSpeedometerRoot.SetActive(inTrackLocally);
 
@@ -731,6 +770,12 @@ public class MultiplayerWorld : MonoBehaviour
 
         var glm = GameLoopManager.Instance;
         if (glm != null) glm.RemoteEndRound();   // fires OnPortalShouldDespawn
+
+        // Nobody can be presenting a track that is about to stop existing. The pilot pad releases its
+        // own controls a moment later anyway, but the ORDER matters: this restores the hub's lights
+        // while trackLights is still populated, whereas doing it after the Clear() below would leave a
+        // pilot who was still flying at the bell standing in an unlit hub with no way back.
+        SetPilotPresentation(false);
 
         if (trackScene.IsValid() && trackScene.isLoaded)
             SceneManager.UnloadSceneAsync(trackScene);

@@ -12,7 +12,8 @@ using TMPro;
 /// TWO TIERS, and the bar's COLOUR is the tell:
 ///   • DEFAULT (RED bar) — always available to every car, no item required and nothing to run out of.
 ///     Costs the run though: the inventory is wiped back to the starting defaults, exactly as if the
-///     player had hit the kill floor or timed out. It only buys them the time they'd have spent falling.
+///     player had hit the kill floor or timed out, AND any deployed Support Ship is destroyed with it.
+///     It only buys them the time they'd have spent falling.
 ///   • PREMIUM (GREEN bar) — active whenever the player holds an "LRA Premium" (bought from the store).
 ///     Consumes one and returns them with their inventory INTACT: the original LRA behaviour. Still
 ///     one-use, so another must be bought to get the safe exit again.
@@ -84,7 +85,7 @@ public class LraAbortController : MonoBehaviour
     {
         // Abortable whenever the player is actually racing with no menu open. NO item check — the
         // default tier is innate to the car; holding an LRA Premium only upgrades what it costs.
-        bool canAbort = IsInTrack() && !MenuState.AnyOpen;
+        bool canAbort = MultiplayerWorld.LocalInTrackArea && !MenuState.AnyOpen;
 
         if (canAbort && IsComboHeld())
         {
@@ -127,17 +128,6 @@ public class LraAbortController : MonoBehaviour
         if (lraLoopSource != null && lraLoopSource.isPlaying) lraLoopSource.Stop();
     }
 
-    bool IsInTrack()
-    {
-        // Multiplayer: presence is per-player (the shared world's phase never goes InTrack — the
-        // server keeps it HubPortalActive for the whole round), so ask MultiplayerWorld instead.
-        if (MultiplayerWorld.IsMultiplayerGame)
-            return MultiplayerWorld.Instance.InTrackLocally;
-
-        return GameLoopManager.Instance != null
-            && GameLoopManager.Instance.CurrentPhase == GameLoopManager.Phase.InTrack;
-    }
-
     /// <summary>True while the player holds an LRA Premium — the abort will keep their inventory, and
     /// the bar shows green. Checked live during the hold so the colour is always honest.</summary>
     bool HasPremium()
@@ -169,6 +159,14 @@ public class LraAbortController : MonoBehaviour
         // floor does. Consume-or-wipe in one place, so the two can never both happen.
         bool premium = inv.Consume(premiumItemName, 1);
         if (!premium) inv.ResetToStarting();
+
+        // A DEFAULT abort takes the Support Ship down with the run. It is not covered by the inventory
+        // wipe: wiping the item removes the right to summon ANOTHER, but a ship already in the air is a
+        // live object escorting a car that is about to vanish from the track, and it would otherwise
+        // sail on — still flyable by a teammate — above a race its owner has quit. A PREMIUM abort keeps
+        // it, for the same reason it keeps everything else: that is what the player paid for.
+        if (!premium && SupportShipAbility.Instance != null)
+            SupportShipAbility.Instance.DestroyShip();
 
         Debug.Log(premium
             ? "[LRA] Premium abort — returning to hub with inventory intact."

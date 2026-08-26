@@ -95,8 +95,17 @@ public class SupportShip : MonoBehaviour
     [Tooltip("Where rounds spawn, in the ship's own local frame. Push it forward far enough to clear " +
              "the ship's own model.")]
     public Vector3 muzzleOffset = new Vector3(0f, 0f, 3f);
-    [Tooltip("Round speed in m/s. Fast — this is a laser, not a lobbed shot.")]
+    [Tooltip("Round speed in m/s, MUZZLE velocity: it is added on top of the ship's own world " +
+             "velocity, so this is how fast a round pulls away FROM THE SHIP rather than how fast it " +
+             "crosses the world. A round therefore outruns the ship by this much whether it is " +
+             "hovering or escorting a car at full speed. Fast — this is a laser, not a lobbed shot.")]
     public float laserSpeed = 700f;
+    [Tooltip("Smoothing on the ship's measured world velocity, in seconds. The ship is a kinematic " +
+             "follower with no rigidbody velocity to read, so it is measured from frame-to-frame " +
+             "movement — a touch of smoothing keeps one hitched frame from launching a round at a " +
+             "nonsense speed. Keep it SMALL: this lags the inheritance, and a long value would let " +
+             "rounds fall behind again during hard acceleration. 0 = raw frame delta.")]
+    public float velocitySmoothTime = 0.05f;
     [Tooltip("Layer applied to spawned rounds. Blank = keep the prefab's layer.")]
     public string laserLayerName = "Projectile";
 
@@ -157,6 +166,15 @@ public class SupportShip : MonoBehaviour
     /// arrangement, and the thing that makes the widened arc of fire readable.</summary>
     public Quaternion FollowFrame => smoothedRot;
 
+    /// <summary>The ship's measured speed and heading THROUGH THE WORLD, m/s.
+    ///
+    /// Measured rather than read: the ship is a kinematic follower moved by assigning
+    /// <c>transform.position</c>, so its Rigidbody velocity is flatly zero no matter how fast it is
+    /// actually travelling. It also cannot be borrowed from the car — the pilot slides the ship inside
+    /// its box and the car's rotation swings it, both of which are real motion the car's own velocity
+    /// knows nothing about. Used to give fired rounds the ship's velocity so they outrun it.</summary>
+    public Vector3 WorldVelocity => worldVelocity;
+
     /// <summary>Where the ship sits INSIDE <see cref="FollowFrame"/>: the resting offset plus whatever
     /// the pilot has slid it to. This — not the world position — is the thing that only changes when
     /// the PILOT does something; the car hurtling down the track moves the frame, not this.
@@ -204,6 +222,9 @@ public class SupportShip : MonoBehaviour
     private Quaternion smoothedRot = Quaternion.identity;
     private bool posInitialised;
     private Vector3 lastCarPosition;
+    private Vector3 lastShipPosition;
+    private bool velocityInitialised;
+    private Vector3 worldVelocity;
     private Collider[] ownColliders;
     private int hitsTaken;                       // health pool spent so far (see maxHits)
     private float lastProjectileHitTime = -999f;
@@ -234,6 +255,8 @@ public class SupportShip : MonoBehaviour
     {
         Car = car;
         posInitialised = false;   // re-snap onto the new car rather than flying over to it
+        velocityInitialised = false;   // and don't read the snap itself as movement
+        worldVelocity = Vector3.zero;
         IsRagdolling = false;
         PilotLook = Vector3.zero;   // a freshly attached ship starts level
 
@@ -306,6 +329,7 @@ public class SupportShip : MonoBehaviour
         laserPrefab = src.laserPrefab;
         muzzleOffset = src.muzzleOffset;
         laserSpeed = src.laserSpeed;
+        velocitySmoothTime = src.velocitySmoothTime;
         laserLayerName = src.laserLayerName;
     }
 
@@ -387,6 +411,8 @@ public class SupportShip : MonoBehaviour
         Vector3 offset = LocalOffset;
         Vector3 desired = Car.position + smoothedRot * offset;
 
+        bool snapped = !posInitialised;
+
         if (!posInitialised)
         {
             // First frame (or a teleport): snap everything, so summoning the ship doesn't fly it in
@@ -398,6 +424,7 @@ public class SupportShip : MonoBehaviour
         }
 
         transform.position = desired;
+        TrackWorldVelocity(snapped);
         // Aim rides INSIDE the car-following frame, so the angles the pilot dials in are relative to
         // the ship's own level flight rather than to the world — a banked car doesn't skew the aim.
         // Euler order is (pitch about local X, yaw about local Y, no roll).
@@ -431,6 +458,28 @@ public class SupportShip : MonoBehaviour
     }
 
     // Exponential approach factor (0-1) for a smooth time. 0 = instant (snaps each frame).
+    /// <summary>Measures how fast the ship is moving through the world, from its own frame-to-frame
+    /// movement. Runs AFTER the pose is final, so it sees everything: the car's travel, the pilot
+    /// sliding the ship inside its box, and the swing from the car turning.
+    ///
+    /// A snap frame reports ZERO rather than a measurement. Summoning the ship and the ~100 km hub
+    /// to track teleport both move it an arbitrary distance in one frame, and dividing that by
+    /// deltaTime would hand the next round a muzzle velocity in the millions.</summary>
+    void TrackWorldVelocity(bool snapped)
+    {
+        if (snapped || !velocityInitialised)
+        {
+            worldVelocity = Vector3.zero;
+            velocityInitialised = true;
+        }
+        else if (Time.deltaTime > 1e-5f)
+        {
+            Vector3 instant = (transform.position - lastShipPosition) / Time.deltaTime;
+            worldVelocity = Vector3.Lerp(worldVelocity, instant, Approach(velocitySmoothTime));
+        }
+        lastShipPosition = transform.position;
+    }
+
     static float Approach(float smoothTime) =>
         smoothTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(smoothTime, 1e-5f));
 
@@ -478,7 +527,10 @@ public class SupportShip : MonoBehaviour
         laser.IgnoreCollisionsWith(transform);
         laser.pilotClientId = pilotClientId;
         laser.pilotIsLocal = pilotIsLocal;
-        laser.Launch(direction, laserSpeed);
+        // Muzzle velocity: laserSpeed is how fast the round pulls away FROM THE SHIP, so it outruns
+        // it by that much at any speed. Without this the ship escorting a car at 600 m/s fires rounds
+        // that only make 100 m/s of headway and hang around long enough to be hit by the car.
+        laser.Launch(direction, laserSpeed, worldVelocity);
 
         AudioManager.PlaySupportShipLaserFire(origin);
 

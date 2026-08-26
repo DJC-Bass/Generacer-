@@ -23,8 +23,16 @@ using UnityEngine.InputSystem;
 /// <see cref="SupportShipReplicator"/>.
 ///
 /// The ship being flown belongs to someone in the TrackScene, ~100 km from the hub. Nothing special is
-/// needed for that: the camera simply follows an object that far away, and the AudioListener rides
-/// with it, so the pilot hears the racer's world rather than the hub they're standing in.
+/// needed for the DISTANCE: the camera simply follows an object that far away, and the AudioListener
+/// rides with it. What does need saying is that the pad only offers ships whose owner is ACTUALLY
+/// RACING — a ship summoned in the hub is listed as IN HUB and cannot be taken, and a pilot already
+/// flying one is handed back their car the moment its owner takes the return portal. There is nothing
+/// to fly over until someone is out there, and being left pointed at a ship parked on the hub floor is
+/// worse than not being offered it.
+///
+/// Because the pilot's own car stays parked in the hub, the world they are LOOKING at has to be
+/// borrowed piece by piece: the sky per-camera (below), and the track's lights and music through
+/// MultiplayerWorld.SetPilotPresentation. See there for why this isn't done by switching scenes.
 /// </summary>
 [RequireComponent(typeof(Collider))]
 [DefaultExecutionOrder(1000)]   // see MenuState: run after CarController reads input
@@ -106,9 +114,13 @@ public class PilotControlCenter : MonoBehaviour
     private float nextRoundTime;
     private float padExitSince = -1f;    // when the car left the pad (-1 = it's on it)
     private float shipLostSince = -1f;   // when the flown ship went missing (-1 = it's there)
+    private float ownerLeftSince = -1f;  // when the ship's owner stopped racing (-1 = still out there)
     // A remote ship is destroyed and rebuilt whenever its owner's puppet is, so a frame or two of "no
     // ship" is normal and must not eject the pilot.
     private const float ShipLostGrace = 1f;
+    // The owner's area rides a 2 Hz heartbeat, so "not racing" can be half a second stale in the
+    // ordinary case and longer on a bad connection. Wider than ShipLostGrace for that reason.
+    private const float OwnerLeftGrace = 1.5f;
 
     // ---- built UI ----
     private GameObject root;
@@ -229,6 +241,11 @@ public class PilotControlCenter : MonoBehaviour
             AudioManager.PlayStoreDenied();   // already flown by someone else
             return;
         }
+        if (!SupportShipReplicator.IsPilotable(entry.Key))
+        {
+            AudioManager.PlayStoreDenied();   // summoned, but its owner hasn't entered the track yet
+            return;
+        }
 
         // Optimism is not allowed here: two hub players can reach for the same ship in the same frame,
         // so the server decides. We ask, and StartPiloting only runs once the answer names us.
@@ -286,8 +303,12 @@ public class PilotControlCenter : MonoBehaviour
         SuppressLocalCarInput(true);
         padExitSince = -1f;
         shipLostSince = -1f;
+        ownerLeftSince = -1f;
         EnsureRig();
         BindCamera(ship);
+        // Borrow the track's lights and music: the pilot's eyes and ears are out there even though
+        // their car is not. The sky is handled per-camera in BindCamera.
+        MultiplayerWorld.SetPilotPresentation(true);
         ShowHint("Stick Fly    B / X Fwd / Back    LB / RB Roll    A Fire    Select Release");
         // A fresh cockpit starts with the guns cold — the A press that TOOK the controls must not also
         // loose a burst on the way in.
@@ -301,6 +322,7 @@ public class PilotControlCenter : MonoBehaviour
     ///   2. The ship is destroyed.
     ///   3. Its owner dismisses it (or the server reassigns the controls).
     ///   4. The car is pushed off the pad by an external force — a rival shoving or grappling them.
+    ///   5. The ship's owner stops racing — they took the return portal, aborted, or were sent back.
     /// Notably NOT in that list: a stray trigger event, or one frame in which the replicated ship
     /// happens to be missing. Both are debounced below.</summary>
     void TickPiloting()
@@ -345,6 +367,23 @@ public class PilotControlCenter : MonoBehaviour
         }
         else padExitSince = -1f;
 
+        // 5. The owner took the return portal (or otherwise stopped racing). Their ship is still
+        //    theirs and still summoned, but there is no longer a race to fly over, so the controls go
+        //    back exactly as if SELECT had been pressed — the pilot lands in the list, still parked on
+        //    the pad, ready for the next round. Debounced like the others: `IsPilotable` reads a
+        //    replicated flag, and one dropped heartbeat must not eject anyone.
+        if (!SupportShipReplicator.IsPilotable(pilotedOwner))
+        {
+            if (ownerLeftSince < 0f) ownerLeftSince = Time.unscaledTime;
+            if (Time.unscaledTime - ownerLeftSince > OwnerLeftGrace)
+            {
+                Debug.Log("[SupportShip] The ship's owner is no longer racing — controls released.");
+                StopPiloting();
+                return;
+            }
+        }
+        else ownerLeftSince = -1f;
+
         if (ship == null) return;   // riding out the grace window — nothing to fly this frame
 
         if (camAnchor != null) camAnchor.ship = ship;   // the anchor follows it in its own LateUpdate
@@ -388,11 +427,13 @@ public class PilotControlCenter : MonoBehaviour
 
         SupportShipReplicator.RequestPilot(pilotedOwner, claim: false);
 
+        MultiplayerWorld.SetPilotPresentation(false);   // back to the hub they never actually left
         RestoreCamera();
         SuppressLocalCarInput(false);
         MenuState.AnyOpen = false;
         padExitSince = -1f;
         shipLostSince = -1f;
+        ownerLeftSince = -1f;
         AudioManager.PlayStoreClose();
     }
 
@@ -642,13 +683,18 @@ public class PilotControlCenter : MonoBehaviour
             var entry = available[i];
             bool busy = entry.Value != SupportShipReplicator.NoClient
                      && entry.Value != LocalClientIdOrZero;
+            // Summoned but its owner is still in the hub: shown, and shown as unavailable rather than
+            // hidden. "No teammates are flying a Support Ship" would be a lie — they ARE flying one,
+            // it just has nothing to escort yet — and the pilot needs to know it is coming.
+            bool waiting = !SupportShipReplicator.IsPilotable(entry.Key);
 
             rowNames[i].text = DisplayName(entry.Key);
-            rowStatus[i].text = busy ? "IN USE" : "READY";
+            rowStatus[i].text = waiting ? "IN HUB" : busy ? "IN USE" : "READY";
 
             bool sel = (i == selected);
-            rowBackgrounds[i].color = busy ? rowBusy : (sel ? rowSelected : rowNormal);
-            rowNames[i].color = (sel && !busy) ? textSelected : textNormal;
+            bool blocked = busy || waiting;
+            rowBackgrounds[i].color = blocked ? rowBusy : (sel ? rowSelected : rowNormal);
+            rowNames[i].color = (sel && !blocked) ? textSelected : textNormal;
             rowStatus[i].color = (sel && !busy) ? textSelected : textNormal;
         }
     }

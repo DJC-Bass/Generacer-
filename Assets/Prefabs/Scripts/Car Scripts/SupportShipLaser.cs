@@ -122,11 +122,18 @@ public class SupportShipLaser : MonoBehaviour
         spawnTime = Time.time;
     }
 
-    /// <summary>Send it on its way at a given speed (m/s).</summary>
-    public void Launch(Vector3 direction, float speedMs)
+    /// <summary>Send it on its way at a given speed (m/s), ADDED to the velocity of whatever fired
+    /// it.
+    ///
+    /// <paramref name="speedMs"/> is therefore muzzle velocity — speed RELATIVE TO THE SHOOTER, not
+    /// through the world. That is the only way a round reliably outruns the thing that fired it: a
+    /// Support Ship escorting a car at 600 m/s would otherwise watch its own 700 m/s rounds crawl away
+    /// at 100, hanging in the ship's face long enough to collide with the car, each other, or the ship
+    /// as it overtook them. Same rule GrappleHook fires by, for the same reason.</summary>
+    public void Launch(Vector3 direction, float speedMs, Vector3 inheritedVelocity)
     {
         if (rb == null) rb = GetComponent<Rigidbody>();
-        rb.linearVelocity = direction.normalized * speedMs;
+        rb.linearVelocity = direction.normalized * speedMs + inheritedVelocity;
     }
 
     /// <summary>Makes this round pass straight through everything under <paramref name="root"/>.

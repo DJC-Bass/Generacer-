@@ -162,6 +162,18 @@ public class SupportShipAbility : MonoBehaviour
         Debug.Log("[SupportShip] Dismissed.");
     }
 
+    /// <summary>Wrecks the ship on purpose, exactly as if it had been shot down: it ragdolls, plays the
+    /// destroyed sound, paints red, spends the item and tells every other machine.
+    ///
+    /// Deliberately Crash() and not Dismiss(). Dismiss is the free "put it away" the owner gets for
+    /// L3+Y; this is a LOSS, and routing it through the same path a real kill takes means every piece
+    /// of that — the item, the replication, the wreck a watching pilot sees — is handled already.</summary>
+    public void DestroyShip()
+    {
+        if (ship == null || ship.IsRagdolling) return;
+        ship.Crash();   // onCrashed does the rest (see below)
+    }
+
     /// <summary>Downed — by scenery, an obstacle, or an enemy's fire. THIS is where the item is spent.
     /// The wreck destroys itself after its ragdoll, so there's nothing to clean up here beyond letting
     /// go of it.</summary>

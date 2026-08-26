@@ -104,7 +104,7 @@ MonoBehaviour:
   supportShipDestroyed: {fileID: 8300000, guid: c986be7241ce0b445bd24965d29866dd, type: 3}
   supportShipLaserFire: {fileID: 8300000, guid: 651fc93acbe86984595c13d4924982b9, type: 3}
   supportShipLaserHitEnvironment: {fileID: 8300000, guid: 3e1625d8084f82d40af45aacc46a0142, type: 3}
-  supportShipLaserHitEntity: {fileID: 8300000, guid: 4dcc77304c266764fb45644995e34fb2, type: 3}
+  supportShipLaserHitEntity: {fileID: 8300000, guid: 3e1625d8084f82d40af45aacc46a0142, type: 3}
   supportShipAudio3D:
     spatialBlend: 1
     volume: 0.9

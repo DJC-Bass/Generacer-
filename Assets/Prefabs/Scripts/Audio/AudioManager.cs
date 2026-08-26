@@ -160,10 +160,18 @@ public class AudioManager : MonoBehaviour
         PlayMusic(MusicForScene(sceneName));   // PlayMusic(null) stops the music
     }
 
+    /// <summary>Play a DIFFERENT scene's music than the one we are standing in, or null for the honest
+    /// answer. Set for the Support Ship pilot, whose car is parked in the hub while their camera and
+    /// ears are out on the track — they should hear the race they are flying over, not the hub behind
+    /// them. Assign it before calling RefreshSceneMusic; clearing it and refreshing restores the
+    /// real scene's music.</summary>
+    public static string MusicSceneOverride { get; set; }
+
     /// <summary>Re-evaluates and applies the CURRENT scene's music. Call after a state change that
     /// should swap the track without a scene reload (e.g. the Drone ending starting while the player
     /// is already in the hub). Idempotent — no-op if the right track is already playing.</summary>
-    public void RefreshCurrentSceneMusic() => ApplyMusicForScene(SceneManager.GetActiveScene().name);
+    public void RefreshCurrentSceneMusic() =>
+        ApplyMusicForScene(MusicSceneOverride ?? SceneManager.GetActiveScene().name);
     public static void RefreshSceneMusic() { if (Instance != null) Instance.RefreshCurrentSceneMusic(); }
 
     /// <summary>The looping track for a scene, or null for silence. Extend this as more scenes get

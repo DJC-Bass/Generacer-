@@ -28,7 +28,7 @@ using UnityEngine;
 /// </summary>
 public class SupportShipReplicator : MonoBehaviour
 {
-    const string MsgShip = "GNRC_SHIP";         // owner  → all: {ownerId, active}
+    const string MsgShip = "GNRC_SHIP";         // owner  → all: {ownerId, active, ownerInTrack}
     const string MsgAim = "GNRC_SHIP_AIM";      // pilot  → all: {ownerId, offset(Vec3), look(Vec3)}
     const string MsgPilot = "GNRC_SHIP_PILOT";  // client → server (request) / server → all (verdict)
     const string MsgDown = "GNRC_SHIP_DOWN";    // any    → server (report)  / server → all (verdict)
@@ -58,6 +58,7 @@ public class SupportShipReplicator : MonoBehaviour
     private class ShipEntry
     {
         public bool active;
+        public bool inTrack;        // owner is racing — the ship may be piloted from the hub pad
         public ulong pilotId = NoClient;
         public Vector3 offset;          // latest received (or locally flown) pilot offset
         public Vector3 smoothedOffset;
@@ -74,9 +75,30 @@ public class SupportShipReplicator : MonoBehaviour
     /// same frame and exactly one of them must get it.</summary>
     public static ulong LocalPilotOf { get; private set; } = NoClient;
 
+    /// <summary>Can this ship be taken over from the pilot pad right now?
+    ///
+    /// A ship exists as soon as its owner summons it, which they may do in the HUB — but there is
+    /// nothing to fly over until they are actually racing, so the pad only offers ships whose owner
+    /// is in the TrackScene. The owner's own machine is the authority on that (it is the one doing
+    /// the travelling) and reports it on the existing ship heartbeat.
+    ///
+    /// Our OWN ship answers from MultiplayerWorld directly rather than from the table: we never
+    /// receive our own heartbeat, so the entry's flag would be whatever we last wrote.</summary>
+    public static bool IsPilotable(ulong ownerId)
+    {
+        if (ownerId == LocalClientId)
+        {
+            var ability = SupportShipAbility.Instance;
+            return ability != null && ability.IsActive && MultiplayerWorld.LocalInTrackArea;
+        }
+        return Instance != null && Instance.ships.TryGetValue(ownerId, out var entry)
+            && entry.active && entry.inTrack;
+    }
+
     private float nextShipSend;
     private float nextAimSend;
     private bool lastSentActive;
+    private bool lastSentInTrack;
     private bool hasSentOnce;
 
     void Awake()
@@ -177,17 +199,24 @@ public class SupportShipReplicator : MonoBehaviour
         if (ability == null) return;
 
         bool active = ability.IsActive;
-        bool changed = !hasSentOnce || active != lastSentActive;
+        // Crossing the portal decides whether a teammate may fly this ship AT ALL, so it counts as a
+        // change: it goes out reliably and immediately rather than waiting up to half a second for the
+        // next heartbeat, which would leave the pad offering a ship that is already back in the hub.
+        bool inTrack = MultiplayerWorld.LocalInTrackArea;
+        bool changed = !hasSentOnce || active != lastSentActive || inTrack != lastSentInTrack;
 
         if (!changed && Time.unscaledTime < nextShipSend) return;
         nextShipSend = Time.unscaledTime + 1f / HeartbeatRate;
         lastSentActive = active;
+        lastSentInTrack = inTrack;
         hasSentOnce = true;
 
         // Record our OWN ship in the same table everyone else's lives in. Without this the host's
         // table has no entry for the host's ship, and ResolvePilotRequest — which runs on the host and
         // checks `active` before granting — would refuse every attempt to fly it.
-        GetOrCreate(LocalClientId).active = active;
+        var mine = GetOrCreate(LocalClientId);
+        mine.active = active;
+        mine.inTrack = inTrack;
 
         var msg = Msg;
         if (msg == null) return;
@@ -195,6 +224,7 @@ public class SupportShipReplicator : MonoBehaviour
         using var writer = new FastBufferWriter(24, Allocator.Temp);
         writer.WriteValueSafe(LocalClientId);
         writer.WriteValueSafe(active);
+        writer.WriteValueSafe(inTrack);
 
         // Summoning and dismissing must never be the packet that goes missing — a lost "dismissed"
         // would leave a ghost ship escorting everyone else's view of this player forever.
@@ -269,7 +299,10 @@ public class SupportShipReplicator : MonoBehaviour
 
         if (claim)
         {
-            if (entry.active && entry.pilotId == NoClient) entry.pilotId = requesterId;
+            // `inTrack` is checked HERE and not only in the pad's UI. The list can be a heartbeat
+            // stale, and a player pressing A on the frame their teammate crosses the return portal
+            // must not end up flying a ship parked back in the hub.
+            if (entry.active && entry.inTrack && entry.pilotId == NoClient) entry.pilotId = requesterId;
         }
         else if (entry.pilotId == requesterId)
         {
@@ -509,21 +542,30 @@ public class SupportShipReplicator : MonoBehaviour
         {
             reader.ReadValueSafe(out ulong ownerId);
             reader.ReadValueSafe(out bool active);
+            reader.ReadValueSafe(out bool inTrack);
 
             if (IsServer && ownerId != LocalClientId)
             {
                 using var writer = new FastBufferWriter(24, Allocator.Temp);
                 writer.WriteValueSafe(ownerId);
                 writer.WriteValueSafe(active);
+                writer.WriteValueSafe(inTrack);
                 SendToRemoteClients(MsgShip, writer, NetworkDelivery.ReliableSequenced, excludeClientId: ownerId);
 
-                // A ship that has just been put away can't stay claimed — free THAT SHIP's controls so
-                // the hub player isn't left steering nothing. Note this must NOT touch claims this
-                // player holds on OTHER ships (see ReleaseClaimsOnShip).
-                if (!active) ReleaseClaimsOnShip(ownerId);
+                // A ship that can no longer be flown can't stay claimed — free THAT SHIP's controls so
+                // the hub player isn't left steering nothing. Two ways that happens: the owner puts the
+                // ship away, or the owner takes the return portal out of the track, which ends their
+                // teammate's session at the pad exactly as if they had pressed SELECT. Note this must
+                // NOT touch claims this player holds on OTHER ships (see ReleaseClaimsOnShip).
+                if (!active || !inTrack) ReleaseClaimsOnShip(ownerId);
             }
 
-            if (ownerId != LocalClientId) GetOrCreate(ownerId).active = active;
+            if (ownerId != LocalClientId)
+            {
+                var entry = GetOrCreate(ownerId);
+                entry.active = active;
+                entry.inTrack = inTrack;
+            }
         });
 
         msg.RegisterNamedMessageHandler(MsgAim, (sender, reader) =>
