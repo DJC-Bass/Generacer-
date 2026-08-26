@@ -1592,7 +1592,47 @@ bugs to someone reading the code cold:
     still parked, ready for next round — not dumped out of the station.
 - **THE PILOT SEES THE TRACK'S WORLD, NOT THE HUB'S (2026-08-24).** Their car is parked in the hub, so
   each piece has to be borrowed separately:
-  - **Sky** — per-CAMERA `Skybox` component (was already there; see `ApplyTrackSkybox`).
+  - **Sky** — per-CAMERA `Skybox` component (see `ApplyTrackSkybox`).
+    - ⚠️ **The pilot's sky must be THIS round's (fixed 2026-08-24).** Symptom: the pilot flew under
+      completely different hues from the racers — green sky vs purple, red ground vs blue. The hues
+      themselves were never the problem: they derive from `MultiplayerWorld.DeriveRandom("skybox")`, so
+      the same seed gives the same colours on every machine, and `PilotControlCenter.trackSkybox` is
+      correctly wired to the SAME `SimpleSkybox.mat` the TrackScene uses (so saturation/value match too).
+      The sky was simply from the WRONG ROUND.
+    - Cause: `SkyboxHueRandomizer.instance` is only replaced by a SUCCESSFUL recolour, and a recolour
+      only succeeds on a SimpleSkybox. Returning to the hub — whose sky is Unity's Default-Skybox —
+      recolours nothing, so the last round the player personally RACED leaves its sky in `instance`
+      indefinitely. `CurrentSky` served that, and the pad preferred it as its highest-fidelity source.
+      A pilot who raced in round 1 and then flew from the hub in round 2 got round 1's sky.
+    - Fix: `SkyboxHueRandomizer` stamps `builtSeed` on every successful recolour, and `CurrentSky`
+      returns null when that doesn't match the current round. The pad then falls through to
+      `BuildRoundSky(trackSkybox)`, which rebuilds from the base asset with this round's seed and lands
+      on identical colours. **The general lesson: a cached per-ROUND artifact needs the round stamped
+      on it, or "is it still valid" degrades into "do we happen to have one".**
+    - Both machines agree on the tuning because `SkyboxHueRandomizer` is BOOTSTRAPPED, never placed in
+      a scene — its hue-offset/saturation fields are code defaults everywhere and cannot drift.
+  - **Ambient light** — `ApplyTrackAmbient` (added 2026-08-24, after a side-by-side screenshot showed
+    the pilot's view flat and pale where a racer's was dark and contrasty). ⚠️ **The per-camera
+    Skybox does NOT cover this.** Both scenes use **Ambient Mode = Skybox**, so ALL ambient light is
+    generated from `RenderSettings.skybox` — a GLOBAL property that follows the ACTIVE scene. The
+    pilot's active scene is the hub, whose sky is Unity's built-in bright daylight Default-Skybox, so
+    they were lighting a night track with a blue afternoon. The camera drew the right sky the whole
+    time; only the light coming off it was wrong. Fix: point `RenderSettings.skybox` at the same
+    material the camera got, `DynamicGI.UpdateEnvironment()`, and restore on release.
+    - Safe despite being global: this machine renders nothing else while piloting (hub camera off, own
+      car off-screen) and RenderSettings is per-machine. `RestoreAmbient` is guarded on the stored
+      material still existing — leaving the TRACK's sky lighting the hub would be worse than the bug.
+    - The hub's sky is Unity's built-in asset, never a runtime instance, because
+      `SkyboxHueRandomizer.BuildRecoloured` returns null for anything that isn't a SimpleSkybox. So the
+      parked reference cannot be destroyed under us.
+  - **⚠️ POST-PROCESSING IS NOT INVOLVED, and never was.** The project contains **no Volume
+    component anywhere** — no global volume, no local ones, no profiles. Nothing is graded, and
+    `renderPostProcessing` on the pilot camera changes nothing today (it is left on so it starts
+    working the day a Volume is added). Recorded loudly because "the racer's view is more dramatic"
+    reads like a grading difference and is not: **it is ambient light, every time.**
+  - **Anti-aliasing** — the car cameras are authored with `m_Antialiasing: 2` (SMAA); a code-built
+    camera defaults to None, so the pilot's view resolved edges visibly more jaggedly. `EnsureRig` now
+    sets `antialiasing` / `antialiasingQuality` to match.
   - **Lights + music** — `MultiplayerWorld.SetPilotPresentation(true)`, which folds a
     `pilotPresentation` flag into `ApplyAreaPresentation` and sets `AudioManager.MusicSceneOverride`.
     Blackout rounds still read correctly, because `SetAreaLights` restores each light's RECORDED state

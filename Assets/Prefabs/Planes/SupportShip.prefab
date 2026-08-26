@@ -44,7 +44,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5306791506608684826}
   serializedVersion: 5
-  m_Mass: 1
+  m_Mass: 250
   m_LinearDamping: 0
   m_AngularDamping: 0.25
   m_CenterOfMass: {x: 0, y: 0, z: 0}
@@ -90,9 +90,14 @@ MonoBehaviour:
   maxRollAngle: -80
   lookSmoothTime: 0.25
   laserPrefab: {fileID: 2995498548506242398, guid: fe0f7eac21c44b24a99371b8a44b29a5, type: 3}
-  muzzleOffset: {x: 0, y: -0.5, z: -20}
+  muzzleOffset: {x: 0, y: -0.5, z: -40}
   laserSpeed: 500
-  laserLayerName: Projectile
+  velocitySmoothTime: 0.05
+  laserLayerName: SupportShipLaser
+  maxHits: 10
+  projectileHitCooldown: 2
+  collisionHitCooldown: 2
+  projectileLayerName: Projectile
   ragdollDuration: 2
   ragdollTumbleTorque: 12
   crashIgnoreMask:
@@ -100,6 +105,7 @@ MonoBehaviour:
     m_Bits: 294912
   teleportDistance: 500
   detectCrashes: 1
+  ownerClientId: 0
 --- !u!65 &2707947542225135691
 BoxCollider:
   m_ObjectHideFlags: 0

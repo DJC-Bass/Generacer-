@@ -50,6 +50,7 @@ public class SkyboxHueRandomizer : MonoBehaviour
 
     private readonly System.Random rng = new System.Random();
     private Material instance;
+    private int builtSeed;      // the round seed `instance` was derived from (see CurrentSky)
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
@@ -61,10 +62,26 @@ public class SkyboxHueRandomizer : MonoBehaviour
 
     public static SkyboxHueRandomizer Instance { get; private set; }
 
-    /// <summary>The live recoloured sky, or null before one has been built. A camera that needs the
-    /// TRACK's sky while the HUB is the active scene (the Support Ship pilot) reads this rather than
-    /// RenderSettings, which always reflects the active scene.</summary>
-    public static Material CurrentSky => Instance != null ? Instance.instance : null;
+    /// <summary>The live recoloured sky FOR THIS ROUND, or null if we don't have one. A camera that
+    /// needs the TRACK's sky while the HUB is the active scene (the Support Ship pilot) reads this
+    /// rather than RenderSettings, which always reflects the active scene.
+    ///
+    /// ⚠️ The round check is load-bearing, and its absence was a real bug (fixed 2026-08-24): the
+    /// pilot's sky did not match the racer's. `instance` is only ever REPLACED by a successful
+    /// recolour, and a recolour only succeeds on a SimpleSkybox — so returning to the hub, whose sky is
+    /// Unity's Default-Skybox, leaves the LAST ROUND'S track sky sitting in `instance` indefinitely. A
+    /// pilot who raced in round 1 and then flew from the hub in round 2 was handed round 1's colours,
+    /// while the racers saw round 2's. Stamping the seed it was built for and refusing to serve a
+    /// mismatch sends the caller to rebuild from the base asset, which lands on this round's hues
+    /// because they derive from the shared seed.</summary>
+    public static Material CurrentSky =>
+        Instance != null && Instance.instance != null && Instance.builtSeed == RoundSeedNow
+            ? Instance.instance : null;
+
+    /// <summary>The seed the CURRENT sky should be derived from. 0 outside a seeded round, which is
+    /// also what single-player uses, so the two agree without a special case.</summary>
+    static int RoundSeedNow =>
+        MultiplayerWorld.IsMultiplayerGame ? MultiplayerWorld.CurrentRoundSeed : 0;
 
     /// <summary>Builds a recoloured COPY of any base skybox with this round's hues — for a camera that
     /// needs a sky the active scene isn't using. The caller owns the returned material and must destroy
@@ -107,6 +124,7 @@ public class SkyboxHueRandomizer : MonoBehaviour
 
         Material previous = instance;
         instance = recoloured;
+        builtSeed = RoundSeedNow;   // so CurrentSky can tell this round's sky from a leftover
         RenderSettings.skybox = instance;
         DynamicGI.UpdateEnvironment();   // refresh ambient / reflections from the recoloured sky
 

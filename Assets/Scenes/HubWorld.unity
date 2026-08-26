@@ -390,6 +390,8 @@ MonoBehaviour:
   fieldOfView: 75
   nearClip: 0.3
   trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
+  antialiasing: 2
+  antialiasingQuality: 2
   enablePostProcessing: 1
   farClip: 35000
   cameraFollowLag: 0.1
@@ -2251,7 +2253,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &947469741
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6151,7 +6153,7 @@ MonoBehaviour:
   lookAheadDistance: 5
   fieldOfView: 114.2
   nearClip: 0.3
-  farClip: 20000
+  farClip: 30000
   boundsFillFraction: 0.4
 --- !u!23 &7886785929120676156
 MeshRenderer:
@@ -6353,7 +6355,7 @@ MonoBehaviour:
   lookAheadDistance: 5
   fieldOfView: 114.2
   nearClip: 0.3
-  farClip: 20000
+  farClip: 30000
   boundsFillFraction: 0.4
 --- !u!4 &9023052943533179475
 Transform:
@@ -6435,6 +6437,8 @@ MonoBehaviour:
   fieldOfView: 75
   nearClip: 0.3
   trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
+  antialiasing: 2
+  antialiasingQuality: 2
   enablePostProcessing: 1
   farClip: 35000
   cameraFollowLag: 0.1

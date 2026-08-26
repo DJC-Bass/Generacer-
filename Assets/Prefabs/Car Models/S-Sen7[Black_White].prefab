@@ -1477,6 +1477,14 @@ PrefabInstance:
       value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
+      propertyPath: laserLayerName
+      value: SupportShipLaser
+      objectReference: {fileID: 0}
+    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
+      propertyPath: muzzleOffset.z
+      value: -40
+      objectReference: {fileID: 0}
+    - target: {fileID: 649667492114300926, guid: fc47ed48538b29f428ea2bab570b9f60, type: 3}
       propertyPath: collisionHitCooldown
       value: 2
       objectReference: {fileID: 0}
