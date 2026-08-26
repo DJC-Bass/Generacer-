@@ -378,6 +378,7 @@ public class MultiplayerWorld : MonoBehaviour
             // Every client's car was placed at the SAME authored pose — with solid puppets that means
             // spawning inside a teammate. Shift into this player's formation slot immediately.
             car.transform.SetPositionAndRotation(ApplySpawnFormation(hubSpawnPos, hubSpawnRot), hubSpawnRot);
+            ClearInterpolationHistory(car.GetComponent<Rigidbody>());   // placed, not driven, into the slot
         }
         else
         {
@@ -528,16 +529,32 @@ public class MultiplayerWorld : MonoBehaviour
     /// rigidbody is ever set to Interpolate, a plain transform set leaves interpolation's pose-history
     /// behind and the car render-smears across the jump (reads as "kept falling"); toggling off→on clears
     /// that history. Player cars currently use interpolation NONE, so that branch simply no-ops.</summary>
+    /// <summary>Tells the physics interpolator that the pose it is holding is obsolete, after a body has
+    /// been PLACED somewhere rather than having travelled there. Call it right after any direct
+    /// transform write on an interpolated Rigidbody.
+    ///
+    /// Interpolation renders a body BETWEEN its last two physics poses. A plain transform write leaves
+    /// the older of those back at the departure point, so for a frame or two the mesh render-slides
+    /// across the gap — the object appears to streak to its new home rather than appear there. Over the
+    /// 100 km area jump that is a hyperspeed smear across the map; over a drone's few-metre path
+    /// recovery it is a flicker. Toggling interpolation off and straight back on discards the history.
+    ///
+    /// Lives here because this is where the trick was first needed (the area teleport), but it is not
+    /// multiplayer-specific: the single-player track spawn and the rewind use it too. Cheap, and a
+    /// no-op on a body whose interpolation is off, so it is safe to call unconditionally.</summary>
+    public static void ClearInterpolationHistory(Rigidbody rb)
+    {
+        if (rb == null || rb.interpolation == RigidbodyInterpolation.None) return;
+        var mode = rb.interpolation;
+        rb.interpolation = RigidbodyInterpolation.None;
+        rb.interpolation = mode;
+    }
+
     static void TeleportCar(Rigidbody rb, Transform car, Vector3 pos, Quaternion rot)
     {
         car.SetPositionAndRotation(pos, rot);
         Physics.SyncTransforms();
-        if (rb != null && rb.interpolation != RigidbodyInterpolation.None)
-        {
-            var mode = rb.interpolation;
-            rb.interpolation = RigidbodyInterpolation.None;
-            rb.interpolation = mode;
-        }
+        ClearInterpolationHistory(rb);
     }
 
     /// <summary>Since puppets are SOLID (kinematic colliders), players can't all be placed on the

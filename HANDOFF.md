@@ -520,24 +520,60 @@ NetworkVariables — same authority model, zero editor setup).**
   extrapolation/smoothing; the collider must track the transform exactly). Applies to ALL solid puppets
   (players/drones/boulders), so it also tightens player-vs-player contact accuracy. **Gotcha for future
   puppet work:** any transform-driven kinematic puppet must have rigidbody interpolation OFF.
-- **Player-car judder — RESOLVED, and NOT with interpolation (settled 2026-07-23). Read this before
-  touching Rigidbody interpolation again.** The host's car appeared to vibrate up/down more than the
-  client's on turns/drifts. It was tried as an interpolation problem (`CarController.Start` setting
-  `rb.interpolation = Interpolate`) — **that change has been REVERTED and should not be reintroduced.**
-  Actual cause: **the size of the Editor game window in Focus Mode**; maximized/fullscreen heavily
-  reduces the vibration. Setting cars to Interpolate also caused a WORSE, separate regression —
-  **DroneCar movement jittered as if on bad ping** — plus it broke the hub↔track portal teleport (see
-  below). Player cars therefore stay on interpolation **None**. Puppets are transform-driven and also
-  **None**. If the *physics* bob itself ever feels like too much, that's suspension tuning — raise
-  `springDamper` (16 → ~23 = critically damped) — not interpolation.
+- **INTERPOLATION IS NOW ON EVERYWHERE (2026-08-24) — this SUPERSEDES the 2026-07-23 "never turn it
+  on" entry.** That earlier revert was the right call for the change as made, and the reasoning below
+  explains why it looked like interpolation was the villain when it was actually the cure applied to
+  half the world.
+  - **The rule: everything RENDERED must move on ONE clock.** A physics body with interpolation off
+    only moves on the 50 Hz `FixedUpdate` grid; with it on, it moves at render rate. Mixing the two is
+    what produces judder — and the judder shows up on whichever half DISAGREES with the camera.
+  - **Why turning it on "broke" the drones in July.** It was applied to player cars only. The camera
+    rides the player car, so the camera became smooth while DroneCars stayed on the 50 Hz grid — and
+    their stepping became visible for the first time. **Interpolation did not cause that jitter, it
+    revealed it.** The drones had always been stepping; the observer had simply been stepping with
+    them, which hid it. Reverting re-hid it rather than fixing it.
+  - **And why it had to be fixed anyway: multiplayer had the SAME mismatch, permanently.**
+    `RemoteCarPuppet` moves by transform writes in `Update`, i.e. already at render rate, so remote
+    cars were always smooth while the camera stepped. Symptom (user-reported, 2026-08-24): a remote
+    car looks smooth at distance but choppy up close at speed — because at 268 m/s the camera jumps
+    **5.36 m per physics step** LONGITUDINALLY, which is a negligible angle for a car far ahead on your
+    axis of travel and a huge one for a car alongside you. Much of the "choppy remote car" was the
+    observer's own camera.
+  - **A second, independent win.** `RemoteCarManager.SendCarState` samples `car.transform.position` in
+    `Update` at 30 Hz. With interpolation OFF that reads the last `FixedUpdate` pose, stale by a random
+    0—20 ms, so up to 5.36 m of jitter was being BAKED INTO the packets, uncorrelated with the
+    `linearVelocity` sent beside it. No extrapolator can fix corrupted input. Interpolation on makes
+    that read a smooth pose advancing at the true velocity.
+  - **What was switched on** (14 prefabs): all 6 player cars, `Clipper[Playable]`, `DroneCar`,
+    `DroneCar[Playable]`, `ChallengerCar` (runs DroneCar), `DronePlane`, `GigaDronePlane`,
+    `GigaPlusDronePlane`, `SupportShipLasers`. The DronePissBall variants and LavaBoulders already had
+    it on — which is precisely why they were the odd ones out before.
+  - **What stays OFF, and must:** transform-driven bodies. `RemoteCarPuppet` puppets (`StripPuppet`
+    forces None — see the boulder-collider entry above), `SupportShip` (kinematic follower written in
+    `LateUpdate`), and `MetalFanObstacle` / `FodderBuilding` (spun by `transform.Rotate` in `Update`).
+    The test is simple: **if a script writes the transform, interpolation must be off; if physics moves
+    it, interpolation must be on.**
+  - ⚠️ **Every direct transform write on an interpolated body now needs its history cleared**, or
+    the mesh render-slides to the new pose instead of appearing there. One shared helper:
+    `MultiplayerWorld.ClearInterpolationHistory(rb)` (public, mode-agnostic, no-op when interpolation
+    is off). Five call sites: `TeleportCar` (the original), the hub formation shift, `TrackGenerator`'s
+    single-player track spawn, `CarRewind.StepRewind` (EVERY scrub step is a placement), and
+    `DroneCar` twice — its spawn placement and its off-path recovery snap.
+  - **Kept from the old entry:** the host-vs-client vibration was **Editor game-window size in Focus
+    Mode** (maximize it), and if the *physics* bob feels excessive that is suspension tuning — raise
+    `springDamper` (16 → ~23 = critically damped) — not interpolation.
+  - **Still worth checking (2026-08-24):** `vSyncCount: 0` with no `targetFrameRate`, so the render rate
+    is uncapped and irregular. That is no longer beating against a 50 Hz grid for moving objects, but
+    frame pacing is still worth a look if anything feels uneven.
 - **Teleport hardening (2026-07-22, from the reverted interpolation experiment):** while cars were
   briefly set to Interpolate, the hub↔track portal broke — players "kept falling" while the
   skybox/music had already switched, because teleporting an **Interpolate** rigidbody via a plain
   `transform.SetPositionAndRotation` leaves interpolation's pose HISTORY at the pre-teleport spot and
   it render-smears across the ~35 km jump. `MultiplayerWorld.TeleportCar` was added and **kept**: it
   sets the pose, calls `Physics.SyncTransforms()` (so THIS frame's suspension raycasts/camera read the
-  destination), then toggles `rb.interpolation` off→on to clear any history. With cars back on `None`
-  that toggle simply no-ops, so the helper is now just correct-by-construction teleporting. BOTH
+  destination), then clears the interpolation history. **As of 2026-08-24 that clear is live again**
+  (cars are back on Interpolate) and has been factored out as
+  `MultiplayerWorld.ClearInterpolationHistory(rb)` for the four other places that now need it. BOTH
   `EnterTrackLocally` and `ReturnToHubLocally` (portal out / kill floor / LRA abort / return portal)
   route through it. **Gotcha:** any future transform-teleport of an interpolated body needs that
   history-clear.

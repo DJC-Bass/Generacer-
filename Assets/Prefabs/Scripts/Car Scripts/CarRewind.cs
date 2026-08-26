@@ -119,6 +119,10 @@ public class CarRewind : MonoBehaviour
         int idx = Mathf.Clamp(Mathf.RoundToInt(playhead), 0, history.Count - 1);
         Snap snap = history[idx];
         transform.SetPositionAndRotation(snap.pos, snap.rot);
+        // EVERY step of a rewind is a placement, not travel — consecutive snapshots are a whole frame
+        // apart and played back at rewindSpeed, so an interpolator left to blend between them would
+        // render the car smearing backwards through poses it never held.
+        MultiplayerWorld.ClearInterpolationHistory(rb);
 
         if (playhead <= 0f) { EndRewind(); return; }   // reached the oldest state — can't go further
         playhead -= Mathf.Max(0f, rewindSpeed);

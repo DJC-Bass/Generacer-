@@ -116,8 +116,10 @@ public class DroneCar : MonoBehaviour
         if (path != null && path.IsReady)
         {
             path.Sample(pathDistance, out Vector3 pos, out Vector3 tan);
-            transform.position = pos + Vector3.up * verticalSpawnOffset;
-            transform.rotation = Quaternion.LookRotation(tan, Vector3.up);
+            transform.SetPositionAndRotation(pos + Vector3.up * verticalSpawnOffset,
+                                             Quaternion.LookRotation(tan, Vector3.up));
+            // Placed here, not slid here from wherever the prefab was instantiated.
+            MultiplayerWorld.ClearInterpolationHistory(rb != null ? rb : GetComponent<Rigidbody>());
         }
     }
 
@@ -154,7 +156,9 @@ public class DroneCar : MonoBehaviour
         // Once hit, DON'T snap back to the path — let it drift and fall away.
         if (!playerHit && deviation > maxOffPathDistance)
         {
+            // Yanked back onto the path — a jump, not travel, so don't let it smear across the gap.
             transform.position = targetPos;
+            MultiplayerWorld.ClearInterpolationHistory(rb);
             rb.linearVelocity = tangent * pathSpeed;
             return;
         }

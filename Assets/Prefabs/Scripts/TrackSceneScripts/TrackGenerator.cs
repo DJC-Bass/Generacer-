@@ -1243,6 +1243,9 @@ public class TrackGenerator : MonoBehaviour
             }
 
             existingCar.transform.SetPositionAndRotation(pos, rot);
+            // Single-player's version of the area teleport: the car is PLACED on the start line, so the
+            // interpolator must not render it sliding there from wherever it was parked in the hub.
+            MultiplayerWorld.ClearInterpolationHistory(rb);
 
             // Apply the spawn boost AFTER the teleport so velocity is preserved.
             // We need one more physics step for the new transform to register before
