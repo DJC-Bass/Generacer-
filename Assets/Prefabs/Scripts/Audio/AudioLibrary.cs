@@ -161,8 +161,14 @@ public class AudioLibrary : ScriptableObject
     public AudioClip supportShipLoop;
     [Tooltip("One-shot (3D) when the racer dismisses their Support Ship with L3+Y.")]
     public AudioClip supportShipDeactivate;
+    [Tooltip("One-shot (3D) each time the Support Ship takes a NON-FATAL hit — clipped scenery, ate a " +
+             "drone round — and survived it. One point of a 5-point pool, so this plays up to four " +
+             "times before the ship is lost: it is the pilot's only warning that the pool is draining, " +
+             "and it wants to read as clearly SURVIVABLE next to Support Ship Destroyed.")]
+    public AudioClip supportShipHit;
     [Tooltip("One-shot (3D) when the Support Ship is downed by a collision or a projectile — plays at " +
-             "the wreck, so it doubles as a positional cue for where the ship was lost.")]
+             "the wreck, so it doubles as a positional cue for where the ship was lost. The FINAL hit " +
+             "plays this INSTEAD of Support Ship Hit, never both, so the kill is never muddied.")]
     public AudioClip supportShipDestroyed;
     [Tooltip("One-shot (3D) at the muzzle each time the pilot fires the twin lasers. Holding A fires a " +
              "3-round burst, so this plays up to three times in quick succession — keep it short and dry.")]
@@ -178,7 +184,7 @@ public class AudioLibrary : ScriptableObject
              "block. NOTE: a round absorbed by a car's invulnerability window plays the ENVIRONMENT " +
              "sound instead, because nothing happened — same convention DroneProjectile uses.")]
     public AudioClip supportShipLaserHitEntity;
-    [Tooltip("3D playback tuning shared by ALL FOUR Support Ship sounds above — spatial blend, volume, " +
+    [Tooltip("3D playback tuning shared by ALL the Support Ship sounds above — spatial blend, volume, " +
              "min/max distance, rolloff, doppler. THIS is the block to edit when tuning how far away " +
              "the ship can be heard. Note the ship flies up to its offset limits away from its racer, " +
              "so a tight max distance will make it drop out at the edges of the pilot's box.")]

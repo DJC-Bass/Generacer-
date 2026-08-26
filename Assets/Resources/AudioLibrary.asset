@@ -100,10 +100,11 @@ MonoBehaviour:
   supportShipActivate: {fileID: 8300000, guid: d841f1cf87acf024487b42485b76771c, type: 3}
   supportShipLoop: {fileID: 0}
   supportShipDeactivate: {fileID: 8300000, guid: f1cb03db9e893644dbda47a22e285c4d, type: 3}
-  supportShipDestroyed: {fileID: 0}
+  supportShipHit: {fileID: 8300000, guid: 3c2715988bb70ee41aff3fa09a3b4db6, type: 3}
+  supportShipDestroyed: {fileID: 8300000, guid: c986be7241ce0b445bd24965d29866dd, type: 3}
   supportShipLaserFire: {fileID: 8300000, guid: 651fc93acbe86984595c13d4924982b9, type: 3}
   supportShipLaserHitEnvironment: {fileID: 8300000, guid: 3e1625d8084f82d40af45aacc46a0142, type: 3}
-  supportShipLaserHitEntity: {fileID: 8300000, guid: f661e8a9262cd1b41b6d9f41f7d0c440, type: 3}
+  supportShipLaserHitEntity: {fileID: 8300000, guid: 4dcc77304c266764fb45644995e34fb2, type: 3}
   supportShipAudio3D:
     spatialBlend: 1
     volume: 0.9

@@ -21,6 +21,9 @@ using UnityEngine;
 ///    then enters the same downed state a player ram produces. The credits are settled at the kill
 ///    floor and go to whoever touched it LAST — gunner or driver.
 ///  • A LAVA BOULDER is destroyed outright for <see cref="boulderBounty"/>.
+///  • ANOTHER PROJECTILE (<see cref="cancelLayerName"/>) is CANCELLED — both die. This is what lets a
+///    gunner shoot incoming drone fire out of the air before it reaches the racer, and it needs the
+///    collision matrix to permit the contact (see that field's tooltip).
 ///
 /// It still ignores the ship that fired it — a round spawning inside its own muzzle would die instantly
 /// — but nothing else. Watching your own racer is the pilot's problem.
@@ -55,6 +58,14 @@ public class SupportShipLaser : MonoBehaviour
     public int droneHitsToDown = 3;
     [Tooltip("Credits paid to the GUNNER for destroying a LavaBoulder outright.")]
     public int boulderBounty = 25;
+    [Tooltip("Layer whose objects this round CANCELS on contact — both are destroyed. Aimed at drone " +
+             "fire (DronePissBalls), so the gunner can shoot incoming shots down before they reach the " +
+             "racer.\n\n" +
+             "⚠️ This only works if the collision MATRIX lets the two touch. Rounds are themselves on " +
+             "the Projectile layer by default, so cancelling Projectiles means ticking Projectile ↔ " +
+             "Projectile — which also makes drone shots cancel EACH OTHER. To avoid that, give the " +
+             "laser prefab its own layer and leave this pointing at Projectile.")]
+    public string cancelLayerName = "Projectile";
 
     [Header("Audio (3D, at the impact)")]
     [Tooltip("3D tuning for the round hitting something it does NOTHING to — the track, a wall. A miss " +
@@ -155,6 +166,7 @@ public class SupportShipLaser : MonoBehaviour
 
         var hit = collision.collider;
 
+        if (TryCancelProjectile(hit)) { Finish(true); return; }
         if (TryHitDronePlane(hit)) { Finish(true); return; }
         if (TryHitDroneCar(hit)) { Finish(true); return; }
         if (TryHitBoulder(hit)) { Finish(true); return; }
@@ -175,6 +187,32 @@ public class SupportShipLaser : MonoBehaviour
         if (effective) AudioManager.PlaySupportShipLaserHitEntity(transform.position, entityAudio3D);
         else AudioManager.PlaySupportShipLaserHitEnvironment(transform.position, environmentAudio3D);
         Destroy(gameObject);
+    }
+
+    /// <summary>Mutual destruction with another projectile — the gunner shooting incoming drone fire out
+    /// of the air before it reaches the racer.
+    ///
+    /// Checked FIRST, and by LAYER rather than by component, so it covers anything that flies: a
+    /// DronePissBall, another gunner's round, or any future Projectile-layer object that has no script
+    /// this file knows about.
+    ///
+    /// Only the OTHER object is destroyed here; this round dies on its own in Finish(). Note that a
+    /// DroneProjectile would in fact remove itself anyway — it despawns on any collision at all — but
+    /// relying on that would mean silent pass-through for anything that isn't one.</summary>
+    bool TryCancelProjectile(Collider hit)
+    {
+        if (string.IsNullOrEmpty(cancelLayerName)) return false;
+
+        int layer = LayerMask.NameToLayer(cancelLayerName);
+        if (layer < 0 || hit.gameObject.layer != layer) return false;
+
+        // The projectile's ROOT is its rigidbody's object — destroying the struck collider alone could
+        // leave a headless husk on anything built as a parent with child colliders.
+        GameObject other = hit.attachedRigidbody != null ? hit.attachedRigidbody.gameObject : hit.gameObject;
+        if (other == gameObject) return false;   // never cancel ourselves
+
+        Destroy(other);
+        return true;
     }
 
     /// <summary>Reports a hit on a drone plane for the IMPACT SOUND only — it deliberately applies no
@@ -222,7 +260,10 @@ public class SupportShipLaser : MonoBehaviour
             if (t.CompareTag(playerTag))
             {
                 // The local car's window is owned right here.
-                if (PlayerInvulnerable) return false;
+                // Rounds are on the Projectile layer, so an active shield ignores them too — the
+                // rule is "shielded = immune to projectiles", not "immune to hostile ones". Carve an
+                // exception here if a friendly boost should ever punch through.
+                if (PlayerInvulnerable || ShieldAbility.LocalShieldUp) return false;
 
                 ApplyPopUp(t.gameObject, popUpForce);
                 BeginInvulnerability(hitInvulnerabilitySeconds);

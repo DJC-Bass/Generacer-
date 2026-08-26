@@ -18,13 +18,19 @@ using UnityEngine;
 /// swivel and the speed-barrier muffle, none of which belong on a plane). Keep the two in sync by
 /// hand if the follow feel is ever re-tuned.
 ///
-/// DEATH: any contact downs it — a 2 s tumble under gravity, then despawn, exactly like a DronePlane
-/// wreck. Detection is by TRIGGER, not collision, for two reasons: a kinematic body driven by
-/// transform writes raises no collision events against static scenery (so it would sail through the
-/// track), and triggers still honour the Physics collision MATRIX — so what can and can't down the
-/// ship stays a Project Settings decision on the "SupportShip" layer rather than something baked in
-/// here. The owner's own car is excluded in code, since the matrix cannot tell it apart from an
-/// enemy's (both are on the Player layer).
+/// DEATH: contacts spend a HEALTH POOL (<see cref="maxHits"/>, 5 by default) rather than downing it
+/// outright — drone fire, scenery, cars and other ships all draw on the same pool, with separate
+/// cooldowns for incoming FIRE and for ENVIRONMENTAL scrapes. Running it dry starts a 2 s tumble under
+/// gravity, then despawn, exactly like a DronePlane wreck. Detection is by TRIGGER, not collision, for
+/// two reasons: a kinematic body driven by transform writes raises no collision events against static
+/// scenery (so it would sail through the track), and triggers still honour the Physics collision MATRIX
+/// — so what can and can't damage the ship stays a Project Settings decision on the "SupportShip" layer
+/// rather than something baked in here. The owner's own car is excluded in code, since the matrix
+/// cannot tell it apart from an enemy's (both are on the Player layer).
+///
+/// ⚠️ Only ONE machine counts those hits — the HOST (see <see cref="detectCrashes"/> and where
+/// SupportShipAbility sets it). Two counters would diverge, because the host and the owner see
+/// overlapping but different hit sets.
 ///
 /// Multiplayer: every machine runs its own copy glued to its own copy of the owner's car — see
 /// <see cref="SupportShipReplicator"/>. Nothing about the flight is streamed; only the pilot's offset
@@ -94,6 +100,22 @@ public class SupportShip : MonoBehaviour
     [Tooltip("Layer applied to spawned rounds. Blank = keep the prefab's layer.")]
     public string laserLayerName = "Projectile";
 
+    [Header("Durability")]
+    [Tooltip("Contacts the ship survives before going down. Every source shares the one pool — drone " +
+             "fire, scenery, cars, other ships alike.")]
+    public int maxHits = 5;
+    [Tooltip("Minimum seconds between two PROJECTILE hits. A drone burst arrives faster than the ship " +
+             "can react, so without this a single volley would empty the pool in a fraction of a second " +
+             "and the health may as well not exist.")]
+    public float projectileHitCooldown = 0.35f;
+    [Tooltip("Minimum seconds between two ENVIRONMENTAL hits (scenery, cars, other ships). One physical " +
+             "impact raises several trigger contacts as the ship bounces and scrapes along, and each " +
+             "would otherwise be a separate point of damage.")]
+    public float collisionHitCooldown = 0.35f;
+    [Tooltip("Layer used to tell a PROJECTILE hit from an ENVIRONMENTAL one, so the two cooldowns above " +
+             "can differ. Blank = everything counts as environmental.")]
+    public string projectileLayerName = "Projectile";
+
     [Header("Crash")]
     [Tooltip("Seconds the wreck tumbles under gravity after being downed, before it despawns.")]
     public float ragdollDuration = 2f;
@@ -113,6 +135,10 @@ public class SupportShip : MonoBehaviour
              "other viewer, whose copy is a visual derived from an interpolated puppet and would " +
              "otherwise call phantom crashes. A spectating copy ragdolls only when told to.")]
     public bool detectCrashes = true;
+
+    /// <summary>Which player's ship this is. Stamped at build time by whoever created it, so the copy
+    /// that counts hits can name itself when reporting damage to the other machines.</summary>
+    [HideInInspector] public ulong ownerClientId;
 
     /// <summary>The car this ship escorts. Set by <see cref="Attach"/>.</summary>
     public Transform Car { get; private set; }
@@ -179,6 +205,10 @@ public class SupportShip : MonoBehaviour
     private bool posInitialised;
     private Vector3 lastCarPosition;
     private Collider[] ownColliders;
+    private int hitsTaken;                       // health pool spent so far (see maxHits)
+    private float lastProjectileHitTime = -999f;
+    private float lastCollisionHitTime = -999f;
+    private DroneDamageTint damageTint;
 
     void Awake()
     {
@@ -257,6 +287,14 @@ public class SupportShip : MonoBehaviour
         maxPitchAngle = src.maxPitchAngle;
         maxRollAngle = src.maxRollAngle;
         lookSmoothTime = src.lookSmoothTime;
+
+        // The health pool especially: the HOST's copy of a remote ship is the one that counts hits,
+        // and it is built by BuildShip + CopyTuningFrom — so without these it would count against code
+        // defaults and ignore whatever the prefab was tuned to.
+        maxHits = src.maxHits;
+        projectileHitCooldown = src.projectileHitCooldown;
+        collisionHitCooldown = src.collisionHitCooldown;
+        projectileLayerName = src.projectileLayerName;
 
         ragdollDuration = src.ragdollDuration;
         ragdollTumbleTorque = src.ragdollTumbleTorque;
@@ -488,12 +526,99 @@ public class SupportShip : MonoBehaviour
         if (((1 << other.gameObject.layer) & crashIgnoreMask.value) != 0) return;
         if (BelongsToCar(other.transform)) return;
 
-        // Eat the shot that killed us, so a projectile doesn't sail on through and hit the racer too.
-        // (The ship's colliders are triggers, so the projectile's own collision handler never fires.)
+        // Eat the shot regardless of whether it registers as damage, so a projectile never sails on
+        // through to the racer behind. (The ship's colliders are triggers, so the projectile's own
+        // collision handler never fires against it.)
         var projectile = other.GetComponentInParent<DroneProjectile>();
         if (projectile != null) Destroy(projectile.gameObject);
 
+        TakeHit(IsProjectile(other));
+    }
+
+    /// <summary>Is this contact incoming FIRE rather than scenery? Only used to pick which cooldown
+    /// applies — the two share one health pool.</summary>
+    bool IsProjectile(Collider other)
+    {
+        if (string.IsNullOrEmpty(projectileLayerName)) return false;
+        int layer = LayerMask.NameToLayer(projectileLayerName);
+        return layer >= 0 && other.gameObject.layer == layer;
+    }
+
+    /// <summary>Spends one point of the health pool, and downs the ship when it runs out.
+    ///
+    /// Both sources are rate-limited, and for the same reason from opposite directions: one physical
+    /// impact raises several trigger contacts as the ship scrapes along, and a drone burst arrives
+    /// faster than any pilot could react to. Without the cooldowns a five-point pool empties in a few
+    /// frames either way and may as well not exist. They are SEPARATE knobs because a volley and a
+    /// scrape have nothing to do with each other's timing.</summary>
+    void TakeHit(bool fromProjectile)
+    {
+        float cooldown = fromProjectile ? projectileHitCooldown : collisionHitCooldown;
+        ref float last = ref (fromProjectile ? ref lastProjectileHitTime : ref lastCollisionHitTime);
+
+        if (Time.time - last < cooldown) return;
+        last = Time.time;
+
+        if (++hitsTaken < Mathf.Max(1, maxHits))
+        {
+            // Survived: a flash, and nothing more. Only the counting machine reaches here, so it
+            // also tells the others — every other copy of this ship has no idea it was touched.
+            ApplyDamageFeedback(hitsTaken, maxHits);
+            SupportShipReplicator.ReportShipDamage(ownerClientId, hitsTaken, maxHits);
+            return;
+        }
         Crash();
+    }
+
+    /// <summary>Flash this copy of the ship and play the survivable-hit sound on it. Public because
+    /// the copies that DON'T count hits (every machine but the host) are driven from the replicated
+    /// damage report instead — which is exactly why the audio belongs HERE and not in TakeHit. Every
+    /// machine runs this once per hit and only once, so putting it here is what makes the sound audible
+    /// to the racer being escorted and to anyone nearby, rather than only on the host.
+    ///
+    /// Non-fatal hits ONLY. The killing blow never reaches here — it goes to Crash(), which plays the
+    /// destroyed sound instead, so the two never overlap.
+    ///
+    /// The component is ADDED if the prefab doesn't carry one, so feedback needs no editor wiring — put
+    /// a DroneDamageTint on the SupportShip prefab only to TUNE it, and those values then win.</summary>
+    public void ApplyDamageFeedback(int hits, int max)
+    {
+        if (damageTint == null)
+        {
+            damageTint = GetComponentInChildren<DroneDamageTint>(true);
+            if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
+        }
+        damageTint.RegisterHit(hits, Mathf.Max(1, max));
+        AudioManager.PlaySupportShipHit(transform.position);
+    }
+
+    /// <summary>Paints the wreck red and holds it for the ragdoll.
+    ///
+    /// Needs no message of its own, unlike the drones': a downed ship's verdict is already fanned out
+    /// as GNRC_SHIP_DOWN and every machine runs this same Crash() on its own copy, so calling it here
+    /// puts the tint on all of them for free.</summary>
+    void ShowDowned()
+    {
+        if (damageTint == null)
+        {
+            damageTint = GetComponentInChildren<DroneDamageTint>(true);
+            if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
+        }
+        damageTint.MarkDowned();
+    }
+
+    /// <summary>Copies tint tuning onto this ship's (possibly auto-added) component. Used for a REMOTE
+    /// copy, cloned from a puppet whose scripts were stripped — without this it would flash in code
+    /// defaults while the prefab said something else.</summary>
+    public void SeedDamageTint(DroneDamageTint authored)
+    {
+        if (authored == null) return;
+        if (damageTint == null)
+        {
+            damageTint = GetComponentInChildren<DroneDamageTint>(true);
+            if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
+        }
+        damageTint.CopyTuningFrom(authored);
     }
 
     bool BelongsToCar(Transform t)
@@ -523,6 +648,7 @@ public class SupportShip : MonoBehaviour
         rb.constraints = RigidbodyConstraints.None;
         rb.AddTorque(Random.onUnitSphere * ragdollTumbleTorque, ForceMode.VelocityChange);
 
+        ShowDowned();
         AudioManager.PlaySupportShipDestroyed(transform.position);
 
         onCrashed?.Invoke(this);

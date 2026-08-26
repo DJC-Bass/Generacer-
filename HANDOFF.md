@@ -59,8 +59,10 @@ corners hard enough to swing it.
   straight through the track), and triggers still honour the **collision matrix** — which is what keeps
   "what can down the ship" a Project Settings decision. The owner's own car is excluded in code
   (`BelongsToCar`), because the matrix cannot tell it apart from an enemy's — both are on `Player`.
-- `detectCrashes` gates whether *this copy* may call a crash. True on the owner's machine and on the host;
-  **false on every other viewer**, whose copy is derived from an interpolated puppet and would invent hits.
+- `detectCrashes` gates whether *this copy* may count hits. **Exactly one machine does**: the HOST in a
+  session, the owner offline. False everywhere else — a third viewer's copy is derived from an
+  interpolated puppet and would invent hits, and a SECOND counter alongside the host diverges (see the
+  health-pool note in the roadmap).
 
 **`SupportShipAbility.cs`** (Inventory) — the racer's half, bootstrapped on `PlayerSystems`. The child on
 the car prefab is only ever a **TEMPLATE**: summoning CLONES it and cuts the clone loose, so the wreck can
@@ -115,7 +117,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_RIVALS` | MultiplayerScoring | server → all | rival pairings |
 | `GNRC_RIVAL_BONUS` | MultiplayerScoring | server → one | beat-your-rival credits |
 | `GNRC_NPC_SPAWN` / `_STATE` / `_DESPAWN` | NpcReplicator | server → all | host-simulated AI + obstacles |
-| `GNRC_NPC_DMG` | NpcReplicator | server → all | an NPC took a hit — puppets flash + tint. EVENT, not streamed |
+| `GNRC_NPC_DMG` | NpcReplicator | server → all | an NPC took a hit (or, at hits==max, went down) — puppets flash / paint the wreck. EVENT, not streamed |
 | `GNRC_STRIKE` | NpcReplicator | server → all | lightning, event-replicated |
 | `GNRC_NPC_HIT` | NpcReplicator | server → victim | projectile hit YOUR car (victim applies it) |
 | `GNRC_BOUNTY` | NpcReplicator | server → one | knockoff credits |
@@ -128,6 +130,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
 | `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X’s lasers once; host spawns + NpcReplicator streams the round |
 | `GNRC_SHIP_LHIT` | SupportShipReplicator | server → victim | a Support Ship round popped YOUR car — victim applies the pop-up and judges its own i-frames |
+| `GNRC_SHIP_DMG` | SupportShipReplicator | host → all | a ship took a non-fatal hit — every copy flashes. EVENT, not streamed |
 
 **Four patterns this codebase leans on — copy them:**
 1. **Route effects to the authority.** A remote car is a kinematic puppet — pushing it locally is erased
@@ -1086,11 +1089,11 @@ Three sessions have layered up here, so read the labels rather than assuming "th
 ### AudioLibrary slots STILL EMPTY (`{fileID: 0}`) — assign clips (OGG/WAV)
 As of the current `AudioLibrary.asset`: `playerVictoryMusic`, `menuClose`, `carLanding`,
 `lightningWarning`, `sdActiveLoop`, `portalSpawn`, `portalDespawn`, `victoryBanner`.
-**PLUS the 17 slots added this session, all unassigned** — Shield: `shieldCraftLoop`, `shieldCrafted`,
+**PLUS the 18 slots added this session, all unassigned** — Shield: `shieldCraftLoop`, `shieldCrafted`,
 `shieldActivate`, `shieldActiveLoop`, `shieldDeactivate` (+ the `shieldAudio3D` tuning block); Grappling
 hook: `grappleCraftLoop`, `grappleCrafted`, `grappleFire`, `grappleAttach`, `grappleRelease` (+ the
 `grappleAudio3D` block); Support Ship: `supportShipActivate`, `supportShipLoop`, `supportShipDeactivate`,
-`supportShipDestroyed`, `supportShipLaserFire`, `supportShipLaserHitEnvironment`,
+`supportShipHit`, `supportShipDestroyed`, `supportShipLaserFire`, `supportShipLaserHitEnvironment`,
 `supportShipLaserHitEntity` (+ the `supportShipAudio3D` block). **Each 3D block is the single tuning
 point for its feature's sounds** — except the two laser IMPACTS, which carry their own
 `environmentAudio3D` / `entityAudio3D` blocks on the LASER PREFAB, since they land downrange rather than
@@ -1236,9 +1239,10 @@ Each of these makes a finished feature silently do nothing until it's wired:
 - **Vivox must be enabled in the Unity Cloud Dashboard** or voice throws at login and degrades to silence.
 - **Skybox material** must be named with the **`SimpleSkybox` prefix** to receive the per-scene hue
   randomisation; add `Skybox/ProceduralSkyClouds` to Always Included Shaders if it renders in-editor only.
-- **17 unassigned AudioLibrary slots** (shield ×5, grapple ×5, support ship ×7 — including the two
-  SEPARATE laser impacts: one for hitting scenery, one for actually hitting something) — see the
-  empty-slots section.
+- **18 unassigned AudioLibrary slots** (shield ×5, grapple ×5, support ship ×8) — see the empty-slots
+  section. Two of those support-ship slots are SPLIT PAIRS and are only worth the slot if the clips
+  actually differ: the laser impacts (scenery vs. something that reacted) and the ship's own damage
+  (`supportShipHit` survived vs. `supportShipDestroyed` lost).
 
 **Support Ship (2026-08-16) — all of this is required before it does anything:**
 - **A `SupportShip` layer** must be added in Tags and Layers. As of writing, `TagManager.asset` has
@@ -1282,6 +1286,9 @@ Each of these makes a finished feature silently do nothing until it's wired:
   regardless. A Rigidbody is added automatically by `[RequireComponent]` if absent. Check the
   **Projectile** layer's matrix row allows the targets you want hit — it already collides with Player
   for drone fire, which is why ignoring the owner's car is done in code instead.
+  ⚠️ **Tick `Projectile` ↔ `Projectile`** if you want rounds to shoot down incoming drone fire — that is
+  the switch that enables cancelling, and it also makes drone shots cancel each other (see the Support
+  Ship section). Give the laser its own layer instead if you want that surgical.
 
 1. **Phases 0–5 are DONE in code** (full detail per phase in the roadmap section; everything compiles
    0-errors via `dotnet build Assembly-CSharp.csproj`; still ZERO editor asset setup beyond filling
@@ -1297,7 +1304,7 @@ Each of these makes a finished feature silently do nothing until it's wired:
    remote knockback on the SHOVED player's own screen, WindowsAudio possibly reacting to a puppet.
 3. **Phase 7 (testing)** is really "keep doing the two-instance runs with Network Simulator latency" —
    the critical scenarios list lives in the Phase 7 roadmap entry, plus each phase's own checks.
-2. **Assign the empty AudioLibrary slots** (8 long-standing + 14 added recently — see the empty-slots
+2. **Assign the empty AudioLibrary slots** (8 long-standing + 18 added recently — see the empty-slots
    section) and, if desired, give distinct clips to the placeholder-shared pairs listed above.
 3. **Verify component wiring in the editor** (GUIDs match the `.meta`s, so they should bind — confirm no
    "missing script"): `PortalExitAudio` on every selectable player-car prefab; `JetFlames` on the
@@ -1561,28 +1568,43 @@ bugs to someone reading the code cold:
   - **Credit follows the DroneCar rule**: the last player-attributable hit wins. A gunner who wore the
     plane down keeps the kill even if it clips a wall on the way out; if no gunner ever touched it, it
     falls back to paying whoever it had locked.
-- **DAMAGE FEEDBACK — `DroneDamageTint` (2026-08-16).** A white hit FLASH per round landed, over a
-  colour TINT that deepens as the health pool empties. Together they answer the gunner's two questions
-  — "did that connect?" and "how close is it to going down?" — without a health bar, which is what makes
-  a 10-hit plane readable at all.
+- **DAMAGE FEEDBACK — `DroneDamageTint` (2026-08-16, revised 2026-08-24).** A red hit FLASH per round
+  landed, and a red WRECK TINT held only once the thing is actually going down.
+  - **The tint used to deepen with damage, and that was wrong (2026-08-24).** A tint is a STATE, and
+    "still alive, just hurt" is the wrong state to paint: a sky of permanently red planes stops
+    meaning anything, and red is no longer readable as the kill it eventually becomes. Pool progress
+    is now carried entirely by the flashes the gunner counts; red-and-staying-red means dead.
+  - **The override is CLEARED when there is nothing to draw**, via `SetPropertyBlock(null, index)`.
+    A renderer carrying a property block is excluded from the SRP Batcher for as long as it carries
+    one — so the old persistent tint quietly cost every damaged drone its batching for the rest of
+    the round. Passing an EMPTIED block is not the same thing: the renderer stays flagged as having
+    per-instance overrides. It must be null. Flash, settle, clear.
+  - `MarkDowned()` is the wreck path and `Flash()` the hit path; `RegisterHit(hits, max)` picks
+    between them, treating a spent pool as a kill. Downing does NOT also flash — both colours are
+    red, so a flash over a full-strength tint would be invisible. The tint appearing IS the beat.
   - **It writes colour REGISTERS through a `MaterialPropertyBlock`, never `Renderer.material`.** Reading
     `.material` silently CLONES the material: one leaked instance per drone per round, and every one of
     them dropped out of batching. A property block writes the override into the draw call instead, and
     the shared asset on disk is never touched.
-  - Original colours are cached **per renderer per material slot**, so the tint lerps from whatever the
+  - Original colours are cached **per renderer per material slot**, so the wreck tint lerps from whatever the
     model was authored as rather than assuming white — a drone with a red panel and a grey hull stays
     recognisably itself while both darken. `_BaseColor` (URP) or `_Color` (built-in), whichever the
     shader has.
   - **Emission is optional and conditional.** A property block CANNOT enable the `_EMISSION` shader
     keyword, so `boostEmission` only shows on materials that already have Emission ticked. On a dark
     model at night that glow is doing most of the work, so it is worth enabling on the drone material.
-  - **No editor wiring required**: `DronePlane.ShowDamage` and the client-side handler both ADD the
-    component if it's missing. Put one on the prefab only to TUNE it, and those values then win.
+  - **No editor wiring required**: `DronePlane.ShowDamage` / `ShowDowned` and the client-side handler
+    all ADD the component if it's missing. Put one on the prefab only to TUNE it, and those values
+    then win. (Nothing in the project authors one today — every instance is added at runtime.)
   - **⚠️ Clients needed a message.** Drones are host-simulated and clients render stripped puppets with
     no DronePlane to tell them anything — so without `GNRC_NPC_DMG` a client-side gunner would see no
     feedback at all, and the gunner is the entire audience. It's an EVENT (Reliable, on damage only),
     not a byte added to the per-entity state stream: damage is rare, that stream is per-entity-per-tick,
     and a missed flash can't be healed by a later tick the way level-triggered flags can.
+    - **The wreck tint rides the same message.** `DronePlane.Crash()` calls `ShowDowned()`, which sends
+      `SendNpcDamage(go, max, max)` — a pool reported as spent, which `RegisterHit` already reads as a
+      kill. No second event and no protocol change. The puppet would otherwise ragdoll in its normal
+      colours, since it has no DronePlane and only follows the tumbling transform.
   - The component is deliberately named `DroneDamageTint`, not `DronePlane…` — **DroneCars take 3 laser
     rounds and have no feedback yet**; wiring the same component into `DroneCar.TakeLaserHit` is the
     obvious next step if wanted.
@@ -1596,6 +1618,22 @@ bugs to someone reading the code cold:
   | DroneCar / Challenger | `droneHitsToDown` (3) rounds, **no window between them**, then the same downed state a player ram causes. | its own `creditReward` (100/200) at the kill floor → **last toucher** |
   | LavaBoulder | Destroyed outright. | 25 → **gunner** |
 
+
+  **Rounds CANCEL other projectiles (2026-08-16).** A laser meeting anything on `cancelLayerName`
+  (default `Projectile`) destroys it and dies itself, so a gunner can shoot incoming DronePissBalls
+  down before they reach the racer. Matched by LAYER, not by component, so it covers any future flying
+  thing this file has never heard of. Checked FIRST in the collision ordering — it's a single int
+  compare and nothing else can match a projectile anyway.
+  - **⚠️ The enabling step is the collision MATRIX, not the code.** Rounds are themselves on the
+    Projectile layer, so cancelling Projectiles means ticking **Projectile ↔ Projectile** — and that
+    also makes DRONE SHOTS CANCEL EACH OTHER, since the matrix cannot tell one Projectile-layer object
+    from another. Two drones crossfiring at the same player will now sometimes shoot each other's
+    rounds down. If that's unwanted, give the laser prefab its OWN layer and tick that against
+    Projectile instead; the code needs no change either way, because it tests the layer of the THING
+    IT HIT, never its own.
+  - `DroneProjectile` would actually remove itself regardless — it despawns on any collision at all —
+    but relying on that would mean silent pass-through for anything that isn't one, so the cancel is
+    explicit.
   **Impact audio is SPLIT by outcome.** `supportShipLaserHitEnvironment` for a round that changed
   nothing — scenery, walls, and a shot absorbed by a car's i-frame window, since nothing happened and it
   must not sound like it did (the same convention DroneProjectile uses). `supportShipLaserHitEntity` for
@@ -1777,6 +1815,78 @@ bugs to someone reading the code cold:
   `trackSkybox` (must be assigned — see above), `burstRounds`/
   `burstInterval` for the guns, and `teamOnly`.
 
+- **SUPPORT SHIP HEALTH POOL (`maxHits` = 5, 2026-08-16).** Contacts now spend a pool rather than
+  downing the ship outright. One pool shared by every source; TWO cooldowns, because a drone volley and
+  a scrape along the track have nothing to do with each other's timing:
+  `projectileHitCooldown` / `collisionHitCooldown` (0.35 s each), classified by `projectileLayerName`.
+  Without them a five-point pool empties in a few frames either way — one impact raises several trigger
+  contacts as the ship bounces, and a burst arrives faster than any pilot can react to.
+  - **⚠️ The pool forced an AUTHORITY fix.** `detectCrashes` was true on the owner's copy AND the host's,
+    which was harmless at one hit (either one killing it gave the same result) but is a real bug with a
+    pool: the two machines see OVERLAPPING BUT DIFFERENT hit sets — the host alone sees projectiles,
+    both see scenery — so a shared scrape spends a point on each machine's private counter and the two
+    can never agree on when the ship dies. Now `SupportShipAbility.Summon` sets
+    `detectCrashes = !MultiplayerWorld.IsClientOnly`, making the HOST the sole counter in a session and
+    the owner the sole counter offline. Death still travels the existing `GNRC_SHIP_DOWN` verdict path,
+    so nothing new was needed on the wire.
+  - **The pool fields are in `CopyTuningFrom`**, and that is load-bearing rather than tidy: the host's
+    copy of a REMOTE ship is the one doing the counting, and it is built by `BuildShip` +
+    `CopyTuningFrom` off the prefab asset. Miss them and the host counts against code defaults while
+    the Inspector says something else.
+  - Projectiles are still destroyed on contact whether or not the hit registers, so a round absorbed
+    during the cooldown never sails on through to the racer behind.
+  - **Damage feedback reuses `DroneDamageTint`** — the same red flash per hit and red wreck tint on
+    death the drones use, which is why that component was named generically rather than
+    `DronePlane…`. Auto-added if the SupportShip prefab doesn't carry one; put one on the prefab
+    only to TUNE it.
+    - Remote copies get their tuning SEEDED from the car prefab asset (`SeedDamageTint`), for the same
+      reason `CopyTuningFrom` exists: a remote ship is cloned off a STRIPPED puppet template and has no
+      component of its own, so it would otherwise flash in code defaults.
+    - **It needed its own message.** A Support Ship is keyed on its owner's client id, not an
+      NpcReplicator spawn id, so `GNRC_NPC_DMG` cannot carry it — hence `GNRC_SHIP_DMG` (host → all,
+      Reliable, damage-only). `SupportShip.ownerClientId` is stamped at build time by both creators so
+      the counting machine can name the ship when reporting.
+    - Only the counting machine (host, or the owner offline) reaches `TakeHit`, so it flashes locally
+      AND reports; everyone else flashes purely from the message. No double-count, no dedupe needed.
+    - **The wreck tint needs NO message here**, unlike the drones'. A downed ship's verdict is already
+      fanned out as `GNRC_SHIP_DOWN`, and every machine runs its own `SupportShip.Crash()` — which now
+      calls `ShowDowned()`. `GNRC_SHIP_DMG` therefore stays strictly non-fatal hits.
+  - **Damage AUDIO is split the same way (2026-08-24): `supportShipHit` vs `supportShipDestroyed`.**
+    Same reasoning as the laser impacts — the pilot is flying from the hub with no health bar, so
+    "that hurt" and "that was the last one" have to be distinguishable by ear alone. Both are 3D at
+    the ship and share `supportShipAudio3D`.
+    - **The hit sound lives in `ApplyDamageFeedback`, NOT in `TakeHit`** — that is the whole point.
+      Only the counting machine reaches `TakeHit`, so a sound there would be audible on the host and
+      nowhere else; `ApplyDamageFeedback` is what every machine runs, exactly once per hit (the host
+      from `TakeHit`, everyone else from `GNRC_SHIP_DMG`, and `SendToRemoteClients` excludes the host
+      so neither doubles). The method was renamed from `ApplyDamageVisual` because it is no longer
+      only visual.
+    - **The killing blow never plays both.** `TakeHit` routes the final point to `Crash()` instead of
+      the survive branch, and `ReportShipDamage` is only sent from the survive branch — so no machine
+      can receive a hit report for a fatal hit. `Crash()` runs everywhere via `GNRC_SHIP_DOWN` and
+      plays `supportShipDestroyed` alone.
+
+**SHIELD — effect-level immunity backstop (`ShieldAbility.LocalShieldUp`, 2026-08-16).**
+Symptom: oversized DronePissBall variants tunnelled straight through the shield ellipsoid and popped the
+car anyway. The shield COLLIDER is still the primary defence (it eats the shot and destroys it), but a
+big or fast enough projectile generates no contact against a thin shell, and the player then takes a hit
+through a shield they can plainly see.
+- `LocalShieldUp` is now checked by **every path that applies a Projectile-layer effect to the local
+  car**, alongside the existing invulnerability windows: `DroneProjectile.OnCollisionEnter` (direct),
+  `DroneProjectile.ApplyRemoteHitToLocalPlayer` (host-reported), `SupportShipLaser.TryHitPlayer`
+  (direct), and `SupportShipReplicator.ApplyLaserHitLocally` (host-reported). Any new projectile effect
+  must add the same gate — the collider alone is not a guarantee.
+- **It drops the EFFECT, not the collision.** The projectile still despawns on contact exactly as
+  before; it simply does nothing on the way out. Deliberately not implemented by making the car's
+  colliders intangible: per-object collision ignores would have to be maintained as every projectile
+  spawns, and a missed cleanup would leave the car permanently non-colliding.
+- **Keyed on the LOCAL shield only**, matching how the invulnerability windows already work. A
+  host-detected hit on a remote player is routed to that player and judged against THEIR shield on THEIR
+  machine, where the state is real rather than a replicated visual.
+- ⚠️ **Support Ship laser rounds are on the Projectile layer, so a shield ignores them too** — the rule
+  is "shielded = immune to projectiles", not "immune to hostile ones". If a friendly laser boost should
+  ever punch through a teammate's shield, carve the exception in `SupportShipLaser.TryHitPlayer`.
+
 **DRONEPLANE PATROL — closed loop, catch-up speed, velocity-aligned nose (2026-08-16).**
 Symptom the user spotted from the gizmo: planes flew far outside their patrol circles with a long
 straight line to a target they never reached, noses pointing somewhere other than their direction of
@@ -1888,9 +1998,20 @@ directional light) plus drifting CLOUDS and fixed STARS. Fully procedural — no
 **SHIELD ABILITY (user feature, 2026-07-23 — ✅ compiles 0 errors; NEEDS SCENE/PREFAB WIRING, below).**
 Plasma → Shield at the ramp; L3 summons an ellipsoid shield that eats drone fire for 2 s.
 - **Crafting:** third bar on the Upgrade Ramp — **Y** (X=Turbo, A=Jet, B=Close were taken), `Plasma` →
-  `Shield`, `craftTime` 1 s (same as Turbo). Capped at **4 held** via a NEW `CraftRecipe.maxProduct`
-  flat cap (0 = none) — distinct from the existing container cap (`capacityItem` × `capacityPerContainer`),
-  because Shield has no container item. `HasCapacity` enforces BOTH; the counts line renders `n/4`.
+  `Shield`, `craftTime` 1 s (same as Turbo). Capped at **8 held** (was 4 until 2026-08-24) via a NEW
+  `CraftRecipe.maxProduct` flat cap (0 = none) — distinct from the existing container cap
+  (`capacityItem` × `capacityPerContainer`), because Shield has no container item. `HasCapacity`
+  enforces BOTH; the counts line renders `n/8` off the same field.
+  - **`maxProduct` is the ONLY thing capping Shields.** They are craft-only (no store row) and
+    `PlayerInventory.Add` caps nothing — only `TryPurchase` takes a `maxOwned`, and nothing buys
+    Shields. So the ramp recipe is the whole gate; there is no second number to keep in sync.
+  - **⚠️ Which copy of that number is live is not obvious.** `BodyRamp.prefab` was serialized
+    BEFORE `shield`, `grapple` and `maxProduct` existed — its YAML still holds only `turbo`, `jet`
+    and `playerTag`. Absent fields fall back to the C# initializer, so the shield recipe currently
+    runs entirely off `UpgradeRampController.cs`. Editing the code therefore WORKS today. But the
+    first time anyone touches that component in the Inspector, Unity writes the full block out and
+    the prefab wins from then on. If you change the cap in the Inspector, change the code default
+    to match — same serialization trap as the Support Ship's tuning fields.
   Ramp panel grew 520 → 710 for the third bar. **"Plasma" itself is a STORE row configured in the scene's
   StoreController inspector** (the code-side default list is untouched).
 - **`Inventory/ShieldAbility.cs` (new, bootstrapped on PlayerSystems):** **L3** (`Gamepad.leftStickButton`,

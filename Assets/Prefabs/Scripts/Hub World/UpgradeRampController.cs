@@ -28,7 +28,10 @@ public class CraftRecipe
              "5 Jets per Jet Pack.")]
     public int capacityPerContainer = 1;
     [Tooltip("FLAT cap on how many of the product can be held, independent of any container item. " +
-             "0 = no flat cap. Used by Shield (max 4). Applies on top of the container limit.")]
+             "0 = no flat cap. Used by Shield (max 8). Applies on top of the container limit. " +
+             "NOTE: this is the ONLY thing capping Shields — they are craft-only and " +
+             "PlayerInventory.Add does not cap, so the ramp is the whole gate. The bar's own " +
+             "x/y readout follows this automatically.")]
     public int maxProduct = 0;
     [Tooltip("Color of the progress fill for this recipe's bar.")]
     public Color barColor = new Color(0.2f, 0.45f, 1f);
@@ -68,12 +71,12 @@ public class UpgradeRampController : MonoBehaviour
         craftTime = 0.2f, barColor = new Color(0.55f, 0.75f, 1f), label = "A to craft Jet",
         capacityItem = "Jet Pack", capacityPerContainer = 5
     };
-    [Tooltip("Bottom bar — charged with Y. Plasma → Shield, same 1 s craft as Turbo, hard cap of 4 held.")]
+    [Tooltip("Bottom bar — charged with Y. Plasma → Shield, same 1 s craft as Turbo, hard cap of 8 held.")]
     public CraftRecipe shield = new CraftRecipe
     {
         materialA = "Plasma", materialB = "", product = "Shield",
         craftTime = 1f, barColor = new Color(0.35f, 1f, 0.8f), label = "Y To Craft Shield",
-        capacityItem = "", capacityPerContainer = 0, maxProduct = 4
+        capacityItem = "", capacityPerContainer = 0, maxProduct = 8
     };
 
     [Tooltip("Fourth slot — crafted by ROTATING the right stick, not by holding a button. One full " +
@@ -295,7 +298,7 @@ public class UpgradeRampController : MonoBehaviour
     /// <summary>
     /// True while the player can hold one more product. Two independent limits, both enforced:
     /// the CONTAINER limit ((capacityItem owned) × capacityPerContainer; blank = unlimited) and the
-    /// FLAT limit (maxProduct; 0 = none — this is what caps Shield at 4).
+    /// FLAT limit (maxProduct; 0 = none — this is what caps Shield at 8).
     /// </summary>
     bool HasCapacity(CraftRecipe r)
     {
@@ -498,7 +501,7 @@ public class UpgradeRampController : MonoBehaviour
         }
         else if (r.maxProduct > 0)
         {
-            s += $"→    {r.product} {Count(r.product)}/{r.maxProduct}";   // flat cap (Shield = 4)
+            s += $"→    {r.product} {Count(r.product)}/{r.maxProduct}";   // flat cap (Shield = 8)
         }
         else
         {

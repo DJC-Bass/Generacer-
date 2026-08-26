@@ -34,6 +34,7 @@ public class SupportShipReplicator : MonoBehaviour
     const string MsgDown = "GNRC_SHIP_DOWN";    // any    → server (report)  / server → all (verdict)
     const string MsgFire = "GNRC_SHIP_FIRE";    // pilot  → server: fire owner X's guns, once
     const string MsgLaserHit = "GNRC_SHIP_LHIT"; // server → victim: a Support Ship round popped YOUR car
+    const string MsgShipDmg = "GNRC_SHIP_DMG";  // host → all: ship X took a hit — flash + tint, EVENT
 
     // The aim stream is the only fast one, and only while somebody is actually flying.
     const float AimRate = 20f;
@@ -111,6 +112,7 @@ public class SupportShipReplicator : MonoBehaviour
             msg.UnregisterNamedMessageHandler(MsgDown);
             msg.UnregisterNamedMessageHandler(MsgFire);
             msg.UnregisterNamedMessageHandler(MsgLaserHit);
+            msg.UnregisterNamedMessageHandler(MsgShipDmg);
         }
         foreach (var kv in ships)
             if (kv.Value.ship != null) Destroy(kv.Value.ship.gameObject);
@@ -387,6 +389,23 @@ public class SupportShipReplicator : MonoBehaviour
         Debug.Log($"[SupportShip] Local gunner awarded {credits} for a laser kill.");
     }
 
+    /// <summary>Called by the ONE machine that counts a ship's hits (the host in a session) so every
+    /// other copy can flash and sound the hit. A Support Ship is not an NpcReplicator entity — it's keyed on its
+    /// owner's client id, not a spawn id — so `GNRC_NPC_DMG` can't carry this and it needs its own
+    /// event. Reliable and damage-only: a missed flash cannot be recovered, since there is no
+    /// level-triggered state to heal it on a later tick.</summary>
+    public static void ReportShipDamage(ulong ownerId, int hitsTaken, int maxHits)
+    {
+        var msg = Msg;
+        if (msg == null || !IsServer) return;   // offline: the only copy already flashed locally
+
+        using var writer = new FastBufferWriter(24, Allocator.Temp);
+        writer.WriteValueSafe(ownerId);
+        writer.WriteValueSafe((byte)Mathf.Clamp(hitsTaken, 0, 255));
+        writer.WriteValueSafe((byte)Mathf.Clamp(maxHits, 1, 255));
+        SendToRemoteClients(MsgShipDmg, writer, NetworkDelivery.ReliableSequenced);
+    }
+
     /// <summary>HOST → the machine that owns a car a laser round just hit. Movement is
     /// owner-authoritative, so the pop-up has to be applied over there on the real car rather than to
     /// the kinematic puppet the host was actually shooting at — the same routing
@@ -407,7 +426,9 @@ public class SupportShipReplicator : MonoBehaviour
     /// our own laser window (which is deliberately separate from the DronePissBall one).</summary>
     static void ApplyLaserHitLocally()
     {
-        if (SupportShipLaser.PlayerInvulnerable) return;
+        // Same pair of gates the local path uses — our window and our shield, both judged here because
+        // this is the machine that owns the car.
+        if (SupportShipLaser.PlayerInvulnerable || ShieldAbility.LocalShieldUp) return;
 
         var car = PlayerRegistry.LocalCar;
         if (car == null) return;
@@ -562,6 +583,18 @@ public class SupportShipReplicator : MonoBehaviour
             reader.ReadValueSafe(out ulong targetClientId);
             if (targetClientId == LocalClientId) ApplyLaserHitLocally();
         });
+
+        msg.RegisterNamedMessageHandler(MsgShipDmg, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out ulong ownerId);
+            reader.ReadValueSafe(out byte hitsTaken);
+            reader.ReadValueSafe(out byte maxHits);
+
+            var ship = GetShip(ownerId);   // resolves our OWN ship or our copy of theirs
+            // Hits only — a downed ship is not reported here. Its verdict comes through GNRC_SHIP_DOWN
+            // and runs Crash() on this copy, which paints the wreck itself.
+            if (ship != null) ship.ApplyDamageFeedback(hitsTaken, maxHits);
+        });
     }
 
     ShipEntry GetOrCreate(ulong ownerId)
@@ -677,7 +710,14 @@ public class SupportShipReplicator : MonoBehaviour
         // Only the HOST may call a crash on someone else's ship: it is the one machine with real
         // projectiles and real obstacles. Every other viewer's copy is derived from an interpolated
         // puppet and would invent hits, so it waits to be told.
+        entry.ship.ownerClientId = ownerId;   // so the host can name it when reporting damage
         entry.ship.detectCrashes = IsServer;
+
+        // Tint tuning, same reason as CopyTuningFrom: this clone came off a STRIPPED puppet template,
+        // so it has no DroneDamageTint of its own and would flash in code defaults.
+        var authoredShip = TuningTemplateFor(remote.CarName);
+        if (authoredShip != null)
+            entry.ship.SeedDamageTint(authoredShip.GetComponentInChildren<DroneDamageTint>(true));
         if (IsServer)
         {
             ulong captured = ownerId;

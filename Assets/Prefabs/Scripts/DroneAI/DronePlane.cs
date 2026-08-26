@@ -599,9 +599,9 @@ public class DronePlane : MonoBehaviour
 
         if (++hitsTaken < Mathf.Max(1, maxHits))
         {
-            // Survived: flash and deepen the tint so the gunner can see the pool draining. Sent to the
-            // clients too — the Support Ship pilot is very often one of them, and they are the whole
-            // audience for this feedback.
+            // Survived: flash, and nothing more. Draining the pool is told entirely in flashes the
+            // gunner counts — the plane's colour is reserved for the kill. Sent to the clients too:
+            // the Support Ship pilot is very often one of them, and they are the whole audience here.
             ShowDamage();
             NpcReplicator.SendNpcDamage(gameObject, hitsTaken, Mathf.Max(1, maxHits));
             return;
@@ -611,8 +611,8 @@ public class DronePlane : MonoBehaviour
         else Crash();
     }
 
-    /// <summary>Flashes and re-tints this plane's own copy. Cached because a 10-hit plane calls it nine
-    /// times and GetComponentInChildren is not free.
+    /// <summary>Flashes this plane's own copy. Cached because a 10-hit plane calls it nine times and
+    /// GetComponentInChildren is not free.
     ///
     /// The component is ADDED if the prefab doesn't carry one, so damage feedback needs no editor
     /// wiring to work at all — put a DroneDamageTint on the prefab only when you want to TUNE it, and
@@ -625,6 +625,24 @@ public class DronePlane : MonoBehaviour
             if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
         }
         damageTint.RegisterHit(hitsTaken, Mathf.Max(1, maxHits));
+    }
+
+    /// <summary>Paints the wreck red and holds it there for the ragdoll, on every machine.
+    ///
+    /// The clients have to be TOLD: their copy is a stripped puppet with no DronePlane on it, so it
+    /// only follows the tumbling transform and would otherwise go down in its normal colours. It rides
+    /// the existing damage message with the pool reported as spent, which DroneDamageTint already reads
+    /// as a kill rather than a hit — no second event and no protocol change.</summary>
+    void ShowDowned()
+    {
+        int max = Mathf.Max(1, maxHits);
+        if (damageTint == null)
+        {
+            damageTint = GetComponentInChildren<DroneDamageTint>(true);
+            if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
+        }
+        damageTint.MarkDowned();
+        NpcReplicator.SendNpcDamage(gameObject, max, max);
     }
 
     // Set when a Support Ship gunner shoots this plane down, so the wreck bounty goes to THEM rather
@@ -659,6 +677,8 @@ public class DronePlane : MonoBehaviour
         // hunting. Nothing if it was just patrolling and fell over on its own.
         if (downedByPilot) AwardPilotKill();
         else if (target != null) AwardKillReward(target);
+
+        ShowDowned();
 
         state = State.Ragdoll;
         target = null;

@@ -424,6 +424,10 @@ public class AudioManager : MonoBehaviour
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipActivate : null, position, Lib != null ? Lib.supportShipAudio3D : null);
     public static void PlaySupportShipDeactivate(Vector3 position) =>
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipDeactivate : null, position, Lib != null ? Lib.supportShipAudio3D : null);
+    // Taking damage comes in two flavours for the same reason the laser impacts do: the pilot has to
+    // hear the difference between "that hurt" and "that was the last one". Both play AT THE SHIP.
+    public static void PlaySupportShipHit(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipHit : null, position, Lib != null ? Lib.supportShipAudio3D : null);
     public static void PlaySupportShipDestroyed(Vector3 position) =>
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipDestroyed : null, position, Lib != null ? Lib.supportShipAudio3D : null);
 

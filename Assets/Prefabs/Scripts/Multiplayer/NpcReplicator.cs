@@ -160,7 +160,8 @@ public class NpcReplicator : MonoBehaviour
         msg.SendNamedMessage(MsgHit, clientId, writer, NetworkDelivery.ReliableSequenced);
     }
 
-    /// <summary>Host: tell everyone a tracked NPC just took a hit, so their copy can flash and tint.
+    /// <summary>Host: tell everyone a tracked NPC just took a hit, so their copy can flash — or, when
+    /// the pool is reported spent, paint the wreck tint that says it went down.
     ///
     /// Sent as an EVENT rather than folded into the 15/20 Hz state stream: damage is rare and the
     /// stream is per-entity-per-tick, so a byte there would cost far more bandwidth than an occasional
@@ -186,9 +187,10 @@ public class NpcReplicator : MonoBehaviour
         SendToRemoteClients(MsgDamage, writer, NetworkDelivery.ReliableSequenced);
     }
 
-    /// <summary>Client: flash and tint our puppet of that NPC. The component is ADDED here because the
-    /// puppet was stripped of every script on spawn — and its tuning is copied off the registered
-    /// prefab, so a client's damage colours match the host's instead of falling back to code defaults.</summary>
+    /// <summary>Client: flash our puppet of that NPC, or paint it as a wreck if the report says the
+    /// pool is spent. The component is ADDED here because the puppet was stripped of every script on
+    /// spawn — and its tuning is copied off the registered prefab, so a client's damage colours match
+    /// the host's instead of falling back to code defaults.</summary>
     void ApplyNpcDamage(ushort id, int hitsTaken, int maxHits)
     {
         if (!clientPuppets.TryGetValue(id, out var puppet) || puppet.go == null) return;

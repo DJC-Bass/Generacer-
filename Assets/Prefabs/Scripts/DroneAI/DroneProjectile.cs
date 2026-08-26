@@ -112,10 +112,12 @@ public class DroneProjectile : MonoBehaviour
         {
             if (t.CompareTag(playerTag))
             {
-                // ANTI-STUNLOCK: while the window from a previous hit is open, this shot is absorbed —
-                // the projectile still dies, but nothing is applied. hitPlayer stays false so it reads
-                // as a dull environment impact rather than a second player hit.
-                if (!PlayerInvulnerable)
+                // ABSORBED if the shield is up (a backstop behind the shield COLLIDER, which a big or
+                // fast projectile can tunnel past) or if the anti-stunlock window from a previous hit
+                // is still open. Either way the projectile still dies, but nothing is applied —
+                // and hitPlayer stays false, so it reads as a dull environment impact rather than a
+                // player hit.
+                if (!PlayerInvulnerable && !ShieldAbility.LocalShieldUp)
                 {
                     HitPlayer(t.gameObject);
                     BeginInvulnerability(hitInvulnerabilitySeconds);
@@ -162,7 +164,9 @@ public class DroneProjectile : MonoBehaviour
         // every contact against our puppet and WE decide — the same test the local path uses, which is
         // what makes the window cover projectiles from every drone and plane regardless of who saw the
         // hit. Dropping it here costs only a wasted message.
-        if (PlayerInvulnerable) return;
+        // Our SHIELD is judged here too, for the same reason: the host saw the contact against our
+        // PUPPET, whose shield is a replicated visual, so the authoritative answer is on this machine.
+        if (PlayerInvulnerable || ShieldAbility.LocalShieldUp) return;
         BeginInvulnerability(lastKnownInvulnSeconds);
 
         AudioManager.PlayProjectileHitPlayer(car.transform.position, null);

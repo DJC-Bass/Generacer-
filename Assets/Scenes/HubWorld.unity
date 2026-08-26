@@ -384,15 +384,15 @@ MonoBehaviour:
   padExitGrace: 0.5
   burstRounds: 3
   burstInterval: 0.06
-  teamOnly: 1
+  teamOnly: 0
   cameraOffset: {x: 0, y: 2.5, z: -7}
   lookAheadDistance: 8
   fieldOfView: 75
   nearClip: 0.3
   trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
   enablePostProcessing: 1
-  farClip: 20000
-  cameraFollowLag: 0.08
+  farClip: 35000
+  cameraFollowLag: 0.1
   rowNormal: {r: 0, g: 0, b: 0, a: 0.55}
   rowSelected: {r: 0.35, g: 0.9, b: 1, a: 0.95}
   rowBusy: {r: 0.25, g: 0.1, b: 0.1, a: 0.7}
@@ -750,12 +750,20 @@ PrefabInstance:
     m_TransformParent: {fileID: 1066234524}
     m_Modifications:
     - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.label
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: shield.materialA
       value: 
       objectReference: {fileID: 0}
     - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: shield.materialB
       value: Plasma
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.maxProduct
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
@@ -2476,12 +2484,20 @@ PrefabInstance:
     m_TransformParent: {fileID: 1066234524}
     m_Modifications:
     - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.label
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: shield.materialA
       value: 
       objectReference: {fileID: 0}
     - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: shield.materialB
       value: Plasma
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.maxProduct
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
@@ -3867,12 +3883,20 @@ PrefabInstance:
     m_TransformParent: {fileID: 574272633}
     m_Modifications:
     - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.label
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: shield.materialA
       value: 
       objectReference: {fileID: 0}
     - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: shield.materialB
       value: Plasma
+      objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.maxProduct
+      value: 8
       objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
@@ -6198,6 +6222,10 @@ PrefabInstance:
       propertyPath: shield.materialB
       value: 
       objectReference: {fileID: 0}
+    - target: {fileID: 1803268524550676027, guid: 8a93489b3e402f244937b1141462556a, type: 3}
+      propertyPath: shield.maxProduct
+      value: 8
+      objectReference: {fileID: 0}
     - target: {fileID: 3154964304796513116, guid: 8a93489b3e402f244937b1141462556a, type: 3}
       propertyPath: m_Name
       value: UpgradeRamp
@@ -6401,7 +6429,7 @@ MonoBehaviour:
   padExitGrace: 0.5
   burstRounds: 3
   burstInterval: 0.06
-  teamOnly: 1
+  teamOnly: 0
   cameraOffset: {x: 0, y: 2.5, z: -7}
   lookAheadDistance: 8
   fieldOfView: 75

@@ -124,6 +124,19 @@ public class SupportShipAbility : MonoBehaviour
         ship = BuildShip(template, carGO.transform, shipLayerName, ref warnedMissingLayer);
         if (ship == null) return;
 
+        // EXACTLY ONE machine may count hits on a ship, and it is the HOST. Our own copy therefore
+        // stops detecting the moment we are a client: the host already has a copy of this ship (built
+        // from our puppet), and it is the only machine with real projectiles.
+        //
+        // With the old one-hit pool a second detector was harmless — either one killing the ship gave
+        // the same result. A pool of several makes it a bug: the host and the owner see overlapping but
+        // DIFFERENT hit sets (the host alone sees projectiles; both see scenery), so a shared scrape
+        // would spend a point on each machine's own private counter and the two could never agree on
+        // when the ship should die. The host counts, the host declares it down, everyone obeys the
+        // verdict — which is the path GNRC_SHIP_DOWN already provides.
+        ship.ownerClientId = NetworkIdentity;   // it is OUR ship
+        ship.detectCrashes = !MultiplayerWorld.IsClientOnly;
+
         // The ship is CONSUMED BY DEATH, not by use. Deducting here instead would make dismissing the
         // ship a pure loss and remove any reason to ever put it away.
         ship.onCrashed += OnShipCrashed;
