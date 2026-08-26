@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 /// <summary>
 /// A HUB-world TV that broadcasts the players racing in the TrackScene. Each TV is bound to a TEAM and
@@ -15,9 +17,30 @@ using UnityEngine;
 ///
 /// MULTIPLAYER ONLY — in single-player there are no remotes, so the screen is left exactly as authored.
 ///
-/// Setup: put this on each TV, set <see cref="team"/> (1 or 2) and drag the screen face's Renderer into
+/// MAKING THE FEED LOOK LIKE THE GAME. A camera built in code comes up with none of the settings a
+/// racer's own camera is authored with, so three are matched explicitly: the TRACK's skybox (per-camera,
+/// re-hued to this round's seed), post-processing (the game grades through URP's Default Volume Profile,
+/// which a code-built camera has switched OFF), and SMAA.
+///
+/// LIGHTING is the interesting one, because it could not be done the same way. Skyboxes,
+/// post-processing and AA are PER-CAMERA settings; lights and ambient are GLOBAL — one set of enabled
+/// lights and one ambient probe per frame, shared by every camera in it. The Support Ship pilot can
+/// simply swap the globals while they fly, because their whole screen IS the track. A TV viewer is
+/// looking at the hub AND the screen in the same frame, so the two need different lighting at once.
+///
+/// The way through is that the two cameras do not render at the same INSTANT, only in the same frame.
+/// URP raises beginCameraRendering / endCameraRendering around each camera, so this swaps the world to
+/// the track's lighting for the length of our feed's render and hands it straight back — the hub
+/// camera's own render gets its own pair with everything normal. Ambient rides along as a cached
+/// probe (see CacheTrackAmbient), because deriving it per frame would be far too expensive.
+///
+/// That is what makes a BLACKOUT round read as one on screen: SetAreaLights restores each light's
+/// RECORDED state, so a track whose Directional Light this round's seed switched off stays off in the
+/// feed, while the hub around the TV keeps its own lighting.
+///
+/// Setup: put this on each TV, set <see cref="team"/> (1 or 2), drag the screen face's Renderer into
 /// <see cref="screenRenderer"/> (set <see cref="screenMaterialIndex"/> if the screen is one material of
-/// several). The camera + render texture are built at runtime; nothing else to wire.
+/// several), and assign <see cref="trackSkybox"/>. The camera + render texture are built at runtime.
 /// </summary>
 public class HubSpectatorTV : MonoBehaviour
 {
@@ -71,6 +94,23 @@ public class HubSpectatorTV : MonoBehaviour
     public float nearClip = 0.3f;
     [Tooltip("Spectator camera far clip plane — raise it so distant track / loops aren't culled from the feed.")]
     public float farClip = 20000f;
+
+    [Header("Picture quality (matching a racer's own camera)")]
+    [Tooltip("The TrackScene's skybox material (SimpleSkybox) — the SAME asset the TrackScene's lighting " +
+             "settings use. The TV stands in the HUB, whose sky is Unity's plain default, but it is " +
+             "LOOKING at the track, so the feed is given the track's sky per-camera and re-hued to this " +
+             "round's seed. Leave blank and the screen shows the track under a flat grey hub sky.")]
+    public Material trackSkybox;
+    [Tooltip("Render post-processing on the feed, so the screen is graded like a racer's own view. The " +
+             "game grades through URP's DEFAULT VOLUME PROFILE, which needs no Volume in any scene — a " +
+             "code-built camera comes up with this FALSE, which is why the feed looked raw next to the " +
+             "game it is showing.")]
+    public bool enablePostProcessing = true;
+    [Tooltip("Edge anti-aliasing for the feed. SMAA matches what the car cameras are authored with; a " +
+             "code-built camera defaults to None and looks noticeably more jagged.")]
+    public AntialiasingMode antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
+    [Tooltip("Quality of the above. Ignored when Antialiasing is None or FXAA.")]
+    public AntialiasingQuality antialiasingQuality = AntialiasingQuality.High;
     [Range(0.1f, 1f)]
     [Tooltip("Auto-framing: how much of the view the filmed car fills, derived from its bounds so EVERY car " +
              "model frames the same (fixes cars whose pivot/size differ). Higher = car appears larger/closer. " +
@@ -82,6 +122,13 @@ public class HubSpectatorTV : MonoBehaviour
     private CameraFollow follow;
     private RenderTexture rt;
     private Material screenMaterial;      // the live-view material we swap onto the screen slot
+    private Skybox camSkybox;             // per-camera sky override (the TRACK's, not the hub's)
+    private Material ownedSky;            // our own recoloured copy, when we had to build one
+    private bool warnedNoSky;
+    private SphericalHarmonicsL2 trackAmbient;   // ambient the TRACK's sky produces
+    private SphericalHarmonicsL2 parkedAmbient;  // the world's own, held during our render
+    private bool hasTrackAmbient;
+    private bool lightingPushed;
     private Material[] liveMats;          // screen materials with our slot swapped in
     private Material[] originalMats;      // the screen as authored, restored in standby
     private bool rigBuilt;
@@ -101,8 +148,62 @@ public class HubSpectatorTV : MonoBehaviour
     private float cycleTimer;
     private readonly List<PlayerRegistry.RemotePlayer> teamRacers = new List<PlayerRegistry.RemotePlayer>();
 
+    void OnEnable()
+    {
+        RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+        RenderPipelineManager.endCameraRendering += OnEndCameraRendering;
+    }
+
+    void OnDisable()
+    {
+        RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
+        RenderPipelineManager.endCameraRendering -= OnEndCameraRendering;
+        PopWorldLighting();   // never leave the hub lit by the track
+    }
+
+    /// <summary>Lights the TRACK for our feed's render only, then hands the world straight back in
+    /// <see cref="OnEndCameraRendering"/>.
+    ///
+    /// Lights and ambient are GLOBAL — one set per frame, shared by every camera in it — so the only
+    /// way to light a TV differently from the hub around it is to change the world BETWEEN the two
+    /// renders. URP fires this immediately before each camera is culled and drawn, which is exactly
+    /// that gap. Nothing else sees the swapped state: the hub camera's own render gets its own
+    /// begin/end pair with the world back to normal.
+    ///
+    /// This is what makes a BLACKOUT round read as one on screen: SetAreaLights restores each
+    /// light's recorded state, so a track whose Directional Light the seed switched off stays off
+    /// here too, while the hub around the TV keeps its own lighting.</summary>
+    void OnBeginCameraRendering(ScriptableRenderContext context, Camera cam)
+    {
+        if (cam != specCam || !screenLive || specCam == null) return;
+
+        MultiplayerWorld.PushTrackLighting();
+        parkedAmbient = RenderSettings.ambientProbe;
+        if (hasTrackAmbient) RenderSettings.ambientProbe = trackAmbient;
+        lightingPushed = true;
+    }
+
+    void OnEndCameraRendering(ScriptableRenderContext context, Camera cam)
+    {
+        if (cam != specCam) return;
+        PopWorldLighting();
+    }
+
+    /// <summary>Puts the world's lighting back. Idempotent, and also called from Update as a
+    /// self-heal: if the end callback were ever missed, the hub would otherwise be left lit by the
+    /// track (or unlit entirely, on a blackout round) with nothing to correct it.</summary>
+    void PopWorldLighting()
+    {
+        if (!lightingPushed) return;
+        lightingPushed = false;
+
+        RenderSettings.ambientProbe = parkedAmbient;
+        MultiplayerWorld.PopTrackLighting();
+    }
+
     void Update()
     {
+        PopWorldLighting();   // self-heal (see above); a no-op in the normal case
         // Single-player (or before the MP session exists): leave the screen as authored.
         if (!MultiplayerWorld.IsMultiplayerGame) { GoStandby(); return; }
 
@@ -256,6 +357,25 @@ public class HubSpectatorTV : MonoBehaviour
         specCam.enabled = false;   // rendered only while live
         // NO AudioListener — only the local player owns the one active listener.
 
+        // Match a racer's own camera: they are authored with post-processing on and SMAA, while a
+        // camera built in code comes up with neither — which is why the feed resolved edges more
+        // jaggedly than the game it is showing.
+        var urp = specCam.GetUniversalAdditionalCameraData();
+        if (urp != null)
+        {
+            urp.renderPostProcessing = enablePostProcessing;
+            urp.antialiasing = antialiasing;
+            urp.antialiasingQuality = antialiasingQuality;
+            urp.renderShadows = true;
+        }
+
+        // PER-CAMERA SKYBOX. RenderSettings.skybox follows the ACTIVE scene, which for everyone
+        // watching a TV is the hub — and the hub's sky is Unity's built-in default while the track's is
+        // the procedural SimpleSkybox. Without this the feed shows the track under a plain grey sky
+        // while the racer on screen is under the real one. A Skybox COMPONENT overrides RenderSettings
+        // for this camera alone, so the hub around the TV is untouched.
+        camSkybox = camGo.AddComponent<Skybox>();
+
         follow = camGo.AddComponent<CameraFollow>();
         follow.enableSwivel = false;               // spectator: no look-around (and the puppet has no CarController anyway)
         follow.offset = offset;
@@ -326,6 +446,7 @@ public class HubSpectatorTV : MonoBehaviour
     {
         if (screenLive) return;
         screenLive = true;
+        ApplyTrackSkybox();   // re-resolved per go-live: the round (and its hues) may have turned over
         if (specCam != null) specCam.enabled = true;
         if (screenRenderer != null && liveMats != null) screenRenderer.sharedMaterials = liveMats;
     }
@@ -343,10 +464,68 @@ public class HubSpectatorTV : MonoBehaviour
         cycleTimer = 0f;
     }
 
+    /// <summary>Points the feed at the TRACK's sky with this round's hues. Shares one resolver with the
+    /// Support Ship pilot's camera, which needs exactly the same thing for exactly the same reason —
+    /// and which is where the round-staleness trap is documented (see SkyboxHueRandomizer.CurrentSky).
+    ///
+    /// ⚠️ This is the SKY ONLY. Lighting is global state and cannot be given per camera: the feed is
+    /// lit by whatever the hub is lit by, ambient included. See the class comment.</summary>
+    void ApplyTrackSkybox()
+    {
+        if (camSkybox == null) return;
+
+        Material sky = SkyboxHueRandomizer.ResolveRoundSky(trackSkybox, ref ownedSky);
+        if (sky != null) { camSkybox.material = sky; CacheTrackAmbient(sky); }
+        else if (trackSkybox == null && !warnedNoSky)
+        {
+            warnedNoSky = true;
+            Debug.LogWarning($"[HubSpectatorTV] Team {team} TV has no Track Skybox assigned — the feed " +
+                             "will show the track under the hub's plain default sky. Assign the same " +
+                             "SimpleSkybox material the TrackScene's lighting settings use.");
+        }
+    }
+
+    /// <summary>Works out what AMBIENT light the track's sky produces, and remembers it.
+    ///
+    /// Both scenes use Ambient Mode = SKYBOX, so ambient is generated from RenderSettings.skybox — a
+    /// global that follows the ACTIVE scene, which for everyone watching a TV is the hub. Without this
+    /// the feed shows a night track lit by the hub's bright default sky, exactly as the Support Ship
+    /// pilot's view did before ApplyTrackAmbient fixed it there.
+    ///
+    /// Computed ONCE and cached as a probe, deliberately. Deriving ambient means assigning the sky and
+    /// calling DynamicGI.UpdateEnvironment(), which is far too heavy to do twice a frame per TV; but
+    /// RenderSettings.ambientProbe is directly assignable, so paying that cost once per go-live buys a
+    /// per-frame swap that is a struct copy. The world's own sky is restored immediately either way.
+    ///
+    /// Once per go-live is enough: a TV only goes live when its team has someone racing, and it goes
+    /// back to standby at round end — so a new round always re-enters through here with the new sky.</summary>
+    void CacheTrackAmbient(Material sky)
+    {
+        Material previous = RenderSettings.skybox;
+        if (previous == sky)
+        {
+            // Already the world's sky (a Support Ship pilot on this machine has swapped it, or we are
+            // somehow in the track) — the probe standing in RenderSettings is the one we want.
+            trackAmbient = RenderSettings.ambientProbe;
+            hasTrackAmbient = true;
+            return;
+        }
+
+        RenderSettings.skybox = sky;
+        DynamicGI.UpdateEnvironment();
+        trackAmbient = RenderSettings.ambientProbe;
+        hasTrackAmbient = true;
+
+        RenderSettings.skybox = previous;
+        DynamicGI.UpdateEnvironment();   // hand the hub its own sky (and ambient) straight back
+    }
+
     void OnDestroy()
     {
         if (screenRenderer != null && originalMats != null) screenRenderer.sharedMaterials = originalMats;
         if (rt != null) { rt.Release(); Destroy(rt); }
         if (screenMaterial != null) Destroy(screenMaterial);
+        // We built this copy ourselves (SkyboxHueRandomizer owns the ones IT makes), so we free it.
+        if (ownedSky != null) Destroy(ownedSky);
     }
 }

@@ -32,7 +32,8 @@ public class SupportShipReplicator : MonoBehaviour
     const string MsgAim = "GNRC_SHIP_AIM";      // pilot  → all: {ownerId, offset(Vec3), look(Vec3)}
     const string MsgPilot = "GNRC_SHIP_PILOT";  // client → server (request) / server → all (verdict)
     const string MsgDown = "GNRC_SHIP_DOWN";    // any    → server (report)  / server → all (verdict)
-    const string MsgFire = "GNRC_SHIP_FIRE";    // pilot  → server: fire owner X's guns, once
+    const string MsgFire = "GNRC_SHIP_FIRE";    // pilot  → server: fire owner X's guns, once, from
+                                                //          {offset, look} AS OF THE PRESS (see RequestFire)
     const string MsgLaserHit = "GNRC_SHIP_LHIT"; // server → victim: a Support Ship round popped YOUR car
     const string MsgShipDmg = "GNRC_SHIP_DMG";  // host → all: ship X took a hit — flash + tint, EVENT
 
@@ -42,6 +43,12 @@ public class SupportShipReplicator : MonoBehaviour
     // Eases an incoming offset so a 20 Hz stream glides instead of stepping. Small — this is a slow,
     // deliberate slide inside a box a few tens of metres across, not a car at 600 mph.
     const float AimSmoothTau = 0.07f;
+    // How far a received aim may be projected forward before the lead is abandoned. A pilot who stops
+    // sending must not have their ship sail off across the movement box on the last known stick.
+    const float MaxAimExtrapolation = 0.25f;
+    // Smoothing on the DIFFERENTIATED velocity. Differentiating a 20 Hz stream is noisy, and the noise
+    // is multiplied by the lead, so it is filtered before it gets there.
+    const float AimVelocityTau = 0.10f;
 
     /// <summary>Sentinel for "no pilot" / "no owner". A real client id can never be this.</summary>
     public const ulong NoClient = ulong.MaxValue;
@@ -65,6 +72,9 @@ public class SupportShipReplicator : MonoBehaviour
         public Vector3 look;            // aim angles: x = yaw, y = pitch, z = roll (degrees)
         public Vector3 smoothedLook;
         public bool hasSmoothed;
+        public Vector3 offsetVelocity;  // units/s, differentiated from consecutive aim packets
+        public Vector3 lookVelocity;    // deg/s, likewise
+        public float aimTime = -1f;     // local time the last aim packet landed (-1 = none yet)
         public SupportShip ship;        // our local visual, null until their puppet exists
         public bool warnedLayer;
     }
@@ -381,16 +391,31 @@ public class SupportShipReplicator : MonoBehaviour
     /// because it is pure presentation — a round that can knock a drone out of the sky is game state,
     /// so it is spawned on the HOST and streamed back like every other projectile in the game. The
     /// pilot therefore sees their own shot a round trip late; that is the price of the round existing
-    /// in one place, and it is nil when the pilot happens to be the host.</summary>
+    /// in one place, and it is nil when the pilot happens to be the host.
+    ///
+    /// The request carries the ship's POSE AT THE PRESS, and that is the whole point of it. The host's
+    /// copy of a client-piloted ship trails the truth by the aim interval + latency + AimSmoothTau +
+    /// the request's own flight time, so spawning off the host's copy put rounds visibly behind and
+    /// beside the ship while strafing. The pilot knows exactly where they were, so they say so; the
+    /// host rebuilds the muzzle from it in <see cref="SupportShip.FireLaserAt"/> and clamps it there.
+    /// Nothing new is trusted — the pilot already dictates this same offset outright via GNRC_SHIP_AIM.</summary>
     public static void RequestFire(ulong ownerId)
     {
         // No session (single-player, or the pad used solo for testing): there IS no host, so the only
-        // copy of the world is this one. Fire it here.
+        // copy of the world is this one, it is already at the true pose, and there is nothing to send.
         if (Msg == null) { FireOnAuthority(ownerId, LocalClientId); return; }
         if (IsServer) { FireOnAuthority(ownerId, LocalClientId); return; }
 
-        using var writer = new FastBufferWriter(16, Allocator.Temp);
+        // OUR copy of the ship we are flying is the authority on where it is: SyncShips deliberately
+        // leaves a local pilot's own ship on their live stick rather than on anything received.
+        var ship = GetShip(ownerId);
+        Vector3 offset = ship != null ? ship.PilotOffset : Vector3.zero;
+        Vector3 look = ship != null ? ship.PilotLook : Vector3.zero;
+
+        using var writer = new FastBufferWriter(48, Allocator.Temp);
         writer.WriteValueSafe(ownerId);
+        writer.WriteValueSafe(offset);
+        writer.WriteValueSafe(look);
         Msg.SendNamedMessage(MsgFire, NetworkManager.ServerClientId, writer, NetworkDelivery.ReliableSequenced);
     }
 
@@ -401,6 +426,14 @@ public class SupportShipReplicator : MonoBehaviour
     {
         var ship = GetShip(ownerId);
         if (ship != null) ship.FireLaser(pilotClientId, pilotClientId == LocalClientId);
+    }
+
+    /// <summary>As above, but from the pose the pilot reported at the moment of the press rather than
+    /// from this machine's (necessarily stale) copy of their ship. See RequestFire.</summary>
+    static void FireOnAuthority(ulong ownerId, ulong pilotClientId, Vector3 offset, Vector3 look)
+    {
+        var ship = GetShip(ownerId);
+        if (ship != null) ship.FireLaserAt(offset, look, pilotClientId, pilotClientId == LocalClientId);
     }
 
     /// <summary>Pays a Support Ship gunner for something their round destroyed. Called from the HOST
@@ -586,8 +619,7 @@ public class SupportShipReplicator : MonoBehaviour
             // Our own flying is authoritative for us — never let a relayed echo of it fight the stick.
             if (LocalPilotOf == ownerId) return;
             var aimed = GetOrCreate(ownerId);
-            aimed.offset = offset;
-            aimed.look = look;
+            RecordAim(aimed, offset, look);
         });
 
         msg.RegisterNamedMessageHandler(MsgPilot, (sender, reader) =>
@@ -612,12 +644,14 @@ public class SupportShipReplicator : MonoBehaviour
         msg.RegisterNamedMessageHandler(MsgFire, (sender, reader) =>
         {
             reader.ReadValueSafe(out ulong ownerId);
+            reader.ReadValueSafe(out Vector3 offset);
+            reader.ReadValueSafe(out Vector3 look);
             if (!IsServer) return;   // one-way: only the host acts on a trigger pull
 
             // Only whoever actually holds the controls may fire this ship. Cheap, and it means a
             // malformed or stale request can't have someone else's guns going off.
             if (PilotOf(ownerId) != sender) return;
-            FireOnAuthority(ownerId, sender);
+            FireOnAuthority(ownerId, sender, offset, look);
         });
 
         msg.RegisterNamedMessageHandler(MsgLaserHit, (sender, reader) =>
@@ -675,7 +709,7 @@ public class SupportShipReplicator : MonoBehaviour
             {
                 // Never built or destroyed here — SupportShipAbility owns its lifetime. We only steer it.
                 ship = SupportShipAbility.Instance != null ? SupportShipAbility.Instance.Ship : null;
-                if (ship == null) { entry.hasSmoothed = false; continue; }
+                if (ship == null) { ClearAimPrediction(entry); continue; }
             }
             else
             {
@@ -696,19 +730,82 @@ public class SupportShipReplicator : MonoBehaviour
                 continue;
             }
 
-            // Ease the received values so a 20 Hz stream reads as a glide rather than a staircase.
+            // Ease the received values so a 20 Hz stream reads as a glide rather than a staircase —
+            // but ease toward a LED target, not the raw one. See LeadAim.
+            Vector3 targetOffset = ship.ClampPilotOffset(LeadAim(entry.offset, entry.offsetVelocity, entry.aimTime));
+            Vector3 targetLook = ship.ClampPilotLook(LeadAim(entry.look, entry.lookVelocity, entry.aimTime));
+
             if (!entry.hasSmoothed)
             {
-                entry.smoothedOffset = entry.offset;
-                entry.smoothedLook = entry.look;
+                entry.smoothedOffset = targetOffset;
+                entry.smoothedLook = targetLook;
                 entry.hasSmoothed = true;
             }
             float t = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(AimSmoothTau, 1e-4f));
-            entry.smoothedOffset = Vector3.Lerp(entry.smoothedOffset, entry.offset, t);
-            entry.smoothedLook = Vector3.Lerp(entry.smoothedLook, entry.look, t);
+            entry.smoothedOffset = Vector3.Lerp(entry.smoothedOffset, targetOffset, t);
+            entry.smoothedLook = Vector3.Lerp(entry.smoothedLook, targetLook, t);
             ship.PilotOffset = entry.smoothedOffset;
             ship.PilotLook = entry.smoothedLook;
         }
+    }
+
+    /// <summary>Forgets everything we had inferred about how a ship was being flown. Called whenever the
+    /// ship goes away, because the next frame with a rebuilt ship SNAPS to its target — and snapping to
+    /// a pose led by a rate estimated before the ship existed is a visible pop.</summary>
+    static void ClearAimPrediction(ShipEntry entry)
+    {
+        entry.hasSmoothed = false;
+        entry.offsetVelocity = Vector3.zero;
+        entry.lookVelocity = Vector3.zero;
+        entry.aimTime = -1f;
+    }
+
+    /// <summary>Files a freshly received aim, and DIFFERENTIATES it into a rate so the ship can be led
+    /// rather than trailed. The rate is filtered: a 20 Hz stream differentiates noisily, and the noise
+    /// is about to be multiplied by the lead time.</summary>
+    static void RecordAim(ShipEntry entry, Vector3 offset, Vector3 look)
+    {
+        float now = Time.time;
+        float dt = entry.aimTime < 0f ? 0f : now - entry.aimTime;
+
+        if (dt > 1e-4f && dt < MaxAimExtrapolation)
+        {
+            Vector3 rawOffsetVel = (offset - entry.offset) / dt;
+            Vector3 rawLookVel = (look - entry.look) / dt;
+            float t = 1f - Mathf.Exp(-dt / Mathf.Max(AimVelocityTau, 1e-4f));
+            entry.offsetVelocity = Vector3.Lerp(entry.offsetVelocity, rawOffsetVel, t);
+            entry.lookVelocity = Vector3.Lerp(entry.lookVelocity, rawLookVel, t);
+        }
+        else if (dt >= MaxAimExtrapolation)
+        {
+            // A long gap says nothing useful about the pilot's stick — start the estimate over rather
+            // than leading on a rate averaged across it.
+            entry.offsetVelocity = Vector3.zero;
+            entry.lookVelocity = Vector3.zero;
+        }
+
+        entry.offset = offset;
+        entry.look = look;
+        entry.aimTime = now;
+    }
+
+    /// <summary>Projects a received aim value forward to where it should be NOW.
+    ///
+    /// Two lags are cancelled at once, and the second is the subtle one. The obvious one is packet AGE:
+    /// at 20 Hz the newest value is already up to 50 ms old. The other is that an exponential chase
+    /// sits <c>tau—v</c> BEHIND a moving target in steady state — so smoothing toward the raw value
+    /// leaves the ship permanently trailing by AimSmoothTau (70 ms) even with a perfect connection.
+    /// Leading by <c>age + tau</c> cancels both to first order. Exactly the trick, and the exact same
+    /// reasoning, as RemoteCarPuppet's projection — which had this problem first, at 268 m/s.
+    ///
+    /// The age is capped so a pilot who stops sending parks rather than sails, and the CALLER clamps
+    /// the result to the movement box and aim limits — without that, leading a pilot who is pinned
+    /// against a wall of the box would push their ship visibly outside it.</summary>
+    static Vector3 LeadAim(Vector3 value, Vector3 velocity, float stamp)
+    {
+        if (stamp < 0f) return value;
+        float age = Mathf.Min(Time.time - stamp, MaxAimExtrapolation);
+        return value + velocity * (age + AimSmoothTau);
     }
 
     /// <summary>Our copy of another player's ship, built on demand from the template on their own puppet
@@ -724,7 +821,7 @@ public class SupportShipReplicator : MonoBehaviour
         if (!entry.active || car == null)
         {
             if (entry.ship != null) { Destroy(entry.ship.gameObject); entry.ship = null; }
-            entry.hasSmoothed = false;
+            ClearAimPrediction(entry);
             return null;
         }
 

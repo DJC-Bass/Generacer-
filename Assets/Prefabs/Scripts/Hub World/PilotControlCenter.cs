@@ -12,9 +12,9 @@ using UnityEngine.InputSystem;
 ///
 /// Driving in opens a list of every TEAMMATE currently flying a Support Ship. Pick one and this
 /// machine takes the controls of that ship: the view cuts to a chase camera riding it, the left stick
-/// slides it around a 3D movement box (B/X for forward/back) and angles it to aim, A fires, and the pilot’s
-/// own hub car is input-locked so it can’t wander off. SELECT (or being shoved off the pad) hands the
-/// ship back.
+/// slides it around a 3D movement box (B/X for forward/back) and angles it to aim, the TRIGGERS roll it,
+/// A fires, and the pilot’s own hub car is input-locked so it can’t wander off. SELECT (or being shoved
+/// off the pad) hands the ship back.
 ///
 /// The pilot flies a LOCAL copy of the ship — the same trick <see cref="HubSpectatorTV"/> uses to show
 /// a racer on a hub screen. A remote player's actual camera can't cross the network, but the world is
@@ -48,6 +48,13 @@ public class PilotControlCenter : MonoBehaviour
              "properly clear still ends it well inside a second.")]
     public float padExitGrace = 0.5f;
 
+    [Header("Flying")]
+    [Range(0f, 0.9f)]
+    [Tooltip("Dead zone at the bottom of each ROLL trigger's travel (0..1). Triggers rarely rest at " +
+             "exactly zero, and a ship permanently banked a degree or two reads as a broken horizon. " +
+             "Above this the response is rescaled, so a full pull is still a full roll.")]
+    public float rollDeadzone = 0.06f;
+
     [Header("Firing (A)")]
     [Tooltip("Rounds one press can produce. Tap A and you get one; hold it and you get this many, then " +
              "the guns stop until you release and press again. Star Fox 64's semi-auto feel.")]
@@ -77,11 +84,10 @@ public class PilotControlCenter : MonoBehaviour
     public AntialiasingMode antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
     [Tooltip("Quality of the above. Ignored when Antialiasing is None or FXAA.")]
     public AntialiasingQuality antialiasingQuality = AntialiasingQuality.High;
-    [Tooltip("Render post-processing on the pilot's view. ON matches what a racer sees: URP blends " +
-             "volumes at the CAMERA's position, and this camera is out in the track area, so it picks " +
-             "up the track's volumes rather than the hub's. NOTE: the project currently has NO Volume " +
-             "components anywhere, so this changes nothing today — it is here for when one is added. " +
-             "It is NOT what makes a racer's view look more dramatic; that is ambient light.")]
+    [Tooltip("Render post-processing on the pilot's view. Keep ON: the game grades through URP's " +
+             "DEFAULT VOLUME PROFILE, which applies to any camera with this ticked even though no scene " +
+             "contains a Volume — so OFF gives the pilot a raw, ungraded picture. Scene volumes would " +
+             "blend here too (URP blends at the CAMERA, which is out in the track area).")]
     public bool enablePostProcessing = true;
     [Tooltip("Far clip — generous, since the ship looks out over a whole generated track.")]
     public float farClip = 20000f;
@@ -319,7 +325,7 @@ public class PilotControlCenter : MonoBehaviour
         // Borrow the track's lights and music: the pilot's eyes and ears are out there even though
         // their car is not. The sky is handled per-camera in BindCamera.
         MultiplayerWorld.SetPilotPresentation(true);
-        ShowHint("Stick Fly    B / X Fwd / Back    LB / RB Roll    A Fire    Select Release");
+        ShowHint("Stick Fly    B / X Fwd / Back    LT / RT Roll    A Fire    Select Release");
         // A fresh cockpit starts with the guns cold — the A press that TOOK the controls must not also
         // loose a burst on the way in.
         burstFired = Mathf.Max(1, burstRounds);
@@ -398,14 +404,29 @@ public class PilotControlCenter : MonoBehaviour
 
         if (camAnchor != null) camAnchor.ship = ship;   // the anchor follows it in its own LateUpdate
         if (gp == null) return;
-        // Left stick slides and aims; B/X push the ship forward and back; RB/LB bank it (both bumpers
-        // together cancel to level). All integrated LOCALLY so the pilot's own controls have no latency;
-        // the resulting offset and aim angles are what go on the wire.
+        // Left stick slides and aims; B/X push the ship forward and back; the TRIGGERS bank it. All
+        // integrated LOCALLY so the pilot's own controls have no latency; the resulting offset and aim
+        // angles are what go on the wire.
+        //
+        // Roll is ANALOGUE (changed from the bumpers 2026-08-24): a half-pulled trigger is a half roll,
+        // which a button could only ever do as all-or-nothing. Pulling both still cancels to level,
+        // exactly as holding both bumpers did, because the two subtract. It also frees LB/RB for
+        // team voice chat.
         Vector2 stick = gp.leftStick.ReadValue();
         float depth = (gp.buttonEast.isPressed ? 1f : 0f) - (gp.buttonWest.isPressed ? 1f : 0f);
-        float roll = (gp.rightShoulder.isPressed ? 1f : 0f) - (gp.leftShoulder.isPressed ? 1f : 0f);
+        float roll = RollAxis(gp.rightTrigger.ReadValue()) - RollAxis(gp.leftTrigger.ReadValue());
         ship.ApplyPilotMove(new Vector3(stick.x, stick.y, depth), roll, Time.deltaTime);
         TickGuns(gp);
+    }
+
+    /// <summary>One trigger's contribution to the roll, dead-zoned and rescaled so the usable travel
+    /// still spans the full 0..1. Without the rescale, a dead zone would cap the roll below its
+    /// maximum — the ship could never quite reach maxRollAngle however hard the trigger was pulled.</summary>
+    float RollAxis(float raw)
+    {
+        float dead = Mathf.Clamp(rollDeadzone, 0f, 0.9f);
+        if (raw <= dead) return 0f;
+        return (raw - dead) / (1f - dead);
     }
 
     /// <summary>Semi-auto burst on A. A press ARMS a fresh burst and fires its first round on the same
@@ -516,15 +537,17 @@ public class PilotControlCenter : MonoBehaviour
         pilotCam.farClipPlane = farClip;
         pilotCam.enabled = false;
 
-        // POST-PROCESSING. On, and correct in principle: URP blends volumes at the CAMERA's position,
-        // not the player's car, and this camera sits ~100 km away in the track area — so it would pick
-        // up the TRACK's volumes and give the pilot the same grade a racer standing there would get.
+        // POST-PROCESSING. Must be ON, and it is doing real work: the project grades through URP's
+        // DEFAULT VOLUME PROFILE (Project Settings > Graphics), which applies to every camera with this
+        // flag set WITHOUT any Volume component in any scene — Tonemapping, Bloom, ColorAdjustments,
+        // Vignette, fog and more are all live in it. A camera built in code comes up with this flag
+        // FALSE, so leaving it alone would give the pilot a raw, ungraded picture next to the racer's.
         //
-        // But as of 2026-08-24 it does NOTHING, because the project contains no Volume component at
-        // all: no global volume, no local ones, no profiles. Left on so it starts working by itself the
-        // day one is added, and recorded here so nobody hunts for a grading difference again — when the
-        // pilot's view looked washed out next to a racer's, the cause was AMBIENT LIGHT, not grading.
-        // See ApplyTrackAmbient.
+        // Scene volumes would ALSO apply here and blend correctly, since URP blends at the CAMERA's
+        // position and this camera sits out in the track area — there simply aren't any yet.
+        //
+        // Grading is NOT what made the pilot's view look washed out next to a racer's, though: both had
+        // this on. That was AMBIENT LIGHT — see ApplyTrackAmbient.
         var urp = pilotCam.GetUniversalAdditionalCameraData();
         if (urp != null)
         {
@@ -590,19 +613,7 @@ public class PilotControlCenter : MonoBehaviour
         ApplyTrackAmbient(sky);
     }
 
-    Material ResolveTrackSky()
-    {
-        Material live = SkyboxHueRandomizer.CurrentSky;
-        if (live != null) return live;
-
-        if (trackSkybox == null) return null;
-
-        // Rebuilt per binding rather than cached forever: the round seed changes between rounds, and
-        // taking the controls is exactly when a stale sky would be noticed.
-        if (ownedSky != null) Destroy(ownedSky);
-        ownedSky = SkyboxHueRandomizer.BuildRoundSky(trackSkybox);
-        return ownedSky != null ? ownedSky : trackSkybox;
-    }
+    Material ResolveTrackSky() => SkyboxHueRandomizer.ResolveRoundSky(trackSkybox, ref ownedSky);
 
     /// <summary>Lights the track for the pilot, by pointing the GLOBAL environment at the track's sky.
     ///

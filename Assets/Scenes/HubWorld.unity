@@ -6154,6 +6154,10 @@ MonoBehaviour:
   fieldOfView: 114.2
   nearClip: 0.3
   farClip: 30000
+  trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
+  enablePostProcessing: 1
+  antialiasing: 2
+  antialiasingQuality: 2
   boundsFillFraction: 0.4
 --- !u!23 &7886785929120676156
 MeshRenderer:
@@ -6356,6 +6360,10 @@ MonoBehaviour:
   fieldOfView: 114.2
   nearClip: 0.3
   farClip: 30000
+  trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}
+  enablePostProcessing: 1
+  antialiasing: 2
+  antialiasingQuality: 2
   boundsFillFraction: 0.4
 --- !u!4 &9023052943533179475
 Transform:

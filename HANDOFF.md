@@ -84,6 +84,38 @@ their own screen — unflyable), and the **server** owns *whether it is still al
 everywhere, and exactly one item is deducted). Nothing about the flight is streamed; each machine glues
 its own ship to its own copy of the owner's car.
 
+**`HubSpectatorTV.cs`** — the hub TVs. Given the same picture treatment as the pilot camera on
+2026-08-24: the TRACK's skybox per-camera (via the shared `SkyboxHueRandomizer.ResolveRoundSky`, so the
+feed carries this round's hues), post-processing ON (a code-built camera has it OFF, and the game grades
+through URP's Default Volume Profile), and SMAA to match the car cameras.
+- ⚠️ **LIGHTING needed a different mechanism entirely.** Skybox / post-processing / AA are
+  PER-CAMERA. Lights and ambient are GLOBAL — one set of enabled lights and one ambient probe per
+  frame, shared by every camera in it. The pilot camera can just swap the globals because their whole
+  screen IS the track; a TV viewer sees the hub AND the screen in the same frame.
+  - **The way through: the two cameras share a frame, not an instant.** URP raises
+    `beginCameraRendering` / `endCameraRendering` around EACH camera, so the TV swaps the world to the
+    track's lighting for the length of its own render and hands it straight back. The hub camera's
+    render gets its own pair with everything normal. No render-path rework, and no
+    `SubmitRenderRequest` — the callbacks give the same isolation for far less risk. (Do NOT reach for
+    `Camera.Render()` if this is ever revisited: it is not supported under SRP.)
+  - `MultiplayerWorld.PushTrackLighting()` / `PopTrackLighting()` are the scoped pair. Pop RE-DERIVES
+    the correct state (`ApplyAreaLights`) rather than restoring a snapshot, so it stays right even if
+    the player's area or the pilot override changed in between.
+  - **Blackout rounds read correctly for free**: `SetAreaLights` restores each light's RECORDED state,
+    so a track whose Directional Light the seed switched off stays off in the feed — while the hub
+    around the TV keeps its own lighting. That was the specific ask.
+  - **Ambient is a CACHED PROBE, not a live derivation.** Ambient Mode is Skybox in both scenes, so
+    ambient comes from `RenderSettings.skybox`; deriving it means assigning the sky and calling
+    `DynamicGI.UpdateEnvironment()`, which is far too heavy to do twice a frame per TV. But
+    `RenderSettings.ambientProbe` is directly ASSIGNABLE — so `CacheTrackAmbient` pays that cost once
+    per go-live and the per-frame swap becomes a struct copy. Once per go-live is enough because a TV
+    returns to standby at round end, so a new round always re-enters through it.
+  - **`PopWorldLighting` is idempotent and also called from `Update`** as a self-heal. A missed end
+    callback would otherwise leave the hub lit by the track — or unlit entirely on a blackout round —
+    with nothing to correct it.
+- `trackSkybox` must be assigned per TV (same `SimpleSkybox.mat` the TrackScene uses). It warns once if
+  blank rather than silently showing the hub's sky.
+
 **`PilotControlCenter.cs`** (Hub World) — the pad. Same trigger-menu shape as `StoreController`, and it
 flies a LOCAL copy of the ship the same way `HubSpectatorTV` films a local copy of a remote racer. Claims
 are **server-arbitrated, never optimistic** — two hub players can reach for the same ship in the same frame
@@ -128,10 +160,10 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_GRAPPLE_PULL` | GrappleReplicator | → victim (host relays) | acceleration applied on the OWNER's machine |
 | `GNRC_GRAPPLE_BREAK` | GrappleReplicator | victim → all | L3: release any hook attached to me |
 | `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | {active, ownerInTrack}: ship is out / put away, and whether its owner is RACING (a ship is only pilotable while they are); 2 Hz heartbeat, Reliable on change |
-| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector3 aim angles} for a named owner’s ship |
+| `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector3 aim angles} for a named owner’s ship; receivers LEAD it by age+tau (see the firing-alignment entry) |
 | `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
-| `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X’s lasers once; host spawns + NpcReplicator streams the round |
+| `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X’s lasers once, FROM the {offset, look} the pilot reports at the press; host spawns + NpcReplicator streams the round |
 | `GNRC_SHIP_LHIT` | SupportShipReplicator | server → victim | a Support Ship round popped YOUR car — victim applies the pop-up and judges its own i-frames |
 | `GNRC_SHIP_DMG` | SupportShipReplicator | host → all | a ship took a non-fatal hit — every copy flashes. EVENT, not streamed |
 
@@ -814,13 +846,31 @@ NGO host relay) and 3-D spatialization, so the whole class of DIY problems is go
   EARLY at boot (UGS `InitializeAsync` + anonymous sign-in — same auth `NetworkSessionManager` uses —
   then `VivoxService.Instance.InitializeAsync()`); LOGIN + channel joins happen only when a match begins.
 - **Two channels (design preserved):** PROXIMITY = a Vivox POSITIONAL channel `prox_<sessionId>` joined
-  by everyone; each client reports only ITS OWN car position ~10 Hz via `Set3DPosition(LocalCar, chan)`
+  by everyone; each client reports only ITS OWN position ~10 Hz via `Set3DPosition(VoiceSource(), chan)`
   and Vivox mixes the falloff (`Channel3DProperties` audible/MAX **400** / conversational/MIN **200**,
   `LinearByDistance`). No per-puppet AudioSources anymore. TEAM = a 2-D GROUP channel
   `team_<sessionId>_<team>` joined only by that team. You stay JOINED to both (always HEAR proximity +
   teammates); **LB** (`Gamepad.leftShoulder`, menu-move tick, suppressed while menus open) only flips
   which you TRANSMIT into via `SetChannelTransmissionModeAsync(Single, prox|team)`. Bonus: the 35 km
   hub↔track gap means the positional model naturally stops cross-area proximity while team stays 2-D.
+- **⚠️ A SUPPORT SHIP PILOT SPEAKS FROM THE SHIP, NOT THEIR PARKED CAR (fixed 2026-08-24).**
+  `UpdatePositional` reported `PlayerRegistry.LocalCar` unconditionally. A pilot's car sits on the hub
+  pad while they fly ~100 km away over the track, and AudibleDistance is 400 — so this did not make
+  them quiet, it made them **silent in BOTH directions**: nobody could hear the pilot, and the pilot
+  could hear nobody, because `Set3DPosition` sets the LISTENER pose from the same transform. The racer
+  being escorted and the teammate escorting them were the two players it cut off.
+  - `VoiceSource()` now prefers `SupportShipReplicator.GetShip(LocalPilotOf)` and falls back to the car.
+  - **This is NOT covered by the AudioListener `PilotControlCenter` moves onto the ship.** Vivox does
+    its own spatialization from these coordinates and never consults Unity's listener, so the two have
+    to be aimed at the ship separately. Easy to assume one fixed the other; it did not.
+- **⚠️ The LB toggle was blocked for the one player who needed it most (fixed 2026-08-24).**
+  `PollTeamToggle` early-returns on `MenuState.AnyOpen`, and `PilotControlCenter.StartPiloting` raises
+  that flag — not because a menu is open, but purely to stop the pilot's parked car driving off under
+  the stick flying the ship. So a pilot could not switch to team voice, which defeated the point of
+  moving the ship's roll onto the triggers to free LB in the first place. The guard is now
+  `MenuState.AnyOpen && !piloting`. **General lesson: `MenuState.AnyOpen` means two different things**
+  — "a menu owns the controls" and "this player's car input is suppressed" — and anything gating on it
+  should decide which one it actually cares about.
 - **Team-speaker list:** unchanged UI (code-built overlay canvas, sortingOrder 140, below the SD HUD,
   ~0.4 s linger) — now driven by `VivoxParticipant.SpeechDetected` over `ActiveChannels[teamChannel]`
   (self shown via `IsSelf`, others via `DisplayName` set at login). Only team-transmitters show, exactly
@@ -1320,9 +1370,11 @@ Each of these makes a finished feature silently do nothing until it's wired:
   ship out to the other five cars.
 - **Portal on the ship's `crashIgnoreMask`** (or off in the matrix), or driving the racer through the
   TrackScene's return portal will cost them their ship.
-- **`trackSkybox` on the PilotControlCenter** must point at `Assets/Prefabs/Skyboxes/SimpleSkybox.mat`
-  (the TrackScene's sky). Unassigned, a hub-bound pilot flies over the track under the HUB's sky, which
-  is Unity's plain built-in default.
+- **`trackSkybox` on the PilotControlCenter AND on every `HubSpectatorTV`** must point at
+  `Assets/Prefabs/Skyboxes/SimpleSkybox.mat` (the TrackScene's sky) — it must be that exact asset, so
+  the saturation/value the hues are applied over match the racers'. Unassigned, a hub-bound pilot flies
+  over the track (and a TV shows it) under the HUB's sky, which is Unity's plain built-in default. The
+  TV logs a one-time warning naming the TV's team when it is blank; the pad is already verified wired.
 - **The guns (2026-08-16):** assign **`laserPrefab`** on the `SupportShip.prefab` ASSET (not just the
   Melody instance) — `TuningTemplateFor` reads the car prefab's nested ship to arm remote copies, so an
   instance-only assignment leaves every teammate's ship firing blanks. The
@@ -1625,11 +1677,18 @@ bugs to someone reading the code cold:
     - The hub's sky is Unity's built-in asset, never a runtime instance, because
       `SkyboxHueRandomizer.BuildRecoloured` returns null for anything that isn't a SimpleSkybox. So the
       parked reference cannot be destroyed under us.
-  - **⚠️ POST-PROCESSING IS NOT INVOLVED, and never was.** The project contains **no Volume
-    component anywhere** — no global volume, no local ones, no profiles. Nothing is graded, and
-    `renderPostProcessing` on the pilot camera changes nothing today (it is left on so it starts
-    working the day a Volume is added). Recorded loudly because "the racer's view is more dramatic"
-    reads like a grading difference and is not: **it is ambient light, every time.**
+  - **Post-processing — correction (2026-08-24).** An earlier note here claimed nothing is graded
+    because no scene contains a Volume component. The Volume search was right; the conclusion was
+    **wrong**. The game grades through URP's **Default Volume Profile**
+    (`Assets/Settings/DefaultVolumeProfile.asset`, wired in Graphics settings), which applies to every
+    camera with `renderPostProcessing` ticked **without any Volume in any scene**. It carries live
+    Tonemapping, Bloom, ColorAdjustments, Vignette, FilmGrain, DepthOfField, fog and more.
+    - So `renderPostProcessing` matters a great deal, and a camera built IN CODE comes up with it
+      **false**. The pilot camera always set it true, which is why grading was never the pilot's
+      problem — that really was ambient light. The Spectator TVs did NOT set it, which is why the feed
+      looked raw next to the game it was showing (fixed 2026-08-24).
+    - **The lesson: grepping scenes for `m_IsGlobal` does not tell you whether a project is graded.**
+      Check the Default Volume Profile in Graphics settings too.
   - **Anti-aliasing** — the car cameras are authored with `m_Antialiasing: 2` (SMAA); a code-built
     camera defaults to None, so the pilot's view resolved edges visibly more jaggedly. `EnsureRig` now
     sets `antialiasing` / `antialiasingQuality` to match.
@@ -1669,6 +1728,49 @@ bugs to someone reading the code cold:
     (clients get collider-less visuals — contact resolves once). The pilot therefore sees their own shot
     a round trip late; nil when the pilot is the host. The host also checks `PilotOf(ownerId) == sender`
     so only whoever holds the controls can fire that ship.
+  - **⚠️ ROUNDS FIRED FROM THE PILOT'S POSE, NOT THE HOST'S COPY (fixed 2026-08-24).** Symptom: a
+    CLIENT pilot strafing sideways saw their rounds leave from behind and beside the ship, while the
+    same thing on the host lined up perfectly.
+    - The host spawns every round off ITS copy of the ship, and that copy trails the truth by four
+      things at once: the aim stream's packet interval (20 Hz — up to 50 ms), the pilot's one-way
+      latency, **`AimSmoothTau` (70 ms)**, and the fire request's own flight time. Roughly 150 ms, and
+      at `offsetMoveSpeed` 22 m/s that is ~3.4 m of lateral offset. The biggest single term was the
+      SMOOTHING, not the network.
+    - Fix 1: `GNRC_SHIP_FIRE` now carries the pilot's `{offset, look}` AS OF THE PRESS, and
+      `SupportShip.FireLaserAt` rebuilds the muzzle from it against this machine's follow frame — so
+      the car position is still local and only the pilot's own contribution crosses the wire. **The
+      pilot never had to be predicted; they could simply be asked.** Values are clamped to the movement
+      box and aim limits on arrival (not really anti-cheat — a pilot already dictates that offset
+      outright via GNRC_SHIP_AIM — but it stops a malformed packet spawning a round somewhere absurd).
+    - Fix 2: **`SyncShips` now LEADS the received aim by `age + AimSmoothTau`** instead of easing
+      straight at it. An exponential chase sits `tau—v` behind a moving target in steady state, so the
+      old code trailed by 70 ms even on a perfect connection. Same trick and the same reasoning as
+      `RemoteCarPuppet`'s projection, which hit this first at 268 m/s. This one helps everyone, not just
+      firing: it is how the ship LOOKS to every observer.
+      - The rate is DIFFERENTIATED from consecutive 20 Hz packets and filtered (`AimVelocityTau`), since
+        the noise would otherwise be multiplied by the lead. Age is capped (`MaxAimExtrapolation`) so a
+        pilot who stops sending parks rather than sails, and the result is CLAMPED — without that,
+        leading a pilot pinned against a wall of the box pushes their ship visibly outside it.
+      - `ClearAimPrediction` wipes the estimate whenever the ship goes away, because the next frame
+        with a rebuilt ship SNAPS to its target and a stale lead would pop.
+    - **⚠️ Regression the same day, and the lesson in it: `muzzleOffset` is in the ship's SCALED
+      space.** The original code read the muzzle with `transform.TransformPoint`, which applies the
+      ship's SCALE as well as its pose — and `BuildShip` gives the ship the authored WORLD scale, which
+      is not 1. The new reconstruction used a bare `rotation * muzzleOffset` and silently dropped that
+      factor. Because a HOST pilot still went down the old path while a CLIENT pilot went down the new
+      one, the two disagreed and **no single Muzzle Offset value could satisfy both** — tuning it right
+      for the client put the host's rounds metres in front of the ship.
+      - Fixed with `Vector3.Scale(muzzleOffset, transform.lossyScale)`, which is what TransformPoint was
+        doing all along, and by routing `FireLaser` THROUGH `FireLaserAt` so there is exactly one muzzle
+        calculation that cannot drift again. Firing with the ship's own current offset/look reproduces
+        `LateUpdate`'s transform to the float, so the unified path is numerically identical to the old
+        one for a host pilot.
+      - **If `muzzleOffset` was re-tuned to compensate during that window, put it back.** The authored
+        value is in the ship's units, not world units.
+    - **Still not perfect, by design.** The pilot sees their own round a full round trip late (host
+      spawn + the 20 Hz projectile stream), so a residual offset remains no matter how exact the spawn
+      is. Only a locally-spawned cosmetic tracer removes that, and it needs the replicated puppet
+      suppressed for the predicting client. Deferred — measure the residual first.
   - **⚠️ `laserSpeed` is MUZZLE velocity, added on top of the ship's own (fixed 2026-08-24).**
     Symptom in multiplayer: rounds barely left the ship and were being destroyed almost immediately.
     Cause: a ship escorting a car at ~600 m/s fired 700 m/s rounds that made only ~100 m/s of
@@ -1890,13 +1992,24 @@ bugs to someone reading the code cold:
   - The movement box became a **3D box**: `maxForwardOffset` on top of horizontal/vertical, driven by
     **B (forward) / X (back)**. Set all three equal for a true cube. The selected-gizmo draws the real
     box now.
-  - **ROLL on the bumpers (2026-08-16):** RB banks right, LB banks left, to `maxRollAngle` (80°) on
-    local Z. Holding BOTH gives 0, which falls out of the `+1 / -1` sum for free and is exactly the
-    "they cancel" rule — the target drops to level and the ship smooths out of whatever roll it was
-    in, using the same `lookSmoothTime` as the other two axes. Roll is a pure AIM angle: it never
-    moves the ship. Both bumpers were already free while piloting because `MenuState.AnyOpen` gates
-    the grapple (RB) and the voice-channel flip (LB). `PilotLook` is a **Vector3** (x yaw, y pitch,
-    z roll) and `GNRC_SHIP_AIM` carries `{Vector3 offset, Vector3 look}`.
+  - **ROLL on the TRIGGERS (2026-08-16 on the bumpers, moved to the triggers 2026-08-24):** RT banks
+    right, LT banks left, to `maxRollAngle` (80°) on local Z, and it is **ANALOGUE** — a half-pulled
+    trigger is a half roll, which a button could only ever do as all-or-nothing. Pulling BOTH still
+    gives 0, which falls out of the subtraction for free and is exactly the "they cancel" rule — the
+    target drops to level and the ship smooths out of whatever roll it was in, using the same
+    `lookSmoothTime` as the other two axes. Roll is a pure AIM angle: it never moves the ship.
+    - The move also frees **LB** for the team voice-channel flip, which was the point.
+    - `rollDeadzone` (0.06) exists because triggers rarely rest at exactly zero and a ship permanently
+      banked a degree or two reads as a broken horizon. It RESCALES above the dead zone — without
+      that, the ship could never quite reach `maxRollAngle` however hard the trigger was pulled.
+    - ⚠️ **The triggers were a near-collision worth knowing about.** Three other things read them:
+      `LraAbortController` (LT+RT+A — the SAME buttons a rolling pilot uses while firing),
+      `GrappleHook.HandleReel` (RT+Y), and `CarController`'s throttle / `BothTriggersHeld`. All three
+      are safely gated while piloting, and by TWO independent facts rather than one: `MenuState.AnyOpen`
+      is set by `StartPiloting`, `CarController.InputSuppressed` zeroes throttle outright, and the LRA
+      additionally requires `MultiplayerWorld.LocalInTrackArea` — which a hub-bound pilot never is.
+    - `PilotLook` is a **Vector3** (x yaw, y pitch, z roll) and `GNRC_SHIP_AIM` carries
+      `{Vector3 offset, Vector3 look}`.
 - **The pilot camera gets the TRACK's sky, lighting and post-processing (2026-08-16).** All three come
   from the same root problem: the pilot is standing in the HUB but looking at the TRACK, and Unity's
   environment settings are per-ACTIVE-scene, not per-camera.

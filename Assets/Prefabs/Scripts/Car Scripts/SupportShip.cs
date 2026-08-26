@@ -80,9 +80,10 @@ public class SupportShip : MonoBehaviour
     [Tooltip("Local X rotation at full vertical push (degrees). Applied NEGATIVE when climbing and " +
              "POSITIVE when descending, which is Unity's convention for nose-up / nose-down.")]
     public float maxPitchAngle = 35f;
-    [Tooltip("Local Z rotation held while a bumper is down (degrees). RB rolls RIGHT, LB rolls LEFT. " +
-             "Holding BOTH cancels to zero, so the ship levels out mid-roll. If the roll comes out " +
-             "mirrored on your model, negate this value.")]
+    [Tooltip("Local Z rotation at a FULL trigger pull (degrees). RT rolls RIGHT, LT rolls LEFT, and the " +
+             "roll is proportional — a half-pulled trigger is a half roll. Pulling BOTH cancels to zero, " +
+             "so the ship levels out mid-roll. If the roll comes out mirrored on your model, negate " +
+             "this value.")]
     public float maxRollAngle = 80f;
     [Tooltip("Lag easing the aim angles in, and easing them back to level (0,0,0) when the controls are " +
              "released. 0 = instant/snappy.")]
@@ -93,7 +94,9 @@ public class SupportShip : MonoBehaviour
              "shoot. Must be on the Projectile layer — the layer is re-applied on spawn anyway.")]
     public GameObject laserPrefab;
     [Tooltip("Where rounds spawn, in the ship's own local frame. Push it forward far enough to clear " +
-             "the ship's own model.")]
+             "the ship's own model. NOTE this is SCALED by the ship's world scale, exactly as a child " +
+             "object would be — so the number here is in the ship's units, not world units, and " +
+             "re-scaling the ship moves the muzzle with it.")]
     public Vector3 muzzleOffset = new Vector3(0f, 0f, 3f);
     [Tooltip("Round speed in m/s, MUZZLE velocity: it is added on top of the ship's own world " +
              "velocity, so this is how fast a round pulls away FROM THE SHIP rather than how fast it " +
@@ -187,6 +190,27 @@ public class SupportShip : MonoBehaviour
                                 + Vector3.up * pilotOffset.y
                                 + Vector3.forward * pilotOffset.z;
 
+    /// <summary><see cref="LocalOffset"/> for an offset OTHER than the one currently flown — used when a
+    /// machine is handed a pose to reconstruct rather than reading its own.</summary>
+    public Vector3 LocalOffsetFor(Vector3 offset)
+    {
+        Vector3 clamped = ClampOffset(offset);
+        return defaultOffset + Vector3.right * clamped.x
+                             + Vector3.up * clamped.y
+                             + Vector3.forward * clamped.z;
+    }
+
+    /// <summary>Clamps an offset into the movement box. Public so the replicator can hold a RECEIVED or
+    /// EXTRAPOLATED offset to the same limits the pilot's own stick is held to — without it, a lead
+    /// term can push a remote ship visibly outside the box its owner cannot leave.</summary>
+    public Vector3 ClampPilotOffset(Vector3 raw) => ClampOffset(raw);
+
+    /// <summary>Clamps aim angles to the same limits ApplyPilotMove produces, for the same reason.</summary>
+    public Vector3 ClampPilotLook(Vector3 raw) => new Vector3(
+        Mathf.Clamp(raw.x, -Mathf.Abs(maxYawAngle), Mathf.Abs(maxYawAngle)),
+        Mathf.Clamp(raw.y, -Mathf.Abs(maxPitchAngle), Mathf.Abs(maxPitchAngle)),
+        Mathf.Clamp(raw.z, -Mathf.Abs(maxRollAngle), Mathf.Abs(maxRollAngle)));
+
     /// <summary>Raised the instant it is downed, on the machine that noticed. Who reports that
     /// upstream differs by machine (see SupportShipAbility / SupportShipReplicator), so the ship
     /// itself stays ignorant of the network.</summary>
@@ -204,7 +228,7 @@ public class SupportShip : MonoBehaviour
     }
 
     /// <summary>The pilot's aim angles in degrees: x = yaw (local Y), y = pitch (local X), z = roll
-    /// (local Z, on the bumpers). Replicated
+    /// (local Z, on the triggers). Replicated
     /// alongside the offset rather than derived from the ship's motion, because the two deliberately
     /// disagree — a pilot pinned against the movement box keeps AIMING the way they're pushing while
     /// no longer MOVING that way, and nothing about the ship's travel could reproduce that.</summary>
@@ -338,7 +362,8 @@ public class SupportShip : MonoBehaviour
     /// resulting offset and angles and assigns them directly.
     ///
     /// <paramref name="move"/> is the intent, in the car's frame: x = slide right, y = climb (left
-    /// stick), z = push forward (B/X); `roll` is the bumpers. It does TWO independent things, and
+    /// stick), z = push forward (B/X); `roll` is the triggers, already dead-zoned and signed by the
+    /// caller (RT positive, LT negative, both cancelling). It does TWO independent things, and
     /// keeping them independent is the point of this control scheme:
     ///  • It slides the offset at a UNIFORM speed, clamped to the movement box.
     ///  • It sets the aim angles — yaw from the sideways push, pitch from the vertical one, roll from
@@ -508,14 +533,68 @@ public class SupportShip : MonoBehaviour
     /// Direction is <c>transform.forward</c>, which includes the pilot's AIM ANGLES — so a ship yawed
     /// left shoots left. That is the whole reason the aim angles exist: they widen the arc of fire well
     /// beyond the movement box, including from a corner of it the ship cannot slide past.</summary>
-    public void FireLaser(ulong pilotClientId, bool pilotIsLocal)
+    public void FireLaser(ulong pilotClientId, bool pilotIsLocal) =>
+        FireLaserAt(pilotOffset, pilotLook, pilotClientId, pilotIsLocal);
+
+    /// <summary>Fires from a pose the PILOT supplied, rather than from wherever this machine currently
+    /// believes the ship to be.
+    ///
+    /// The host spawns every round, but its copy of a client-piloted ship is behind the truth by the
+    /// aim stream's packet interval, its network latency, the smoothing lag in SupportShipReplicator,
+    /// and the flight time of the fire request itself — around 150 ms all told, which at
+    /// <see cref="offsetMoveSpeed"/> is metres of visible offset while strafing. The rounds came out
+    /// behind and beside the ship.
+    ///
+    /// The pilot has no such uncertainty: they know exactly where their ship was when they pressed the
+    /// button, so they send it and the host reconstructs the muzzle from THAT. The pose is rebuilt the
+    /// same way LateUpdate builds the ship's own, off this machine's follow frame — so it inherits the
+    /// correct car position and only the pilot's own contribution comes over the wire.
+    ///
+    /// Both values are CLAMPED on arrival, to the same box and angles the pilot's stick is held to.
+    /// This is not really an anti-cheat measure — a pilot already dictates their offset outright via
+    /// GNRC_SHIP_AIM, so nothing new is being trusted — but it costs nothing and keeps a corrupt or
+    /// malformed packet from spawning a round somewhere absurd.</summary>
+    public void FireLaserAt(Vector3 pilotOffsetAtFire, Vector3 pilotLookAtFire,
+                            ulong pilotClientId, bool pilotIsLocal)
+    {
+        // ⚠️ MUZZLE OFFSET IS IN THE SHIP'S OWN SCALED SPACE, and forgetting that broke this once
+        // (2026-08-24). The original code read the muzzle with transform.TransformPoint, which applies
+        // the ship's SCALE as well as its pose — and BuildShip gives the ship the authored world scale,
+        // which is not 1. Rebuilding the muzzle with a bare `rotation * muzzleOffset` silently dropped
+        // that factor, so a host-piloted shot (which still went through the old path) and a
+        // client-piloted one came out of different places, and no single Muzzle Offset value could
+        // satisfy both. Vector3.Scale by lossyScale is what TransformPoint was doing.
+        //
+        // FireLaser now routes through here too, so there is exactly ONE muzzle calculation and the two
+        // cannot drift apart again.
+        Vector3 look = ClampPilotLook(pilotLookAtFire);
+        Vector3 muzzle = Vector3.Scale(muzzleOffset, transform.lossyScale);
+
+        if (Car == null)
+        {
+            // No follow frame to rebuild in (not attached yet). Use the ship's own pose as it stands —
+            // note this is the ONE case that ignores the passed-in aim, because there is no frame to
+            // express it against.
+            FireLaserFrom(transform.position + transform.rotation * muzzle, transform.rotation,
+                          pilotClientId, pilotIsLocal);
+            return;
+        }
+
+        // Rebuilt exactly the way LateUpdate builds the ship's own pose, so firing from the ship's
+        // CURRENT values reproduces its transform to the float.
+        Vector3 position = Car.position + smoothedRot * LocalOffsetFor(pilotOffsetAtFire);
+        Quaternion rotation = smoothedRot * Quaternion.Euler(look.y, look.x, look.z);
+
+        FireLaserFrom(position + rotation * muzzle, rotation, pilotClientId, pilotIsLocal);
+    }
+
+    void FireLaserFrom(Vector3 origin, Quaternion rotation, ulong pilotClientId, bool pilotIsLocal)
     {
         if (laserPrefab == null || IsRagdolling) return;
 
-        Vector3 origin = transform.TransformPoint(muzzleOffset);
-        Vector3 direction = transform.forward;
+        Vector3 direction = rotation * Vector3.forward;
 
-        GameObject round = Instantiate(laserPrefab, origin, transform.rotation);
+        GameObject round = Instantiate(laserPrefab, origin, rotation);
         ApplyLayer(round, laserLayerName);
 
         var laser = round.GetComponent<SupportShipLaser>();

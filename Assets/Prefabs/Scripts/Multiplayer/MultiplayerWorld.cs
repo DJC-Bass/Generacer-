@@ -587,18 +587,50 @@ public class MultiplayerWorld : MonoBehaviour
         if (scene.IsValid() && scene.isLoaded)
             SceneManager.SetActiveScene(scene);   // fires activeSceneChanged → SkyboxHueRandomizer recolors
 
-        // A hub-bound Support Ship pilot is LOOKING at the track, so they get its lights — including
-        // a blackout round's, since SetAreaLights restores each light's recorded state rather than
-        // forcing it on. The speedometer is deliberately left out: it reads the pilot's own parked
-        // car, so showing it would just report a stationary 0 mph over someone else's race.
-        bool showTrack = inTrackLocally || pilotPresentation;
-        SetAreaLights(hubLights, !showTrack);
-        SetAreaLights(trackLights, showTrack);
+        ApplyAreaLights();
 
+        // The speedometer is deliberately keyed on the CAR, not on the pilot override: it reads the
+        // pilot's own parked car, so showing it would just report a stationary 0 mph over someone
+        // else's race.
         if (trackSpeedometerRoot != null) trackSpeedometerRoot.SetActive(inTrackLocally);
 
         AudioManager.RefreshSceneMusic();
         SnapFollowCameras();
+    }
+
+    /// <summary>Lights the world for wherever this player currently IS — or, for a Support Ship pilot,
+    /// wherever they are LOOKING. A blackout round still reads as one either way, because SetAreaLights
+    /// restores each light's RECORDED state rather than forcing it on.</summary>
+    void ApplyAreaLights()
+    {
+        bool showTrack = inTrackLocally || pilotPresentation;
+        SetAreaLights(hubLights, !showTrack);
+        SetAreaLights(trackLights, showTrack);
+    }
+
+    /// <summary>Light the TRACK for the duration of ONE camera's render, then <see cref="PopTrackLighting"/>.
+    ///
+    /// For the hub Spectator TVs, which are a harder case than the Support Ship pilot: a pilot's whole
+    /// screen is the track, so they can swap the world's lighting for as long as they fly. A TV viewer
+    /// is looking at the hub AND at a screen showing the track in the SAME frame, and lights are global
+    /// — there is one set of enabled lights per frame, not one per camera. The only way to give two
+    /// cameras different lighting is to change it between them, which is what these two do, driven from
+    /// URP's per-camera render callbacks.
+    ///
+    /// Both are no-ops outside a multiplayer session, where there is no track to light.</summary>
+    public static void PushTrackLighting()
+    {
+        if (Instance == null) return;
+        SetAreaLights(Instance.hubLights, false);
+        SetAreaLights(Instance.trackLights, true);
+    }
+
+    /// <summary>Undoes <see cref="PushTrackLighting"/> by re-deriving the correct state rather than
+    /// restoring a snapshot — so it stays right even if the player's area or the pilot override changed
+    /// in between.</summary>
+    public static void PopTrackLighting()
+    {
+        if (Instance != null) Instance.ApplyAreaLights();
     }
 
     static void SetAreaLights(List<(Light light, bool wasEnabled)> lights, bool areaActive)

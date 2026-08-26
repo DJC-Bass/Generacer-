@@ -89,6 +89,30 @@ public class SkyboxHueRandomizer : MonoBehaviour
     public static Material BuildRoundSky(Material baseSky) =>
         Instance != null ? Instance.BuildRecoloured(baseSky) : null;
 
+    /// <summary>THIS ROUND'S track sky, for any camera that has to show a scene it isn't standing in —
+    /// the Support Ship pilot's chase cam and the hub Spectator TVs. Both need the identical material
+    /// the racers are under, and both are looking at it from the hub.
+    ///
+    /// Prefers the LIVE instance when it belongs to this round (then every camera is literally sharing
+    /// one material), and otherwise builds a private copy from <paramref name="baseSky"/> — which lands
+    /// on the same colours anyway, because the hues derive from the shared round seed.
+    ///
+    /// <paramref name="owned"/> is the caller's cache for that private copy: passed by ref, replaced
+    /// (and the previous one destroyed) whenever a fresh build is needed, and the caller must destroy
+    /// whatever is left in it. Rebuilding rather than caching forever is deliberate — the seed changes
+    /// between rounds, and going live is exactly when a stale sky would be noticed.</summary>
+    public static Material ResolveRoundSky(Material baseSky, ref Material owned)
+    {
+        Material live = CurrentSky;
+        if (live != null) return live;
+
+        if (baseSky == null) return null;
+
+        if (owned != null) Destroy(owned);
+        owned = BuildRoundSky(baseSky);
+        return owned != null ? owned : baseSky;
+    }
+
     void Awake() => Instance = this;
 
     void OnEnable()
