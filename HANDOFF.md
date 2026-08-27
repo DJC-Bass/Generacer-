@@ -165,6 +165,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
 | `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X’s lasers once, FROM the {offset, look} the pilot reports at the press; host spawns + NpcReplicator streams the round |
 | `GNRC_SHIP_LHIT` | SupportShipReplicator | server → victim | a Support Ship round popped YOUR car — victim applies the pop-up and judges its own i-frames |
+| `GNRC_SHIP_SFX` | SupportShipReplicator | host → all | a laser was fired / landed: {pos, kind}. SOUND ONLY — rounds exist only on the host, so no client would otherwise hear the guns. Unreliable |
 | `GNRC_SHIP_DMG` | SupportShipReplicator | host → all | a ship took a non-fatal hit — every copy flashes. EVENT, not streamed |
 
 **Four patterns this codebase leans on — copy them:**
@@ -1728,6 +1729,35 @@ bugs to someone reading the code cold:
     (clients get collider-less visuals — contact resolves once). The pilot therefore sees their own shot
     a round trip late; nil when the pilot is the host. The host also checks `PilotOf(ownerId) == sender`
     so only whoever holds the controls can fire that ship.
+  - **⚠️ THE GUNS WERE SILENT ON EVERY CLIENT (fixed 2026-08-24), including the one firing them.**
+    Rounds exist ONLY on the host; clients get NpcReplicator puppets, and `StripPuppet` destroys every
+    MonoBehaviour, AudioSource AND collider on a puppet. So no client ever ran `FireLaserFrom` (muzzle)
+    or `SupportShipLaser.Finish` (impact) — a CLIENT pilot watched their own guns fire in complete
+    silence, which is precisely the feedback the two-flavour impact audio exists to give them.
+    - Fixed with `GNRC_SHIP_SFX` {position, kind}, host → remote clients, Unreliable. The host still
+      plays its own locally and `SendToRemoteClients` excludes it, so nothing doubles.
+    - **The two impact flavours had to survive the wire.** Environment vs entity is the gunner's ONLY
+      hit feedback (no hit markers, flying from the hub), so the kind is carried explicitly rather than
+      collapsed into one "laser noise". Clients borrow the 3D blocks off their own copy of the laser
+      prefab (`LocalLaserTuning`), since those live on the prefab rather than in AudioLibrary.
+    - **⚠️ THIS IS THE GENERAL TRAP OF THE PUPPET MODEL, and it has now bitten three times.**
+      `StripPuppet` destroys every MonoBehaviour AND every AudioSource, so **anything a host-simulated
+      object would have played for itself is silent on every client.** Known instances:
+      - CARS — solved long ago by re-adding `RemoteCarAudio` to the puppet.
+      - LIGHTNING — solved by relaying the strike (`NpcReplicator.BroadcastStrike`), so clients build a
+        real LightningStrike that makes its own noise.
+      - SUPPORT SHIP LASERS — relayed as `GNRC_SHIP_SFX` (above).
+      - BOULDERS — `BoulderAudio` is now RE-ADDED to boulder puppets (`RestoreBoulderAudio`), not
+        relayed, because the burning FLIGHT LOOP has to ride the moving puppet and no one-shot event
+        could reproduce it. Tuning is copied off the registered prefab, same as `DroneDamageTint`.
+      **Choosing between the two:** re-add the component when the sound is CONTINUOUS or must follow
+      the object; relay an event when it is a one-shot at a world position (an impact hundreds of
+      metres downrange has nothing to ride).
+      - KNOWN GAP: a boulder's IMPACT one-shot needs a collision, and puppet Rigidbodies are kinematic
+        — which raise no contact against STATIC geometry. A boulder landing on the road is still silent
+        on clients; one that hits the local player's dynamic car is not. Relaying it would close this.
+      - **Do not conclude "there is no audio" from grepping `AudioManager.Play`.** BoulderAudio calls
+        `AudioSource.PlayOneShot` directly and was missed that way once already.
   - **⚠️ ROUNDS FIRED FROM THE PILOT'S POSE, NOT THE HOST'S COPY (fixed 2026-08-24).** Symptom: a
     CLIENT pilot strafing sideways saw their rounds leave from behind and beside the ship, while the
     same thing on the host lined up perfectly.

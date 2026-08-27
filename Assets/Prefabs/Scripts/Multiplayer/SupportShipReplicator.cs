@@ -35,6 +35,7 @@ public class SupportShipReplicator : MonoBehaviour
     const string MsgFire = "GNRC_SHIP_FIRE";    // pilot  → server: fire owner X's guns, once, from
                                                 //          {offset, look} AS OF THE PRESS (see RequestFire)
     const string MsgLaserHit = "GNRC_SHIP_LHIT"; // server → victim: a Support Ship round popped YOUR car
+    const string MsgShotSfx = "GNRC_SHIP_SFX";  // host   → all: a laser was fired / landed, so PLAY it
     const string MsgShipDmg = "GNRC_SHIP_DMG";  // host → all: ship X took a hit — flash + tint, EVENT
 
     // The aim stream is the only fast one, and only while somebody is actually flying.
@@ -145,6 +146,7 @@ public class SupportShipReplicator : MonoBehaviour
             msg.UnregisterNamedMessageHandler(MsgFire);
             msg.UnregisterNamedMessageHandler(MsgLaserHit);
             msg.UnregisterNamedMessageHandler(MsgShipDmg);
+        msg.UnregisterNamedMessageHandler(MsgShotSfx);
         }
         foreach (var kv in ships)
             if (kv.Value.ship != null) Destroy(kv.Value.ship.gameObject);
@@ -455,6 +457,33 @@ public class SupportShipReplicator : MonoBehaviour
         Debug.Log($"[SupportShip] Local gunner awarded {credits} for a laser kill.");
     }
 
+    /// <summary>HOST — everyone: a Support Ship round was fired, or landed. Sound only.
+    ///
+    /// ⚠️ Needed because the ROUNDS ONLY EXIST ON THE HOST. Clients receive them as NpcReplicator
+    /// puppets, and StripPuppet destroys every MonoBehaviour, AudioSource and collider on a puppet — so
+    /// no client ever ran the code that plays the muzzle or the impact. A CLIENT flying a Support Ship
+    /// therefore watched their own guns fire in complete silence, which is exactly the feedback the
+    /// two-flavour impact audio exists to give them.
+    ///
+    /// An EVENT, not a puppet property: these are one-shots at a world position, there is nothing to
+    /// heal on a later tick, and the impact point is nowhere near the ship by the time it happens.
+    /// Unreliable — a dropped gunshot is a missing tick, not a broken state, and they come thick and
+    /// fast in a burst.</summary>
+    public static void ReportShotSound(Vector3 position, ShotSound kind)
+    {
+        var msg = Msg;
+        if (msg == null || !IsServer) return;
+
+        using var writer = new FastBufferWriter(32, Allocator.Temp);
+        writer.WriteValueSafe(position);
+        writer.WriteValueSafe((byte)kind);
+        SendToRemoteClients(MsgShotSfx, writer, NetworkDelivery.Unreliable);
+    }
+
+    /// <summary>Which of the gun's three sounds to play. The two IMPACT flavours are the gunner's only
+    /// hit feedback, so they must stay distinguishable across the wire too.</summary>
+    public enum ShotSound : byte { Fire = 0, HitEnvironment = 1, HitEntity = 2 }
+
     /// <summary>Called by the ONE machine that counts a ship's hits (the host in a session) so every
     /// other copy can flash and sound the hit. A Support Ship is not an NpcReplicator entity — it's keyed on its
     /// owner's client id, not a spawn id — so `GNRC_NPC_DMG` can't carry this and it needs its own
@@ -660,6 +689,26 @@ public class SupportShipReplicator : MonoBehaviour
             if (targetClientId == LocalClientId) ApplyLaserHitLocally();
         });
 
+        msg.RegisterNamedMessageHandler(MsgShotSfx, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out Vector3 position);
+            reader.ReadValueSafe(out byte kind);
+
+            // The 3D tuning lives on the LASER PREFAB for the impacts, which a client has registered
+            // with NpcReplicator, so pass what we have and let AudioManager fall back to the shared
+            // Support Ship block when it is null.
+            var laser = LocalLaserTuning();
+            switch ((ShotSound)kind)
+            {
+                case ShotSound.Fire:
+                    AudioManager.PlaySupportShipLaserFire(position); break;
+                case ShotSound.HitEntity:
+                    AudioManager.PlaySupportShipLaserHitEntity(position, laser != null ? laser.entityAudio3D : null); break;
+                default:
+                    AudioManager.PlaySupportShipLaserHitEnvironment(position, laser != null ? laser.environmentAudio3D : null); break;
+            }
+        });
+
         msg.RegisterNamedMessageHandler(MsgShipDmg, (sender, reader) =>
         {
             reader.ReadValueSafe(out ulong ownerId);
@@ -672,6 +721,23 @@ public class SupportShipReplicator : MonoBehaviour
             if (ship != null) ship.ApplyDamageFeedback(hitsTaken, maxHits);
         });
     }
+
+    /// <summary>The laser prefab's own SupportShipLaser, purely to borrow its authored 3D blocks for a
+    /// sound we were TOLD about rather than one we spawned. Cached — a burst asks three times a second.</summary>
+    static SupportShipLaser LocalLaserTuning()
+    {
+        if (laserTuning != null) return laserTuning;
+        var ability = SupportShipAbility.Instance;
+        var template = ability != null ? ability.Ship : null;
+        GameObject prefab = template != null ? template.laserPrefab : null;
+        if (prefab == null && Instance != null)
+            foreach (var kv in Instance.ships)
+                if (kv.Value.ship != null && kv.Value.ship.laserPrefab != null)
+                { prefab = kv.Value.ship.laserPrefab; break; }
+        if (prefab != null) laserTuning = prefab.GetComponent<SupportShipLaser>();
+        return laserTuning;
+    }
+    static SupportShipLaser laserTuning;
 
     ShipEntry GetOrCreate(ulong ownerId)
     {

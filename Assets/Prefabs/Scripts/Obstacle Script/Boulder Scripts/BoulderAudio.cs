@@ -26,6 +26,16 @@ public class BoulderAudio : MonoBehaviour
     private float spawnTime;
     private bool impacted;
 
+    /// <summary>Copies the tuning off another instance — used for a client's PUPPET, which is cloned
+    /// from a prefab whose scripts were stripped and so comes up on code defaults. Same trick, and the
+    /// same reason, as DroneDamageTint.CopyTuningFrom.</summary>
+    public void CopyTuningFrom(BoulderAudio src)
+    {
+        if (src == null) return;
+        spatial = src.spatial;
+        impactArmDelay = src.impactArmDelay;
+    }
+
     void Start()
     {
         spawnTime = Time.time;

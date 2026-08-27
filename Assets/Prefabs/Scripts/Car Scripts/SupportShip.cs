@@ -612,6 +612,9 @@ public class SupportShip : MonoBehaviour
         laser.Launch(direction, laserSpeed, worldVelocity);
 
         AudioManager.PlaySupportShipLaserFire(origin);
+        // Only the host gets here, so nobody else would hear the guns at all without this — including
+        // the CLIENT actually pulling the trigger. No-op off the host.
+        SupportShipReplicator.ReportShotSound(origin, SupportShipReplicator.ShotSound.Fire);
 
         // Host only (no-op elsewhere): stream it to the clients as a visual, hits staying host-side.
         NpcReplicator.Track(round, NpcKind.Projectile, laserPrefab);

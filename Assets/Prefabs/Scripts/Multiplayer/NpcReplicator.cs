@@ -205,6 +205,31 @@ public class NpcReplicator : MonoBehaviour
         tint.RegisterHit(hitsTaken, maxHits);
     }
 
+    /// <summary>Gives a boulder puppet its noise back.
+    ///
+    /// ⚠️ StripPuppet destroys every MonoBehaviour AND every AudioSource on a puppet, so anything a
+    /// host-simulated object would have played FOR ITSELF is silent on every client. Boulders were:
+    /// the host heard the spawn crack, the burning flight loop and the impact; clients heard an
+    /// utterly silent rock. `RemoteCarAudio` exists for exactly this reason on cars, and this is the
+    /// boulder equivalent — re-added rather than relayed, because the FLIGHT LOOP has to ride the
+    /// moving puppet and a one-shot event could never reproduce it.
+    ///
+    /// BoulderAudio is safe to re-add because it is self-contained: it makes its own AudioSources, reads
+    /// its clips from AudioLibrary, and does its own collision test rather than asking BoulderObstacle.
+    ///
+    /// KNOWN GAP: the IMPACT one-shot needs a collision, and a puppet's Rigidbody is kinematic — which
+    /// raises no contact against STATIC geometry like the track. A boulder landing on the road is
+    /// therefore still silent on clients, while one that hits the local player's (dynamic) car is not.
+    /// Fixing that properly means relaying the impact as an event, the way GNRC_SHIP_SFX relays the
+    /// laser's.</summary>
+    static void RestoreBoulderAudio(GameObject go, GameObject prefab, NpcKind kind)
+    {
+        if (kind != NpcKind.Boulder || go == null) return;
+
+        var audio = go.AddComponent<BoulderAudio>();
+        if (prefab != null) audio.CopyTuningFrom(prefab.GetComponentInChildren<BoulderAudio>(true));
+    }
+
     /// <summary>Host: pay a knockoff bounty to the client whose car shoved the drone off.</summary>
     public static void SendBounty(ulong clientId, int credits)
     {
@@ -301,6 +326,7 @@ public class NpcReplicator : MonoBehaviour
 
         var sync = go.AddComponent<RemoteCarPuppet>();
         sync.projectGravity = puppet.kind == NpcKind.Boulder;
+        RestoreBoulderAudio(go, prefab, puppet.kind);
         go.SetActive(true);
         puppet.go = go;
     }

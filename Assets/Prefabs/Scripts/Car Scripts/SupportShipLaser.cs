@@ -193,6 +193,15 @@ public class SupportShipLaser : MonoBehaviour
     {
         if (effective) AudioManager.PlaySupportShipLaserHitEntity(transform.position, entityAudio3D);
         else AudioManager.PlaySupportShipLaserHitEnvironment(transform.position, environmentAudio3D);
+
+        // Rounds only exist on the host, so this is the only machine that reaches here — everyone else
+        // has a collider-less puppet that can never register a contact. Tell them, or the gunner (very
+        // often a client) gets no impact feedback at all, which is the one thing this audio is FOR.
+        SupportShipReplicator.ReportShotSound(
+            transform.position,
+            effective ? SupportShipReplicator.ShotSound.HitEntity
+                      : SupportShipReplicator.ShotSound.HitEnvironment);
+
         Destroy(gameObject);
     }
 
