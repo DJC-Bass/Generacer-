@@ -116,11 +116,29 @@ public class MainMenuController : MonoBehaviour
     private enum SettingsScreen { Root, Categories, Audio, Video, Controls }
     private SettingsScreen currentScreen = SettingsScreen.Root;
 
+    /// <summary>Set by MultiplayerWorld.TeardownToLobby just before it loads this scene: come up with
+    /// the lobby already open instead of on the title buttons.
+    ///
+    /// A static hand-off rather than a call, because the object that knows (the world) is destroying
+    /// itself in the same breath as the scene load, and the object that acts (this menu) does not exist
+    /// yet. Consumed once, so a later deliberate return to the menu still lands on the title.</summary>
+    public static bool OpenLobbyOnLoad;
+
     void Start()
     {
         EnsureCamera();
         EnsureEventSystem();
         BuildUI();
+
+        if (OpenLobbyOnLoad)
+        {
+            OpenLobbyOnLoad = false;
+            // Only if the session actually survived. A game-over that ALSO ended the session (the host
+            // quit, the connection died) has nothing to show, and Open() would strand the player on the
+            // lobby ROOT screen with the title buttons hidden behind it.
+            var session = NetworkSessionManager.Instance;
+            if (session != null && session.InSession) OnOnlineMultiplayer();
+        }
     }
 
     void LateUpdate()

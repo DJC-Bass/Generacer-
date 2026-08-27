@@ -315,6 +315,17 @@ public class CarController : MonoBehaviour
 
     private GeneracerControls controls;
     private AudioSource driftSource;   // looping tire-screech while drifting
+
+    /// <summary>0..1 volume drive for the tire screech: steering x speed, and zero whenever we are not
+    /// actually drifting on the ground. RemoteCarManager replicates this so OTHER players hear this car
+    /// drift. It deliberately excludes Drift Screech Max Volume (prefab tuning, identical on every
+    /// machine) and the SFX slider (each listener's own setting) - the far side reapplies both.</summary>
+    public float DriftScreechLevel { get; private set; }
+
+    /// <summary>0..1 pitch drive (the raw |steer| stick). Tracked even while the screech is silent, so
+    /// that when a drift starts the sound comes in already at the right pitch instead of sweeping up
+    /// from the minimum - which is exactly what the owner hears.</summary>
+    public float DriftScreechSteer { get; private set; }
     private bool wasAirborne;          // tracks the airborne -> grounded edge for the landing sound
 
     private TrailRenderer trailRL;     // rear-left turbo skid mark
@@ -504,6 +515,12 @@ public class CarController : MonoBehaviour
         float k = 1f - Mathf.Exp(-driftScreechResponsiveness * Time.deltaTime);
         driftSource.volume = Mathf.Lerp(driftSource.volume, targetVol, k);
         driftSource.pitch = Mathf.Lerp(driftSource.pitch, targetPitch, k);
+
+        // Hand the two DRIVES (not the smoothed result) to the replication stream: the far side runs
+        // the identical easing at the identical responsiveness, so a 30 Hz stream still yields one
+        // continuous screech rather than 30 volume steps a second.
+        DriftScreechLevel = screeching ? Mathf.Clamp01(steer * speed) : 0f;
+        DriftScreechSteer = steer;
     }
 
     /// <summary>Plays a one-shot the moment the car touches down after real airtime — the grace-based
@@ -513,7 +530,10 @@ public class CarController : MonoBehaviour
     {
         bool airborne = IsAirborne;
         if (wasAirborne && !airborne)
+        {
             AudioManager.PlayCarLanding(transform.position);
+            RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.Landing, transform.position);
+        }
         wasAirborne = airborne;
     }
 
@@ -874,6 +894,7 @@ public class CarController : MonoBehaviour
             // Rising edge only (guarded by !loopFlag above): fire the one-shot once as the Loop Speed
             // Multiplier engages, at the car (3D).
             AudioManager.PlayLoopBoost(transform.position);
+            RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.LoopBoost, transform.position);
         }
         else if (loopFlag && uprightDot > loopGravityEnableDot) loopFlag = false;
     }
@@ -891,6 +912,7 @@ public class CarController : MonoBehaviour
         turboTimer = turboDuration;
         turboCooldownTimer = turboCooldown + turboDuration;
         AudioManager.PlayTurbo(transform.position);
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.Turbo, transform.position);
     }
 
     bool TrySpend(string itemName)
@@ -913,6 +935,7 @@ public class CarController : MonoBehaviour
 
         rb.AddForce(transform.up * jumpVelocity, ForceMode.VelocityChange);
         AudioManager.PlayJump(transform.position);
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.Jump, transform.position);
         OnJumped?.Invoke();   // let accessories (JetFlames) react to the jump
 
         // Shorten the suspension ray for a moment so the hover spring lets go and the jump

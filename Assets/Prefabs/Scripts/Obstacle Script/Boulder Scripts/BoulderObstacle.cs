@@ -37,25 +37,24 @@ public class BoulderObstacle : MonoBehaviour
              "Caps how aggressively the missile can dive toward the player.")]
     public float maxHomingSpeed = 80f;
 
+    [Header("Multiplayer")]
+    [Tooltip("Ceiling (m/s) on the velocity change a boulder may hand a REMOTE player it rams. Only " +
+             "used in multiplayer: the host computes the hit for a client, whose car it cannot " +
+             "simulate. A safety valve, not the usual case - most hits land well under it.")]
+    public float maxShoveSpeed = 150f;
+
     private Rigidbody rb;
     private float spawnTime;
     private bool passedApex;
     private float homingElapsed;            // seconds spent homing since apex
     private Transform playerTransform;
-    private CarController playerCar;        // player's controller, for its airborne state
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         spawnTime = Time.time;
 
-        // Find the target once at spawn � homing checks this each frame. If the target is
-        // destroyed/replaced, the reference becomes null and homing simply stops applying force.
-        // Multiplayer (host sim): STICKY random in-track player, per the design spec — this boulder
-        // hunts that one player for its whole flight. Single-player: the local car, as ever.
-        playerTransform = MultiplayerWorld.PickStickyTarget(anyArea: false);
-        // Puppet targets have no CarController (null = ground-duration homing only, which is fine).
-        playerCar = playerTransform != null ? playerTransform.GetComponentInParent<CarController>() : null;
+        // The target is chosen at APEX, not here - see AcquireTarget.
     }
 
     /// <summary>
@@ -81,7 +80,10 @@ public class BoulderObstacle : MonoBehaviour
         // Detect the moment the boulder transitions from rising to falling.
         // Once vertical velocity goes negative, open the homing window.
         if (!passedApex && rb.linearVelocity.y < 0f)
+        {
             passedApex = true;
+            AcquireTarget();
+        }
 
         // The homing window lasts longer while the player is airborne, so the boulder keeps
         // chasing them through the air like an anti-air missile. Evaluated live: it extends the
@@ -106,6 +108,22 @@ public class BoulderObstacle : MonoBehaviour
             Vector3 extraGravity = Physics.gravity * (gravityMultiplier - 1f);
             rb.AddForce(extraGravity, ForceMode.Acceleration);
         }
+    }
+
+    /// <summary>Chooses the one player this boulder hunts, and keeps it for the rest of its life.
+    ///
+    /// Deliberately run at APEX rather than at spawn. The boulder launches from the ground and climbs
+    /// for seconds before it can steer at anything, so a pick made at spawn asks "who is airborne?" at
+    /// a moment when the answer cannot matter yet and will be stale by the time it does. Choosing as
+    /// the homing window OPENS is what makes the boulder read as anti-air.
+    ///
+    /// preferAirborne narrows the draw to players actually in the air, then picks at RANDOM among them,
+    /// so with two players mid-jump each is equally likely to be hunted. With nobody airborne the full
+    /// in-track pool stands and a shower falls on a grounded field exactly as it always did. Single
+    /// player is unaffected: the pool is one car either way.</summary>
+    void AcquireTarget()
+    {
+        playerTransform = MultiplayerWorld.PickStickyTarget(anyArea: false, preferAirborne: true);
     }
 
     /// <summary>
@@ -133,14 +151,70 @@ public class BoulderObstacle : MonoBehaviour
             rb.linearVelocity = rb.linearVelocity.normalized * maxHomingSpeed;
     }
 
-    /// <summary>True when the player car reports it's airborne. False if there's no player or it
-    /// has no CarController — then only the ground homing duration applies.</summary>
-    bool IsPlayerAirborne() => playerCar != null && playerCar.IsAirborne;
+    /// <summary>True when the targeted player is off the ground - the local car or a remote one alike.
+    ///
+    /// ⚠️ This used to hold a cached CarController, which a stripped remote puppet does not have. The
+    /// null meant "not airborne", so a boulder that drew a CLIENT never opened its longer airborne
+    /// homing window: it dived at an airborne host and gave up on an airborne client at the same jump.
+    /// MultiplayerWorld.IsPlayerAirborne answers for both.</summary>
+    bool IsPlayerAirborne() => MultiplayerWorld.IsPlayerAirborne(playerTransform);
 
     void Update()
     {
         // Despawn when below kill height or after max lifetime
         if (transform.position.y < killHeight || Time.time - spawnTime > maxLifetime)
             Destroy(gameObject);
+    }
+
+    /// <summary>A boulder has no damage model - its entire effect on a player is MOMENTUM, and in
+    /// single-player (and on the host's own car) the solver delivers that with no code at all. That is
+    /// why this handler did not exist.
+    ///
+    /// ⚠️ It has to exist for multiplayer, and the reason is not obvious: on the host, a client's car is
+    /// a stripped KINEMATIC puppet. A dynamic boulder striking a kinematic body does not move it, so the
+    /// hit went nowhere - not to the puppet, and with no event to relay, not to the real car either.
+    /// Boulders could hit the host and nobody else. Here the host works out the velocity change the
+    /// collision would have caused and sends it to the owner to apply.</summary>
+    void OnCollisionEnter(Collision collision)
+    {
+        if (!MultiplayerWorld.IsMultiplayerGame) return;
+
+        Transform t = collision.transform;
+        while (t != null)
+        {
+            // Our own car needs nothing: the solver just did the real thing to a real Rigidbody.
+            if (t.CompareTag(playerTag)) return;
+            if (t.CompareTag("RemotePlayer")) { ShoveRemotePlayer(t, collision); return; }
+            t = t.parent;
+        }
+    }
+
+    /// <summary>Works out what this collision should do to a remote player's car and sends it.
+    ///
+    /// The mass ratio is the point. Unity's default material is not bouncy, so a real hit is close to
+    /// perfectly inelastic: the car comes away with m/(m+M) of the closing speed. A boulder is 1500-6000
+    /// kg against a car of one or two tonnes, so a square hit hands over most of its speed - which is
+    /// precisely why being hit by one on the host feels like being swatted, and why anything gentler
+    /// would not read as the same event.</summary>
+    void ShoveRemotePlayer(Transform carRoot, Collision collision)
+    {
+        if (!MultiplayerWorld.TryGetCarOwner(carRoot, out ulong clientId, out bool isLocal) || isLocal)
+            return;
+
+        // The puppet is kinematic, so its OWN Rigidbody reports no velocity - the replicated one does.
+        // Its mass, though, is untouched by the strip and is the real car's.
+        var carBody = carRoot.GetComponent<Rigidbody>();
+        var sync = carRoot.GetComponent<RemoteCarPuppet>();
+        float carMass = carBody != null ? Mathf.Max(1f, carBody.mass) : 1000f;
+        Vector3 carVelocity = sync != null ? sync.CurrentVelocity : Vector3.zero;
+
+        if (collision.contactCount == 0) return;
+        // ContactPoint.normal points from the other collider toward US, so the car is pushed along -n.
+        Vector3 n = collision.GetContact(0).normal;
+        float closing = Vector3.Dot(rb.linearVelocity - carVelocity, -n);
+        if (closing <= 0f) return;   // separating, or they ran into us - not a hit worth sending
+
+        float dv = Mathf.Min(closing * (rb.mass / (rb.mass + carMass)), Mathf.Max(0f, maxShoveSpeed));
+        NpcReplicator.SendShoveToClient(clientId, -n * dv);
     }
 }

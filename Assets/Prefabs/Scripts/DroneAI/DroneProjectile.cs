@@ -99,6 +99,8 @@ public class DroneProjectile : MonoBehaviour
         if (IsShield(collision.collider))
         {
             AudioManager.PlayProjectileHitEnvironment(transform.position, audio3D);
+            NpcReplicator.ReportNpcSound(gameObject, transform.position,
+                                         NpcReplicator.NpcSound.HitEnvironment);
             Destroy(gameObject);
             return;
         }
@@ -107,6 +109,7 @@ public class DroneProjectile : MonoBehaviour
         // (the only place projectiles simulate) a REMOTE player's solid puppet counts too — the hit
         // is routed to the victim's machine, where the pop-up lands on their real car.
         bool hitPlayer = false;
+        ulong victimClientId = ulong.MaxValue;
         Transform t = collision.transform;
         while (t != null)
         {
@@ -128,7 +131,10 @@ public class DroneProjectile : MonoBehaviour
             if (t.CompareTag("RemotePlayer"))
             {
                 if (MultiplayerWorld.TryGetCarOwner(t, out ulong clientId, out bool isLocal) && !isLocal)
+                {
                     NpcReplicator.SendHitToClient(clientId);
+                    victimClientId = clientId;   // they play their OWN impact — don't send them a second
+                }
                 hitPlayer = true;
                 break;
             }
@@ -138,6 +144,14 @@ public class DroneProjectile : MonoBehaviour
         // Impact SFX (3D): a distinct sound for striking the player vs the environment.
         if (hitPlayer) AudioManager.PlayProjectileHitPlayer(transform.position, audio3D);
         else AudioManager.PlayProjectileHitEnvironment(transform.position, audio3D);
+
+        // Only the HOST simulates projectiles, so this is the only machine that reaches here — relay it
+        // or the impact is silent everywhere else. The VICTIM is excluded: GNRC_NPC_HIT already makes
+        // them play it locally, instantly, and hearing it twice is an audible double-tap.
+        NpcReplicator.ReportNpcSound(gameObject, transform.position,
+                                     hitPlayer ? NpcReplicator.NpcSound.HitPlayer
+                                               : NpcReplicator.NpcSound.HitEnvironment,
+                                     victimClientId);
 
         // Despawn on any collision regardless of what was hit
         Destroy(gameObject);
@@ -178,11 +192,7 @@ public class DroneProjectile : MonoBehaviour
         {
             // Same multiplayer-aware game-over exit the local-hit path uses.
             if (MultiplayerWorld.IsMultiplayerGame)
-            {
-                if (NetworkSessionManager.Instance != null)
-                    _ = NetworkSessionManager.Instance.LeaveSessionAsync();
-                MultiplayerWorld.Instance.TeardownToMenu("HIT IN THE DRONE ENDING");
-            }
+                MultiplayerWorld.Instance.TeardownToLobby("HIT IN THE DRONE ENDING");
             return;
         }
 
@@ -239,19 +249,18 @@ public class DroneProjectile : MonoBehaviour
     }
 
     /// <summary>Game over during the Drone ending: tear down the run (so the next game starts fresh,
-    /// like the QUIT button) and load the main menu.</summary>
+    /// like the QUIT button) and leave — to the LOBBY in multiplayer, to the main menu solo.</summary>
     void ReturnToMainMenu()
     {
-        // Multiplayer: leave the session first (a HOST leave deletes it for everyone), then the world
-        // teardown resets the run/inventory, clears the puppet statics, and loads the Main Menu
-        // itself. Without this, the world survives into the menu — the menu's background track
-        // generates out at the multiplayer track-area offset, and the stale started session blocks
-        // hosting a new game. (Same branch as MainMenuReturnTrigger / StartMenuController.OnQuit.)
+        // Multiplayer: back to the lobby ROOM, still in the session (2026-08-27). Losing a run should
+        // not cost everyone their room — the same players, on the same teams, can go again immediately.
+        // Deliberately no LeaveSessionAsync here: for a HOST that deletes the session for everyone, and
+        // players are picked off one at a time, so the first casualty would end the game for the rest.
+        // The world teardown still resets the run/inventory and clears the puppet statics, so the menu
+        // does not inherit a track generated out at the multiplayer area offset.
         if (MultiplayerWorld.IsMultiplayerGame)
         {
-            if (NetworkSessionManager.Instance != null)
-                _ = NetworkSessionManager.Instance.LeaveSessionAsync();
-            MultiplayerWorld.Instance.TeardownToMenu("HIT IN THE DRONE ENDING");
+            MultiplayerWorld.Instance.TeardownToLobby("HIT IN THE DRONE ENDING");
             return;
         }
 

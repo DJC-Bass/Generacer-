@@ -34,6 +34,12 @@ public class NetworkSessionManager : MonoBehaviour
     public const string SessionPropTeamSize = "teamSize";
     /// <summary>"1" once the host has started the game (locks the lobby; Phase 2 reacts to it).</summary>
     public const string SessionPropStarted = "started";
+    /// <summary>Set by the HOST while a run is ENDING (the Drone game-over sweeping the hub). It is
+    /// distinct from clearing `started` because the two happen at different times: players are booted
+    /// to the lobby ONE AT A TIME as the drones pick them off, and the run is only formally over once
+    /// the host is out too. In between, `started` is still 1 — and without this flag every player
+    /// already in the lobby would see ENTER GAME and could walk straight back into the massacre.</summary>
+    public const string SessionPropEnding = "ending";
 
     // ---- Player property keys (per-player metadata) ----
     public const string PlayerPropName = "name";
@@ -74,6 +80,12 @@ public class NetworkSessionManager : MonoBehaviour
         Session != null && Session.Properties != null &&
         Session.Properties.TryGetValue(SessionPropStarted, out var p) && p.Value == "1";
 
+    /// <summary>True while the current run is dying — nobody may enter or re-enter the world until the
+    /// host clears it by starting a fresh run. See <see cref="SessionPropEnding"/>.</summary>
+    public bool GameEnding =>
+        Session != null && Session.Properties != null &&
+        Session.Properties.TryGetValue(SessionPropEnding, out var e) && e.Value == "1";
+
     /// <summary>Raised whenever anything about the session changes (players, properties, state).</summary>
     public event Action SessionUpdated;
 
@@ -83,6 +95,10 @@ public class NetworkSessionManager : MonoBehaviour
 
     private bool leaving;        // suppresses end-events raised by our own deliberate teardown
     private bool worldLaunched;  // the multiplayer world has been started for the current session
+    // Set when we drop back to the lobby from a live run. Local and immediate, because the session
+    // properties that ALSO gate this are an async round trip away — without it the host's auto-launch
+    // in Update would fire on the very next frame and drag them back into the world they just left.
+    private bool suppressAutoLaunch;
 
     /// <summary>Finds or creates the persistent manager. Safe to call repeatedly.</summary>
     public static NetworkSessionManager EnsureExists()
@@ -113,7 +129,7 @@ public class NetworkSessionManager : MonoBehaviour
         // the button). Everyone else enters ON THEIR OWN ACCORD via the lobby room's ENTER GAME
         // button (EnterStartedGame) — so players arrive in the hub individually instead of all
         // materialising on the spawn point at once. The round loop waits for the full room.
-        if (!worldLaunched && InSession && GameStarted && IsSessionHost)
+        if (!worldLaunched && !suppressAutoLaunch && !GameEnding && InSession && GameStarted && IsSessionHost)
         {
             worldLaunched = true;
             MultiplayerWorld.Launch();
@@ -128,8 +144,51 @@ public class NetworkSessionManager : MonoBehaviour
     public void EnterStartedGame()
     {
         if (worldLaunched || !InSession || !GameStarted) return;
+        if (GameEnding) return;   // the run is being wiped out — there is nothing to enter
         worldLaunched = true;
         MultiplayerWorld.Launch();
+    }
+
+    /// <summary>We have left the world and are sitting in the lobby room, still IN the session.
+    ///
+    /// This is the difference between a game-over and a quit: <see cref="LeaveSessionAsync"/> tears the
+    /// session down (and, for a host, deletes it for everyone), whereas this keeps it alive so the same
+    /// room — same players, same teams — can start another run without anyone renavigating the menus.
+    ///
+    /// The HOST additionally clears the run flags, which is what re-arms START GAME and releases every
+    /// other player from the "waiting" state. Deliberately only the host: players are booted one at a
+    /// time, and the first one out must not declare the run over for everyone still racing.</summary>
+    public void ReturnedToLobby()
+    {
+        worldLaunched = false;
+        suppressAutoLaunch = true;
+        if (IsSessionHost) _ = SetRunFlagsAsync(started: false, ending: false);
+        SessionUpdated?.Invoke();
+    }
+
+    /// <summary>HOST: mark the run as ending, so nobody in the lobby can walk back into it. Called as
+    /// the Drone game-over begins, NOT as each player is picked off.</summary>
+    public void FlagRunEnding()
+    {
+        if (!IsSessionHost || GameEnding) return;
+        _ = SetRunFlagsAsync(started: true, ending: true);
+    }
+
+    async Task SetRunFlagsAsync(bool started, bool ending)
+    {
+        if (!IsSessionHost) return;
+        try
+        {
+            var host = Session.AsHost();
+            host.SetProperty(SessionPropStarted, new SessionProperty(started ? "1" : "0", VisibilityPropertyOptions.Member));
+            host.SetProperty(SessionPropEnding, new SessionProperty(ending ? "1" : "0", VisibilityPropertyOptions.Member));
+            await host.SavePropertiesAsync();
+            SessionUpdated?.Invoke();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[NetworkSession] Could not update run flags: {e.Message}");
+        }
     }
 
     /// <summary>Host: lock/unlock the lobby. The world locks it when the game loop begins (full
@@ -402,8 +461,10 @@ public class NetworkSessionManager : MonoBehaviour
     public async Task StartGameAsync()
     {
         if (!IsSessionHost) return;
+        suppressAutoLaunch = false;   // deliberate press: the Update hook may take us in again
         var host = Session.AsHost();
         host.SetProperty(SessionPropStarted, new SessionProperty("1", VisibilityPropertyOptions.Member));
+        host.SetProperty(SessionPropEnding, new SessionProperty("0", VisibilityPropertyOptions.Member));
         await host.SavePropertiesAsync();
         Debug.Log("[NetworkSession] Game start flagged — waiting for the full room in the hub.");
         SessionUpdated?.Invoke();
@@ -434,6 +495,7 @@ public class NetworkSessionManager : MonoBehaviour
             ShutdownNetwork();
             leaving = false;
             worldLaunched = false;
+            suppressAutoLaunch = false;
         }
         SessionUpdated?.Invoke();
     }
@@ -484,6 +546,7 @@ public class NetworkSessionManager : MonoBehaviour
         UnhookSessionEvents(session);
         ShutdownNetwork();
         worldLaunched = false;
+        suppressAutoLaunch = false;
         Debug.Log($"[NetworkSession] Session ended: {reason}");
 
         // Mid-game session death (host quit, connection lost): tear the shared world down to the

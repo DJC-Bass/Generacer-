@@ -13,10 +13,15 @@ using UnityEngine;
 /// and hands them to <see cref="Configure"/>. (The trail renderers don't exist on the prefab at all;
 /// the owner builds them at runtime, so we rebuild them here.)
 ///
-/// The state rides one extra byte on the existing 30 Hz CAR stream (see <see cref="Encode"/>): two flag
-/// bits — turbo trails, flame flare — plus a 2-bit SD index. It is LEVEL-triggered (the owner's current
-/// state, not edge events), so a dropped Unreliable packet self-heals on the next of ~30/s instead of
-/// latching an effect on or off.
+/// The state rides three extra bytes on the existing 30 Hz CAR stream: a flags byte (see
+/// <see cref="Encode"/>) carrying turbo trails, flame flare and a 2-bit SD index, plus two bytes of
+/// drift-screech drive. All of it is LEVEL-triggered (the owner's current state, not edge events), so a
+/// dropped Unreliable packet self-heals on the next of ~30/s instead of latching an effect on or off.
+///
+/// This class also owns the remote car's "while active" ability LOOPS - shield, SD, drift screech.
+/// One-shots relay as events on GNRC_CAR_SFX; a loop cannot, because it has to start, follow the car
+/// for as long as the ability lasts, and stop, which is precisely what level-triggered state gives you
+/// and an event does not.
 /// </summary>
 public class RemoteCarEffects : MonoBehaviour
 {
@@ -30,6 +35,12 @@ public class RemoteCarEffects : MonoBehaviour
     /// SEE the shield, and on the HOST (where projectile hits are decided) the puppet's shield collider
     /// goes live, so it actually blocks incoming drone fire for its owner.</summary>
     public const byte FlagShield = 0x20;
+
+    /// <summary>Bit 6: the owner's car is off the ground. Purely a TARGETING input - nothing visual
+    /// reads it. Host-side hunters (lava boulders, drones) decide how to behave from the player's
+    /// airborne state, and a puppet has no CarController to ask, so before this bit existed every one
+    /// of them silently treated remote players as permanently grounded.</summary>
+    public const byte FlagAirborne = 0x40;
 
     // Canonical SD ordering both ends agree on (index 0 = "none"). Names match the SD inventory items
     // and the SDAbilityVFX entries; a car simply has no captured particle system for an SD it can't show.
@@ -89,6 +100,22 @@ public class RemoteCarEffects : MonoBehaviour
         if (shieldObject != null) shieldObject.SetActive(false);
 
         BuildTrails(prefab);
+        CaptureDriftTuning(prefab);
+    }
+
+    /// <summary>Copies the drift-screech tuning off the car PREFAB's CarController. The puppet's own
+    /// copy was destroyed by the strip, and these numbers have to match the owner's exactly - otherwise
+    /// the same drift would sound like a different car to every listener.</summary>
+    void CaptureDriftTuning(GameObject prefab)
+    {
+        var cc = prefab != null ? prefab.GetComponentInChildren<CarController>(true) : null;
+        if (cc == null) return;
+        driftMaxVolume = cc.driftScreechMaxVolume;
+        driftMinPitch = cc.driftScreechMinPitch;
+        driftMaxPitch = cc.driftScreechMaxPitch;
+        driftResponsiveness = cc.driftScreechResponsiveness;
+        driftSpatialBlend = cc.driftScreechSpatialBlend;
+        driftMaxDistance = cc.driftScreechMaxDistance;
     }
 
     /// <summary>Depth-first child search by name, including INACTIVE objects — the shield sits inactive
@@ -161,18 +188,131 @@ public class RemoteCarEffects : MonoBehaviour
     }
 
     /// <summary>Applies a freshly received flags byte to the puppet's visuals. Cheap when nothing changed.</summary>
+    // ---- "while active" LOOPS for a remote player's abilities ----
+    //
+    // ⚠️ The one-shots ride GNRC_CAR_SFX, but a LOOP cannot: it has to start, follow the car for as
+    // long as the ability lasts, and stop. So it is driven off the FLAGS instead, which are already
+    // replicated, already level-triggered, and already self-healing — exactly the properties a loop
+    // needs and a one-shot event does not. Same choice as re-adding BoulderAudio to a boulder puppet
+    // rather than relaying its flight sound.
+    //
+    // The sources live on THIS object, which is the puppet, so they follow the remote car for free.
+    private AudioSource shieldLoop, sdLoop;
+    private bool sdLoopOn;
+
+    // ---- Drift screech: the third loop, and the only one with a CONTINUOUS drive ----
+    //
+    // Shield and SD are on/off, so a flag bit says everything there is to say. A tire screech is not:
+    // its volume and pitch ride the owner's steering and speed from moment to moment, which is why it
+    // gets two quantised bytes on the state stream instead of a bit. Only the TARGETS travel; the
+    // easing below runs locally at the owner's own responsiveness, so 30 packets a second still come
+    // out as one continuous screech rather than 30 audible steps.
+    private AudioSource driftSource;
+    private float driftLevel, driftSteer;
+    private float driftMaxVolume = 1f, driftMinPitch = 0.9f, driftMaxPitch = 1.5f;
+    private float driftResponsiveness = 10f, driftSpatialBlend = 1f, driftMaxDistance = 80f;
+
+    /// <summary>Feeds the replicated screech drives: <paramref name="level01"/> is steering x speed
+    /// (zero unless the owner is drifting on the ground), <paramref name="steer01"/> is the raw stick.</summary>
+    public void ApplyDrift(float level01, float steer01)
+    {
+        driftLevel = level01;
+        driftSteer = steer01;
+    }
+
+    void Update()
+    {
+        UpdateDriftAudio();
+    }
+
+    /// <summary>Mirrors CarController.UpdateDriftAudio for a remote car. The AudioSource is built the
+    /// first time this car actually screeches near us - a car that never drifts in earshot never costs
+    /// us a voice.</summary>
+    void UpdateDriftAudio()
+    {
+        if (driftSource == null)
+        {
+            if (driftLevel <= 0f) return;
+            var clip = Lib != null ? Lib.driftScreech : null;
+            if (clip == null) return;
+
+            driftSource = gameObject.AddComponent<AudioSource>();
+            driftSource.clip = clip;
+            driftSource.loop = true;
+            driftSource.playOnAwake = false;
+            driftSource.spatialBlend = driftSpatialBlend;   // 3D: it is THEIR tires, not ours
+            driftSource.rolloffMode = AudioRolloffMode.Linear;
+            driftSource.minDistance = 5f;
+            driftSource.maxDistance = driftMaxDistance;
+            driftSource.dopplerLevel = 0f;   // pitch is their steering; our closing speed must not shift it
+            driftSource.volume = 0f;
+            driftSource.pitch = driftMinPitch;
+            driftSource.Play();
+        }
+
+        float sfx = AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 1f;
+        float targetVol = driftMaxVolume * driftLevel * sfx;
+        float targetPitch = Mathf.Lerp(driftMinPitch, driftMaxPitch, driftSteer);
+
+        float k = 1f - Mathf.Exp(-driftResponsiveness * Time.deltaTime);
+        driftSource.volume = Mathf.Lerp(driftSource.volume, targetVol, k);
+        driftSource.pitch = Mathf.Lerp(driftSource.pitch, targetPitch, k);
+    }
+
+    static AudioLibrary Lib => AudioManager.Instance != null ? AudioManager.Instance.Library : null;
+
+    /// <summary>Starts or stops one looping ability sound on this puppet, creating its AudioSource the
+    /// first time it is actually needed — most remote cars never shield or SD at all.</summary>
+    void ApplyLoop(ref AudioSource source, bool on, AudioClip clip, Spatial3DSettings tuning)
+    {
+        if (!on)
+        {
+            if (source != null) source.Stop();
+            return;
+        }
+        if (clip == null) return;
+
+        if (source == null)
+        {
+            source = gameObject.AddComponent<AudioSource>();
+            source.loop = true;
+            source.playOnAwake = false;
+        }
+        source.clip = clip;
+        float sfx = AudioManager.Instance != null ? AudioManager.Instance.SfxVolume : 1f;
+        if (tuning != null) tuning.ApplyTo(source, sfx);
+        else
+        {
+            source.spatialBlend = 1f;   // 3D: it belongs to THEIR car, not ours
+            source.rolloffMode = AudioRolloffMode.Linear;
+            source.minDistance = 8f;
+            source.maxDistance = 150f;
+            source.dopplerLevel = 0f;
+            source.volume = sfx;
+        }
+        source.Play();
+    }
+
     public void ApplyFlags(byte flags)
     {
         bool turbo = (flags & FlagTurbo) != 0;
         bool flame = (flags & FlagFlame) != 0;
         string sd = SdOrder[(flags & SdMask) >> SdShift];
+        bool sdActive = !string.IsNullOrEmpty(sd);
+        if (sdActive != sdLoopOn)
+        {
+            sdLoopOn = sdActive;
+            ApplyLoop(ref sdLoop, sdActive, Lib != null ? Lib.sdActiveLoop : null, null);
+        }
 
         // Shield: level-triggered like the rest, so a dropped packet self-heals on the next update.
         bool shield = (flags & FlagShield) != 0;
-        if (shield != shieldShown && shieldObject != null)
+        if (shield != shieldShown)
         {
             shieldShown = shield;
-            shieldObject.SetActive(shield);
+            if (shieldObject != null) shieldObject.SetActive(shield);
+            ApplyLoop(ref shieldLoop, shield, Lib != null ? Lib.shieldActiveLoop : null,
+                      Lib != null ? Lib.shieldAudio3D : null);
         }
 
         // The flame flare's rising edge IS a jump — break the trail there, exactly as the owner does

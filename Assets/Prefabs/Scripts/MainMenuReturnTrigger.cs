@@ -43,16 +43,22 @@ public class MainMenuReturnTrigger : MonoBehaviour
     }
 
     /// <summary>Tear down the run (so the NEXT game starts fresh, like the QUIT button), reset the
-    /// inventory, and load the Main Menu.</summary>
+    /// inventory, and leave — to the LOBBY in multiplayer, to the main menu solo.
+    ///
+    /// ⚠️ When the HOST does this, everyone else is pulled to the lobby too (see TeardownToLobby).
+    /// The host runs the whole simulation, so a world they have left is a frozen one nobody can act in
+    /// or escape from.</summary>
     void ReturnToMainMenu()
     {
-        // Multiplayer: leave the session first (host leave deletes it for everyone), then the world
-        // teardown does the run/inventory reset and loads the Main Menu itself.
+        // Multiplayer: this pad returns to the LOBBY ROOM, not the main menu, and stays in the session
+        // (2026-08-27). It is the in-world way to say "I am done with this run", not "I am done with
+        // these people" — leaving the session outright is what the lobby's own BACK button is for, and
+        // for a host it would delete the room from under everybody.
         if (MultiplayerWorld.IsMultiplayerGame)
         {
-            if (NetworkSessionManager.Instance != null)
-                _ = NetworkSessionManager.Instance.LeaveSessionAsync();
-            MultiplayerWorld.Instance.TeardownToMenu("LEFT VIA HUB EXIT");
+            // Nothing here is hub-specific: this component gates on the player TAG only, so the same
+            // behaviour follows the pad wherever it is placed, TrackScene included.
+            MultiplayerWorld.Instance.TeardownToLobby("LEFT VIA THE EXIT PAD");
             return;
         }
 

@@ -370,7 +370,11 @@ public class DroneCar : MonoBehaviour
         var projectile = proj.GetComponent<DroneProjectile>();
 
         // 3D drone fire sound at the muzzle, using the projectile's own tweakable 3D settings.
+        // Relayed too: drones only exist on the HOST, so without this every client races through
+        // completely silent incoming fire.
         AudioManager.PlayDroneShoot(origin, projectile != null ? projectile.audio3D : null);
+        NpcReplicator.ReportNpcSound(projectilePrefab != null ? projectilePrefab.name : null, origin,
+                                     NpcReplicator.NpcSound.DroneShoot);
 
         if (projectile != null)
             projectile.Launch(direction, projectileSpeed);

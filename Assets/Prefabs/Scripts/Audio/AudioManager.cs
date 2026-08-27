@@ -451,6 +451,11 @@ public class AudioManager : MonoBehaviour
     public static void PlaySupportShipLaserHitEntity(Vector3 position, Spatial3DSettings settings = null) =>
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipLaserHitEntity : null, position, settings);
 
+    /// <summary>A boulder's landing. Exists so a CLIENT can play one it was told about — the boulder's
+    /// own BoulderAudio handles the host's copy directly off its AudioSource.</summary>
+    public static void PlayBoulderImpact(Vector3 position, Spatial3DSettings settings = null) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.boulderImpact : null, position, settings);
+
     // Positional obstacle one-shots (3D, at the event's world location). Optional Spatial3DSettings
     // let the caller (e.g. the LightningSpawner) tweak the 3D falloff.
     public static void PlayLightningWarning(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.lightningWarning : null, position, settings);

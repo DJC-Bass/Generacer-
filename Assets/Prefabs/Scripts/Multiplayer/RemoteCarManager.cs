@@ -32,6 +32,7 @@ public class RemoteCarManager : MonoBehaviour
     const string MsgHello = "GNRC_HELLO";
     const string MsgRoster = "GNRC_ROSTER";
     const string MsgCar = "GNRC_CAR";
+    const string MsgCarSfx = "GNRC_CAR_SFX";   // owner → all (host relays): {kind, pos} — an ability one-shot
 
     const float SendRate = 30f;
     /// <summary>Puppets park here until their first state lands (out of sight, out of physics).</summary>
@@ -208,10 +209,22 @@ public class RemoteCarManager : MonoBehaviour
         writer.WriteValueSafe(linVel);
         writer.WriteValueSafe(angVel);
         writer.WriteValueSafe(ComputeEffectFlags(car));   // turbo trails / jet flare / active SD
+        // The drift screech is a LOOP, so it cannot ride the one-shot GNRC_CAR_SFX channel - it has to
+        // start, follow the car, and stop. Two quantised drives ride the state stream instead, for the
+        // same reason the shield / SD loops ride the flags byte.
+        var cc = cachedCarController;   // refreshed by ComputeEffectFlags just above
+        writer.WriteValueSafe(Quantize01(cc != null ? cc.DriftScreechLevel : 0f));
+        writer.WriteValueSafe(Quantize01(cc != null ? cc.DriftScreechSteer : 0f));
 
         if (IsServer) SendToRemoteClients(MsgCar, writer, NetworkDelivery.Unreliable);
         else msg.SendNamedMessage(MsgCar, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
     }
+
+    /// <summary>A 0..1 drive to one byte, and back. 1/255 steps are far finer than the ear can pick out
+    /// of a screech, and the far side eases toward these as TARGETS anyway, which dissolves the steps
+    /// entirely long before they reach a speaker.</summary>
+    static byte Quantize01(float v) => (byte)Mathf.RoundToInt(Mathf.Clamp01(v) * 255f);
+    static float Dequantize01(byte b) => b / 255f;
 
     /// <summary>Bit 4 of the state byte: is the owner currently in the TrackScene? Rides alongside the
     /// RemoteCarEffects bits (0-3) on the same byte; the hub spectator TVs read it to show only racers.</summary>
@@ -244,11 +257,73 @@ public class RemoteCarManager : MonoBehaviour
             flags |= AreaInTrackFlag;   // bit 4: "I'm in the track" — for the hub spectator TVs
         if (ShieldAbility.Instance != null && ShieldAbility.Instance.IsActive)
             flags |= RemoteCarEffects.FlagShield;   // bit 5: my shield is up (blocks projectiles on the host)
+        if (cachedCarController != null && cachedCarController.IsAirborne)
+            flags |= RemoteCarEffects.FlagAirborne;   // bit 6: I am off the ground (hunters target on this)
         return flags;
     }
 
+    /// <summary>The ability one-shots a car makes. All of them are ALREADY 3D positional in AudioManager,
+    /// so the far side simply plays the same sound at the reported point — no new library slots.</summary>
+    public enum CarSound : byte
+    {
+        Turbo = 0, Jump = 1, Landing = 2, LoopBoost = 3,
+        ShieldOn = 4, ShieldOff = 5, SdOn = 6, SdOff = 7,
+        GrappleFire = 8, GrappleAttach = 9, GrappleRelease = 10,
+        ShipSummon = 11, ShipDismiss = 12,
+    }
+
+    /// <summary>Tell everyone else about a one-shot OUR car just made.
+    ///
+    /// ⚠️ Every one of these lives on the local car or on a local ability singleton, and puppets are
+    /// stripped of both — so before this, another player boosting past you, shielding, grappling or
+    /// summoning a Support Ship made NO SOUND AT ALL. You only ever heard their engine.
+    ///
+    /// The give-away that this was an oversight rather than a decision: RemoteCarEffects already
+    /// replicates the turbo skid, the SD index and the shield state as VISUALS. The pictures crossed the
+    /// wire; the audio was never brought along.
+    ///
+    /// A POSITION is carried rather than reusing the puppet's, because not all of these happen at the
+    /// car — a grapple ATTACH lands out where the hook bit, up to the rope's full length away.
+    /// Unreliable, like the car stream: a lost one-shot is a missing tick, not broken state.</summary>
+    public static void ReportCarSound(CarSound kind, Vector3 position)
+    {
+        if (!MultiplayerWorld.IsMultiplayerGame) return;
+        var msg = Msg;
+        if (msg == null) return;
+
+        using var writer = new FastBufferWriter(32, Allocator.Temp);
+        writer.WriteValueSafe(LocalClientId);
+        writer.WriteValueSafe((byte)kind);
+        writer.WriteValueSafe(position);
+        if (IsServer) SendToRemoteClients(MsgCarSfx, writer, NetworkDelivery.Unreliable);
+        else msg.SendNamedMessage(MsgCarSfx, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
+    }
+
+    /// <summary>Play a one-shot another player's car made. The 3D tuning is whatever AudioManager
+    /// already uses for that sound, so a remote shield sounds exactly like your own from that far.</summary>
+    static void PlayCarSound(CarSound kind, Vector3 at)
+    {
+        switch (kind)
+        {
+            case CarSound.Turbo:          AudioManager.PlayTurbo(at); break;
+            case CarSound.Jump:           AudioManager.PlayJump(at); break;
+            case CarSound.Landing:        AudioManager.PlayCarLanding(at); break;
+            case CarSound.LoopBoost:      AudioManager.PlayLoopBoost(at); break;
+            case CarSound.ShieldOn:       AudioManager.PlayShieldActivate(at); break;
+            case CarSound.ShieldOff:      AudioManager.PlayShieldDeactivate(at); break;
+            case CarSound.SdOn:           AudioManager.PlaySdActivate(at); break;
+            case CarSound.SdOff:          AudioManager.PlaySdDeactivate(at); break;
+            case CarSound.GrappleFire:    AudioManager.PlayGrappleFire(at); break;
+            case CarSound.GrappleAttach:  AudioManager.PlayGrappleAttach(at); break;
+            case CarSound.GrappleRelease: AudioManager.PlayGrappleRelease(at); break;
+            case CarSound.ShipSummon:     AudioManager.PlaySupportShipActivate(at); break;
+            case CarSound.ShipDismiss:    AudioManager.PlaySupportShipDeactivate(at); break;
+        }
+    }
+
     void HandleCarState(ulong senderId, ushort sequence, Vector3 pos, Quaternion rot,
-                        Vector3 linVel, Vector3 angVel, byte effectFlags)
+                        Vector3 linVel, Vector3 angVel, byte effectFlags,
+                        byte driftLevel, byte driftSteer)
     {
         // Host: relay every client's stream to the other clients (senderId travels in the payload).
         if (IsServer && senderId != LocalClientId)
@@ -261,6 +336,8 @@ public class RemoteCarManager : MonoBehaviour
             writer.WriteValueSafe(linVel);
             writer.WriteValueSafe(angVel);
             writer.WriteValueSafe(effectFlags);
+            writer.WriteValueSafe(driftLevel);
+            writer.WriteValueSafe(driftSteer);
             SendToRemoteClients(MsgCar, writer, NetworkDelivery.Unreliable, excludeClientId: senderId);
         }
 
@@ -271,7 +348,9 @@ public class RemoteCarManager : MonoBehaviour
         remote.InTrack = (effectFlags & AreaInTrackFlag) != 0;   // bit 4: which area they're in (hub TVs read this)
         if (remote.Car == null) return;                          // roster hasn't landed yet
         var puppet = remote.Car.GetComponent<RemoteCarPuppet>();
-        if (puppet != null) puppet.ApplyState(sequence, pos, rot, linVel, angVel, effectFlags);
+        if (puppet != null)
+            puppet.ApplyState(sequence, pos, rot, linVel, angVel, effectFlags,
+                              Dequantize01(driftLevel), Dequantize01(driftSteer));
     }
 
     // -------------------------------------------------------
@@ -370,7 +449,7 @@ public class RemoteCarManager : MonoBehaviour
     /// hits are host-authoritative) colliders and rigidbodies are removed entirely. Runs while the
     /// clone is dormant under an inactive staging root, so none of the removed components ever
     /// executes.</summary>
-    internal static void StripPuppet(GameObject go, bool keepColliders)
+    internal static void StripPuppet(GameObject go, bool keepColliders, bool keepAmbientVfx = false)
     {
         // FIRST, replicate the "hidden until triggered" state the owner-only scripts would normally
         // establish — their Awake/OnEnable never runs on a puppet, so conditional visuals that are
@@ -409,10 +488,16 @@ public class RemoteCarManager : MonoBehaviour
                 DestroyImmediate(rb);
         }
 
+        // An AMBIENT effect is one authored to run from birth with nothing to start it - playOnAwake.
+        // A lava boulder's trail is exactly that: it burns for the rock's whole life, so silencing it
+        // on a puppet showed clients a bare grey rock while the host saw a comet. Everything else stays
+        // stopped, because it is CONDITIONAL and a puppet has no script left to make the condition true
+        // (player cars get theirs re-driven from RemoteCarEffects instead, which is why they pass false).
         foreach (var trail in go.GetComponentsInChildren<TrailRenderer>(true))
-            trail.emitting = false;
+            trail.emitting = keepAmbientVfx && trail.emitting;
         foreach (var ps in go.GetComponentsInChildren<ParticleSystem>(true))
         {
+            if (keepAmbientVfx && ps.main.playOnAwake) continue;
             ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var main = ps.main;
             main.playOnAwake = false;
@@ -521,6 +606,27 @@ public class RemoteCarManager : MonoBehaviour
             }
             ApplyRoster(entries);
         });
+        msg.RegisterNamedMessageHandler(MsgCarSfx, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out ulong ownerId);
+            reader.ReadValueSafe(out byte kind);
+            reader.ReadValueSafe(out Vector3 position);
+
+            // Host: fan it out, excluding the player who made the noise — they already heard it locally,
+            // the instant they did it, with no round trip.
+            if (IsServer && ownerId != LocalClientId)
+            {
+                using var writer = new FastBufferWriter(32, Allocator.Temp);
+                writer.WriteValueSafe(ownerId);
+                writer.WriteValueSafe(kind);
+                writer.WriteValueSafe(position);
+                SendToRemoteClients(MsgCarSfx, writer, NetworkDelivery.Unreliable, excludeClientId: ownerId);
+            }
+
+            if (ownerId == LocalClientId) return;   // our own relayed echo
+            PlayCarSound((CarSound)kind, position);
+        });
+
         msg.RegisterNamedMessageHandler(MsgCar, (sender, reader) =>
         {
             reader.ReadValueSafe(out ulong id);
@@ -530,7 +636,9 @@ public class RemoteCarManager : MonoBehaviour
             reader.ReadValueSafe(out Vector3 linVel);
             reader.ReadValueSafe(out Vector3 angVel);
             reader.ReadValueSafe(out byte effectFlags);
-            HandleCarState(id, sequence, pos, rot, linVel, angVel, effectFlags);
+            reader.ReadValueSafe(out byte driftLevel);
+            reader.ReadValueSafe(out byte driftSteer);
+            HandleCarState(id, sequence, pos, rot, linVel, angVel, effectFlags, driftLevel, driftSteer);
         });
     }
 
@@ -541,6 +649,7 @@ public class RemoteCarManager : MonoBehaviour
         msg.UnregisterNamedMessageHandler(MsgHello);
         msg.UnregisterNamedMessageHandler(MsgRoster);
         msg.UnregisterNamedMessageHandler(MsgCar);
+        msg.UnregisterNamedMessageHandler(MsgCarSfx);
     }
 
     static void SendToRemoteClients(string messageName, FastBufferWriter writer,

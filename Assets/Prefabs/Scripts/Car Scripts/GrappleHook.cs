@@ -252,6 +252,7 @@ public class GrappleHook : MonoBehaviour
         hookVelocity = carGO.transform.forward * fireSpeed + carRb.linearVelocity;
         if (rope != null) rope.ResetShape();
         AudioManager.PlayGrappleFire(MuzzlePosition());
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.GrappleFire, MuzzlePosition());
     }
 
     /// <summary>Advances the hook and sweeps for a catch. A SPHERE cast along the travel segment (not a
@@ -388,6 +389,7 @@ public class GrappleHook : MonoBehaviour
         ropeLength = Mathf.Max(Vector3.Distance(MuzzlePosition(), hit.point), minRopeLength);
         CurrentState = State.Attached;
         AudioManager.PlayGrappleAttach(hit.point);   // out where it landed, not at the car
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.GrappleAttach, hit.point);
         Debug.Log($"[Grapple] Attached to '{hit.collider.name}' at {ropeLength:0.#} m.");
     }
 
@@ -398,7 +400,11 @@ public class GrappleHook : MonoBehaviour
         CurrentAnchorKind = AnchorKind.None;
         anchorRb = null;
         anchorWasBody = false;
-        if (carGO != null) AudioManager.PlayGrappleRelease(carGO.transform.position);
+        if (carGO != null)
+        {
+            AudioManager.PlayGrappleRelease(carGO.transform.position);
+            RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.GrappleRelease, carGO.transform.position);
+        }
     }
 
     // -------------------------------------------------------

@@ -116,6 +116,54 @@ through URP's Default Volume Profile), and SMAA to match the car cameras.
 - `trackSkybox` must be assigned per TV (same `SimpleSkybox.mat` the TrackScene uses). It warns once if
   blank rather than silently showing the hub's sky.
 
+**GAME OVER RETURNS TO THE LOBBY, NOT THE MAIN MENU (2026-08-27).** Losing a run no longer costs the
+room. A player killed by a DronePissBall during the Drone ending — and anyone driving onto the hub's
+MAIN MENU pad — lands back in the lobby ROOM, still in the session, on the same team, ready to go
+again the moment the host starts another run.
+- **`MultiplayerWorld.TeardownToLobby(reason)`** vs the existing `TeardownToMenu`. Both call a shared
+  `ReleaseWorld()` so the two can never drift — a leak there is the kind that only shows up as "the
+  SECOND game of a session is broken".
+- **⚠️ The lobby path must NOT call `LeaveSessionAsync`.** That is the QUIT path, and for a HOST it
+  DELETES the session for everyone. Players are picked off ONE AT A TIME during the Drone ending, so
+  the old code meant the first casualty ended the game for everybody. **Losing is not quitting.**
+- **Handing the menu its state:** `MainMenuController.OpenLobbyOnLoad` is a static set just before the
+  scene load, because the object that knows (the world) is destroying itself in the same breath and the
+  object that acts (the menu) does not exist yet. Consumed once, and only honoured if the session
+  actually survived — a game-over that ALSO killed the session (host quit, connection lost) would
+  otherwise strand the player on the lobby ROOT screen with the title buttons hidden behind it.
+- **Re-entry is blocked while the run dies** — the specific thing the design asks for. `GameStarted` is
+  legitimately still true for a room full of people who have already lost, so a second session
+  property, **`SessionPropEnding`**, carries "this run is over". Set host-side in
+  `MultiplayerWorld.ApplyEnding`, cleared when the host starts the next run. It gates FOUR places:
+  the host's auto-launch, `EnterStartedGame`, the ENTER GAME button's visibility, and its handler.
+  - `NetworkSessionManager.suppressAutoLaunch` is a LOCAL mirror of that, and it is not redundant: the
+    session properties are an async round trip away, and without it the host's `Update` hook fires on
+    the very next frame and drags them back into the world they just left.
+- **The host is the one who reopens the room.** `ReturnedToLobby()` clears `started` + `ending` only
+  when called BY the host, because the first player out must not declare the run over for teammates
+  still racing. Until then everyone else sees "GAME OVER — WAITING FOR THE HOST".
+- **⚠️ THE HOST LEAVING THE WORLD TAKES EVERYONE WITH THEM (`GNRC_TO_LOBBY`, added 2026-08-27).**
+  Not a courtesy — the only correct behaviour. Symptom that found it: the host died first, went to the
+  lobby, and the surviving clients were **stranded in a frozen hub**. The host runs the ENTIRE
+  simulation — every drone, boulder, round timer and projectile — so with them gone the drones stop
+  moving, nothing can shoot the survivors, and therefore nothing can ever send them to the lobby
+  either. There was no way out at all.
+  - Broadcast from `TeardownToLobby` **before** `ReleaseWorld`, which unregisters the handler it rides
+    on. NGO itself stays up (only `LeaveSessionAsync` shuts it down), so the message lands and everyone
+    regroups in the same room.
+  - Applies to BOTH host exits: the DronePissBall game-over and the exit pad. A host taking the pad
+    mid-race therefore ends the run for the room, which is right for the same reason.
+  - A CLIENT leaving is unchanged and still solitary — the run continues without them, and (outside an
+    ending) their room offers ENTER GAME so they can come back.
+- **The exit pad is not hub-specific.** `MainMenuReturnTrigger` gates on the player TAG only, with no
+  scene check, so the lobby behaviour follows the pad wherever it is placed — TrackScene included.
+  Today the component sits on `MainMenuPortal.prefab` plus objects in HubWorld / ClipperEnding /
+  Tutorial; anything added to the TrackScene later inherits it with no code change.
+- **Teams survive untouched**: they are session PLAYER properties, and nothing in the world teardown
+  reaches them. Nothing to preserve by hand.
+- **"Host leaving ends it for everyone" already worked** — `LeaveSessionAsync` calls `DeleteAsync()`
+  for a host and clients land in `EndLocally`. Unchanged.
+
 **`PilotControlCenter.cs`** (Hub World) — the pad. Same trigger-menu shape as `StoreController`, and it
 flies a LOCAL copy of the ship the same way `HubSpectatorTV` films a local copy of a remote racer. Claims
 are **server-arbitrated, never optimistic** — two hub players can reach for the same ship in the same frame
@@ -136,12 +184,13 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 |---|---|---|---|
 | `GNRC_HELLO` | RemoteCarManager | client → server | name, car, team — roster join |
 | `GNRC_ROSTER` | RemoteCarManager | server → all | full roster; drives puppet lifecycle |
-| `GNRC_CAR` | RemoteCarManager | owner → all (host relays) | 30 Hz pos/rot/vel + **1 effect byte** |
+| `GNRC_CAR` | RemoteCarManager | owner → all (host relays) | 30 Hz pos/rot/vel + **1 effect byte (incl. bit 6 airborne) + 2 drift-screech bytes** |
 | `GNRC_READY` | MultiplayerWorld | client → server | hub loaded, ready for rounds |
 | `GNRC_ROUND_START` | MultiplayerWorld | server → all | round, seed, live, remaining — preload + freeze |
 | `GNRC_ROUND_GO` | MultiplayerWorld | server → all | portal spawns, unfreeze, timers start |
 | `GNRC_ROUND_END` | MultiplayerWorld | server → all | reason: 0 timeout, 1 all racers left |
 | `GNRC_AREA` | MultiplayerWorld | client → server | inTrack flag |
+| `GNRC_TO_LOBBY` | MultiplayerWorld | server → all | the HOST left the world — abandon the run and regroup in the lobby. No payload; its arrival IS the message |
 | `GNRC_RACER_FIN` | MultiplayerWorld | server → all | an AI racer finished — first place forfeit |
 | `GNRC_FINISH` | MultiplayerScoring | client → server | localFirstPlace claim |
 | `GNRC_SDS` | MultiplayerScoring | client → server | distinct SD names held (team aggregate) |
@@ -151,7 +200,10 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_ENDING` | MultiplayerScoring | server → all | isDroneEnding, winningTeam |
 | `GNRC_RIVALS` | MultiplayerScoring | server → all | rival pairings |
 | `GNRC_RIVAL_BONUS` | MultiplayerScoring | server → one | beat-your-rival credits |
-| `GNRC_NPC_SPAWN` / `_STATE` / `_DESPAWN` | NpcReplicator | server → all | host-simulated AI + obstacles |
+| `GNRC_NPC_SPAWN` / `_STATE` / `_DESPAWN` | NpcReplicator | server → all | host-simulated AI + obstacles. `_STATE` carries {id, seq, rb.position, rb.rotation, linVel, angVel, 1 flag byte (bit 0 = sender weightless)} at a base 20 Hz **scaled by distance to the nearest player** — 30 Hz close, 2 Hz far. See the relevance note: ~274 entities stream at once |
+| `GNRC_CAR_SFX` | RemoteCarManager | owner → all (host relays) | {ownerId, kind, pos}: a car ABILITY one-shot (turbo / jump / landing / loop boost / shield / SD / grapple / ship summon). SOUND ONLY, Unreliable; the owner is EXCLUDED from the relay |
+| `GNRC_NPC_SFX` | NpcReplicator | server → all | {prefabKey, pos, kind}: a drone shot or a projectile impact. SOUND ONLY, Unreliable; the victim of a player-hit is EXCLUDED (they play it locally off `GNRC_NPC_HIT`) |
+| `GNRC_NPC_SHOVE` | NpcReplicator | server → victim | {velocityChange}: a boulder rammed YOUR car. Reliable — a dropped shove is a hit that never happened |
 | `GNRC_NPC_DMG` | NpcReplicator | server → all | an NPC took a hit (or, at hits==max, went down) — puppets flash / paint the wreck. EVENT, not streamed |
 | `GNRC_STRIKE` | NpcReplicator | server → all | lightning, event-replicated |
 | `GNRC_NPC_HIT` | NpcReplicator | server → victim | projectile hit YOUR car (victim applies it) |
@@ -420,7 +472,8 @@ introduces its own object then.
   existing 30 Hz CAR stream** — bit 0 turbo-trail-emitting, bit 1 flame-flaring, bits 2-3 a 2-bit SD
   index over a canonical `{none, Fire, Wind, Lightning}` order (`RemoteCarEffects.Encode`). LEVEL-triggered
   (owner's *current* state, not edge events), so a dropped Unreliable packet self-heals on the next of
-  ~30/s. Payload is now 63 B (was 62) — far under the 1264 Unreliable cap; `FastBufferWriter(80)` unchanged.
+  ~30/s. Payload is now 65 B (63 + the two 2026-08-27 drift bytes below) — far under the 1264
+  Unreliable cap; `FastBufferWriter(80)` unchanged.
   Owner side: `RemoteCarManager.ComputeEffectFlags` reads `CarController.TurboTrailsActive` (new — set in
   `UpdateTurboTrails`, true while a rear tire actually lays a mark), `JetFlames.IsFlaring` (new), and
   `SDAbilityController.Instance.ActiveSD`, caching the component lookups until the local car instance
@@ -1750,14 +1803,253 @@ bugs to someone reading the code cold:
       - BOULDERS — `BoulderAudio` is now RE-ADDED to boulder puppets (`RestoreBoulderAudio`), not
         relayed, because the burning FLIGHT LOOP has to ride the moving puppet and no one-shot event
         could reproduce it. Tuning is copied off the registered prefab, same as `DroneDamageTint`.
+      - DRONE FIRE — relayed as `GNRC_NPC_SFX` (2026-08-27): both the shot (`DroneCar` / `DronePlane`)
+        and the impact (`DroneProjectile`), player-hit and environment kept distinct. A whole track's
+        worth of incoming fire had been silent to everyone but the host.
+        - The message carries the **prefabKey**, because the projectile VARIANTS (Big, Giga) have their
+          own `audio3D` falloff and a Giga round heard at the plain one's range would be wrong.
+          `HostEntity` gained a `prefabKey` field so a projectile mid-collision can be identified.
+        - The player who was HIT is EXCLUDED from the relay: `GNRC_NPC_HIT` already makes them play
+          the impact locally, instantly and with no round trip, so sending it as well is an audible
+          double-tap. `SendToRemoteClients` gained an `excludeClientId` for this.
+      - BOULDER IMPACT — relayed too (2026-08-27), closing the last gap in this category. The message
+        carries the ENTITY ID as well as the key, so a client can act on the PUPPET rather than merely
+        play a sound near it: `BoulderAudio.PlayNetworkImpact` fires the one-shot from the rock's own
+        source AND cuts its flight loop. Puppets are flagged `impactsFromNetwork` so they never judge an
+        impact themselves — kinematic bodies feel nothing against the STATIC track (where most boulders
+        land) but DO feel the local player's dynamic car, so self-judging missed the common case and
+        doubled up on the rare one.
+
+**A SECOND, SEPARATE SILENCE: REMOTE PLAYERS' ABILITIES (`GNRC_CAR_SFX`, 2026-08-27).** Found by the
+same sweep, but a different mechanism — not stripped puppets, but sounds that only ever existed on the
+OWNER's machine, because they are played by `CarController` (stripped) or by LOCAL singletons
+(`ShieldAbility`, `SDAbilityController`, `SupportShipAbility`, `GrappleHook`). Another player boosting
+past you, jumping, landing, shielding, SD-ing, grappling or summoning a Support Ship made **no sound at
+all**. You only ever heard their engine.
+- The give-away that this was an oversight rather than a decision: `RemoteCarEffects` ALREADY replicates
+  the turbo skid, the SD index and the shield state as VISUALS (flag bits 0, 2—3, 5). The pictures
+  crossed the wire; the audio was never brought along.
+- **No new AudioLibrary slots were needed** — every one of these `AudioManager.Play*` methods was
+  already 3D positional, so the far side just calls the same method at the reported point and a remote
+  shield sounds exactly like your own heard from that distance.
+- **A POSITION is carried rather than reusing the puppet's**, because not all of them happen at the car:
+  a grapple ATTACH lands out where the hook bit, up to the rope's full length away.
+- **The owner is excluded from the relay** (they heard it locally, instantly), same rule as the
+  projectile victim.
+- **⚠️ The two LOOPS could not use this**, and the distinction is the general rule from the puppet
+  audio entry: a loop has to START, FOLLOW the car for as long as the ability lasts, and STOP. So the
+  shield-up and SD loops are driven off the replicated FLAGS instead (`RemoteCarEffects.ApplyLoop`),
+  which are already level-triggered and self-healing — exactly what a loop needs and a one-shot event
+  cannot give. The AudioSources live on the puppet, so they follow the remote car for free, and are
+  created lazily because most remote cars never shield or SD at all.
       **Choosing between the two:** re-add the component when the sound is CONTINUOUS or must follow
       the object; relay an event when it is a one-shot at a world position (an impact hundreds of
       metres downrange has nothing to ride).
-      - KNOWN GAP: a boulder's IMPACT one-shot needs a collision, and puppet Rigidbodies are kinematic
-        — which raise no contact against STATIC geometry. A boulder landing on the road is still silent
-        on clients; one that hits the local player's dynamic car is not. Relaying it would close this.
+      - (A boulder's IMPACT was the last hole here — puppet Rigidbodies are kinematic and raise no
+        contact against STATIC geometry, so a rock landing on the road was silent on clients while one
+        hitting the local player's car was not. CLOSED 2026-08-27 by relaying it; see BOULDER IMPACT above.)
       - **Do not conclude "there is no audio" from grepping `AudioManager.Play`.** BoulderAudio calls
         `AudioSource.PlayOneShot` directly and was missed that way once already.
+- **⚠️ THE DRIFT SCREECH IS THE THIRD LOOP, AND THE ONLY ONE WITH A CONTINUOUS DRIVE (2026-08-27).**
+  Players could not hear each other lay a drift. Same root cause as the abilities — `CarController` builds
+  the screech `AudioSource` on itself and the strip destroys both — but it could NOT be fixed the same
+  way as shield/SD, and the reason is worth keeping:
+  - Shield and SD are on/off, so one flag BIT says everything there is to say about them. A tire screech
+    is not: its volume rides steering × speed and its pitch rides steering, moment to moment. A bit
+    cannot carry that, and a one-shot event cannot either.
+  - So the CAR stream grew **two quantised bytes**: `DriftScreechLevel` (steer × speed, forced to zero
+    unless the owner is drifting ON THE GROUND) and `DriftScreechSteer` (the raw stick). Both are new
+    public read-outs on `CarController`, set at the bottom of `UpdateDriftAudio`.
+  - **Only the TARGETS travel; the easing is re-run locally** in `RemoteCarEffects.UpdateDriftAudio` at
+    the owner's own `driftScreechResponsiveness`. That is what turns 30 packets a second into one
+    continuous screech instead of 30 audible steps — and it also dissolves the 1/255 quantisation
+    completely, which is why one byte per drive is plenty.
+  - The **tuning is copied off the car PREFAB** (`CaptureDriftTuning`), like the trail tuning beside it:
+    the puppet's own CarController is gone, and if these numbers drifted apart the same drift would
+    sound like a different car to every listener.
+  - Deliberately excluded from the wire: `driftScreechMaxVolume` (prefab tuning, identical everywhere)
+    and the SFX slider (each listener's own setting). Both are reapplied on the far side.
+  - `dopplerLevel = 0` on the remote source too — the pitch means THEIR steering, and letting our
+    closing speed shift it would turn a tight corner into a passing siren.
+  - `RemoteCarPuppet.ApplyState` gained the two drives with **default 0**, because NPC puppets share
+    that method and no drone or boulder has tires.
+- **A one-line bug fixed in passing (2026-08-27):** `UpdateLandingAudio`'s `if (wasAirborne && !airborne)`
+  had lost its braces when the landing relay was added, so `ReportCarSound(Landing)` fired **every frame**
+  rather than on touchdown — a steady 30/s of stray landing sounds at every other player. Braces restored.
+
+**A THIRD FORM OF THE SAME MISTAKE: HOST-SIDE LOGIC READING A COMPONENT PUPPETS DO NOT HAVE (2026-08-27).**
+The audio entries above are about sounds that never crossed the wire. This one is about *decisions* an
+NPC makes from a component the strip destroyed - the failure is SILENT and reads as a tuning problem,
+which is why it survived so long.
+- **Lava boulders ignored airborne clients.** `BoulderObstacle` cached
+  `playerTransform.GetComponentInParent<CarController>()` and asked it `IsAirborne`. On a remote player
+  that is a stripped puppet: the component is gone, the lookup returns null, and `IsPlayerAirborne()`
+  answered a confident **false** forever. So a boulder that drew a CLIENT never opened its longer
+  `airborneHomingDuration` window - it dived on an airborne host and gave up on an airborne client at
+  the very same jump. An old comment even blessed this ("null = ground-duration homing only, which is
+  fine"); it was not fine.
+- **Fix:** bit 6 of the effect byte is now `RemoteCarEffects.FlagAirborne`, and
+  **`MultiplayerWorld.IsPlayerAirborne(Transform)`** answers for ANY player - the local car from its own
+  CarController, a remote one from the replicated bit. Nothing visual reads that bit; it exists purely
+  so hunters can target correctly.
+  - ⚠️ **Every host-side entity that wants to know something about "the player" must go through a
+    helper like this**, never `GetComponent<CarController>`. That component only ever exists on the
+    local car. Grep before adding one: as of this entry the only other `IsAirborne` readers are
+    `CameraFollow` and `GrappleHook`, both of which legitimately mean the LOCAL car.
+- **`PickStickyTarget` gained `preferAirborne`.** It narrows the pool to players actually in the air and
+  then picks at RANDOM among them, sticking for the entity’s life; with nobody airborne the full pool
+  stands, so a shower over a grounded field behaves exactly as before. Single-player is untouched (the
+  pool is one car either way).
+- **The boulder now picks its target at APEX, not in `Awake`.** It climbs for seconds before it can
+  steer, so a pick at spawn asks "who is airborne?" at a moment when the answer cannot matter and will
+  be stale by the time it does. Choosing as the homing window opens is what makes it read as anti-air.
+- Checked and NOT affected: `DronePlane` acquires by vision cone and `DroneCar` by
+  `PickStickyTarget(anyArea: true)`, and both hit-paths already walk the `RemotePlayer` tag - drones
+  saw clients correctly all along. `DroneProjectile` / `LightningStrike` only read a CarController to
+  apply the pop-up to a LOCAL victim, which is right.
+
+**LAVA BOULDER TRAILS WERE INVISIBLE TO CLIENTS (2026-08-27).** `StripPuppet` stopped **every**
+ParticleSystem and TrailRenderer on every puppet and cleared `playOnAwake`, so nothing could ever
+restart them. Right for player cars - their effects are CONDITIONAL and `RemoteCarEffects` re-drives
+them from flag bits - but a lava boulder’s trail is not conditional: it burns for the rock’s whole
+life. Clients watched grey rocks fall while the host saw comets.
+- `StripPuppet` gained **`keepAmbientVfx`** (default false, so player cars are unchanged). NPC puppets
+  pass true, which keeps particle systems whose main module is **`playOnAwake`** - the marker of an
+  effect authored to run from birth with no script to start it - and stops everything else.
+- The staging root is INACTIVE at Instantiate, so `Awake` is deferred until `SetActive(true)` at the
+  end of `TryCreatePuppet`; a kept `playOnAwake` system therefore starts normally, in place.
+- As of this entry the LavaBoulder is the only NPC prefab with a ParticleSystem at all (the drones and
+  projectiles have none), so the blast radius is exactly the trail that was missing.
+
+**FAN ROTATION DRIFTED APART BETWEEN PLAYERS (2026-08-27).** Fans are deliberately NOT replicated — they
+are static hazards spawned locally on every machine, and `FanSpawner` already derives every roll from
+the round seed, so position / rotation / scale / drift all matched. Their MOTION did not, for two
+independent reasons:
+1. **The spin direction came from `UnityEngine.Random`,** which is per-machine. Roughly half the fans
+   spun the opposite way for each player. Now hashed from the fan’s own position (`DirectionFor`),
+   which every machine already agrees on because the seed placed it — no plumbing, no extra bytes,
+   and it works for hand-placed fans too. The position is quantised to 1/16 unit first so the answer
+   cannot hinge on a float’s last bit.
+2. **The pose was ACCUMULATED** (`transform.Rotate(… * Time.deltaTime)` every frame since `Start`).
+   ⚠️ An accumulation can only stay in sync if two machines start on the same instant and never differ
+   by one frame — false in every session: clients finish loading at different times and run at
+   different frame rates. The error had **no ceiling**, so fans separated further the longer a round ran.
+- **Fix: the pose is now a pure FUNCTION of a shared clock**, absolute rather than integrated — both
+  the spin angle and the drift offset. This is self-correcting, not merely synchronised: a machine that
+  hitches, drops frames or joins late lands on the right pose on its very next frame, for zero bandwidth.
+  **Prefer this shape for any deterministic hazard** — it is strictly better than streaming a transform.
+- The clock is `GameLoopManager.roundDuration - RoundTimeRemaining`. Every machine ticks its own copy,
+  but all were started from the HOST’s value (GO, or the mid-join sync), so they differ by latency
+  ONCE instead of cumulatively. It reads 0 while `MultiplayerWorld.TrackFrozen`, which parks every fan
+  at its start pose during preload and means the round begins from an identical state everywhere —
+  including on the host, whose round timer is not yet running then. Single-player falls back to
+  `Time.time` (nobody to agree with, and it must not depend on the round timer offline).
+- Pose is written in LOCAL space (`localPosition` / `localRotation`). The track area is teleported
+  wholesale to the track offset, and a fan pinned to an absolute world point would be left behind.
+- The angle is `Mathf.Repeat(…, 360f)`: unwrapped, a long session pushes it into the tens of thousands
+  of degrees, where a float has too few bits left to place the blades smoothly.
+- The file was CP1252-encoded (its em dashes showed as mojibake); it is now UTF-8 like the rest.
+- STILL OPEN: `FanObstacle` has **no audio authored at all**, on any machine — a missing feature rather
+  than a replication bug, and untouched here.
+
+**LAVA BOULDERS COULD NOT HIT CLIENTS, AND LOOKED CHOPPY DOING IT (2026-08-27).** Two separate faults,
+found together. The collision one is the severe half.
+
+*Collision — boulders could hit the HOST and nobody else.*
+- A boulder has **no damage model**: `BoulderObstacle` had no collision handler at all, and its whole
+  effect on a player is MOMENTUM — the sim just lets a 1500–6000 kg rock at up to 200 m/s do what
+  physics does. In single-player, and for the host’s own car, the solver delivers that with no code.
+- ⚠️ **On the host, a client’s car is a stripped KINEMATIC puppet.** A dynamic boulder striking a
+  kinematic body does not move it — and with no collision handler there was no event to relay either.
+  The hit reached neither the puppet nor the real car. **When a hit is delivered by physics alone, it
+  cannot cross the wire; a kinematic puppet silently absorbs it.**
+- On the client’s own machine the puppet did meet the local car, but `RemoteCarPuppet` wrote
+  `transform.position` — a TELEPORT. The solver sees a body that was never moving, so the contact
+  resolves by depenetration with **no momentum transfer**: a nudge, not a hit.
+- **Fix:** `BoulderObstacle.OnCollisionEnter` now recognises `RemotePlayer` on the host, computes the
+  velocity change and sends `GNRC_NPC_SHOVE` to the owner, who applies it to their own car
+  (`ForceMode.VelocityChange`). The mass ratio is the substance of it: Unity’s default material is not
+  bouncy, so a real hit is near-perfectly inelastic and the car takes `m/(m+M)` of the closing speed —
+  with a boulder several times a car’s mass that is most of it, which is why a square hit on the host
+  swats you and why anything gentler would not read as the same event. `maxShoveSpeed` (150) caps it.
+- The puppet’s mass survives the strip and IS the real car’s, so the host can read it off the puppet;
+  its velocity does not (kinematic), so that comes from `RemoteCarPuppet.CurrentVelocity`.
+
+*Choppiness — three compounding causes, all fixed.*
+1. **Boulders streamed at 8 Hz**, the slowest rate in the game on its fastest object: 25 m between
+   updates at 200 m/s. Worse, `positionTau` (0.12 s) ≈ the send interval (0.125 s), so the correction
+   blend absorbed only ~65% of each error before the next arrived — permanently mid-catch-up. Now
+   **20 Hz**, same as projectiles.
+2. **The extrapolation model was wrong in every phase.** `projectGravity` projected 1x `Physics.gravity`,
+   but a boulder falls under `gravityMultiplier` (3 → ~29 m/s²) and, while HOMING, switches gravity off
+   entirely and thrusts at 60 m/s² toward its target. Replaced by **`projectAcceleration`** (a Vector3,
+   read off the prefab at spawn) plus **one flag byte on the state stream** for "sender is weightless
+   right now". The host reads that straight off `Rigidbody.useGravity`, so it needs no boulder-specific
+   branch and works for anything that ever cuts its own gravity.
+3. ⚠️ **Position and velocity were sampled from different instants.** The host sent
+   `entity.go.transform.position` next to `rb.linearVelocity`. Every NPC prefab is set to **Interpolate**,
+   so during `Update` the TRANSFORM is the interpolated RENDER pose while the velocity is the current
+   PHYSICS value. Dead-reckoning from two clocks adds up to `v × fixedDeltaTime` — **4 m on a 200 m/s
+   boulder** — and it oscillates with the render/physics phase, so it reads as jitter and scales with
+   speed. Now sends **`rb.position` / `rb.rotation`**. *Any interpolated Rigidbody has this trap: never
+   pair `transform.position` with `rb.linearVelocity` in one packet.*
+
+*`MovePosition` for puppets that must shove (`RemoteCarPuppet.moveByPhysics`).*
+- Applied to **drone puppets**, which keep their colliders precisely so they can barge the local car and
+  which previously only depenetrated it. `WritePose` is now the single place a pose is written.
+- Turning it on **requires re-enabling Rigidbody interpolation** on that puppet. `StripPuppet` disables
+  interpolation for good reason while the pose is a transform WRITE (physics keeps managing the
+  transform for rendering and the mesh drifts off the collider), but MovePosition inverts the argument:
+  the body is the thing being moved, mesh and collider travel together, and interpolation is the only
+  way to render its 50 Hz steps smoothly. Without it you trade a weak shove for visible stepping.
+- A genuine discontinuity (spawn, portal) still writes the transform directly — you cannot SWEEP 35 km,
+  and asking the solver to try would streak through every collider in between.
+- **Boulders are deliberately excluded**: their hits are authoritative now, and letting the puppet shove
+  as well would double-count AND overshoot, because a kinematic body pushes with INFINITE mass while the
+  real boulder has the finite one the host actually simulated. Player-car puppets are also left alone —
+  their smoothing was tuned separately and nothing has been reported wrong with it.
+- Boulder puppets KEEP their colliders regardless: a landed boulder is a real obstacle, and a client
+  driving through one the host must swerve around would be worse than the mushy contact this replaced.
+  (They are not needed for the Support Ship laser — rounds only ever exist on the host.)
+
+**DRONE PLANES WERE CHOPPY TOO — AND THE FIX WAS NOT "SEND FASTER" (2026-08-27).**
+
+⚠⚠ **COUNT THE ENTITIES BEFORE RAISING ANY RATE.** The prefabs spawn **150 drone planes**
+(`DronePlaneSpawner.planeCount`), ~64 drone cars (16 groups × 2–6) and up to ~60 live boulders — about
+**274 entities, each streamed as its own named message**. At the old flat rates that was **~4,400
+messages per second to EVERY client** (~340 KB/s each, and the host pays it per client: ~1.7 MB/s
+upstream with five). The obvious answer to "planes look choppy" — bump the rate — would have multiplied
+a figure already past what a home upstream carries, and **a saturated link produces exactly the stutter
+it was meant to cure.** Very likely it was already the dominant cause.
+- **Fix: relevance instead of a flat rate.** Base is 20 Hz for every kind, scaled per send by distance
+  to the NEAREST player (`RelevanceScale`): ≤800 → 30 Hz, ≤2500 → 20 Hz, ≤6000 → ~7 Hz, beyond → 2 Hz.
+  The handful of entities anyone can see get MORE than before while the long tail collapses — roughly a
+  3× cut in total messages while tripling the rate where it matters. The far band still trickles rather
+  than stopping, so a puppet is never left with nothing to correct against. Player positions are cached
+  per frame; the check runs only when an entity is due to send.
+
+**⚠️ MOVEROTATION PRODUCES NO ANGULAR VELOCITY — SO THERE WAS NOTHING TO EXTRAPOLATE.** The
+plane-specific half, and a trap worth remembering. `DronePlane` and `DroneCar` both steer with
+`rb.MoveRotation(Quaternion.Slerp(...))` on a **dynamic** body and never apply torque, so
+`rb.angularVelocity` sits at ~0 however hard they bank. The host faithfully replicated that zero,
+`RemoteCarPuppet.IntegrateRotation` early-outs below 1e-5 rad, and the puppet had **nothing to lead the
+nose with**: it could only Slerp toward the last received rotation at `rotationTau`. The heading was
+permanently ~tau behind and stepped at the send rate — very visible on a plane banking through a chase
+at 300–450 m/s. Boulders never showed it because their spin IS genuine angular velocity.
+- **Fix:** `AngularVelocityFor` MEASURES the rate the rotation actually changed between sends and sends
+  that when the Rigidbody reports ~nothing. Rotation is rotation, however it was produced — no AI script
+  had to be taught to report anything. The real value is still preferred when present, because a
+  measurement one send apart would alias on anything turning more than half a revolution between sends.
+
+**MOVEPOSITION BELONGS IN FIXEDUPDATE (my own bug, from the boulder pass).** `moveByPhysics` puppets were
+being driven from `Update`, which is wrong at both ends: under 50 fps some physics steps get no move at
+all and the body stalls for a step then jumps; over 50 fps every call but the last is discarded. Now
+`Update` drives transform-written puppets (a pose that is purely a rendering concern belongs at render
+rate) and `FixedUpdate` drives MovePosition ones, sharing one `Advance(dt)`.
+- ⚠️ The blend must correct from **`body.position`**, not `transform.position`, for those puppets.
+  They interpolate, so the transform carries a render pose sitting between two physics steps; blending
+  from it inside FixedUpdate feeds the interpolation offset back into the correction every step and the
+  puppet ends up chasing its own smoothing. `CurrentPosition` / `CurrentRotation` pick the right one.
   - **⚠️ ROUNDS FIRED FROM THE PILOT'S POSE, NOT THE HOST'S COPY (fixed 2026-08-24).** Symptom: a
     CLIENT pilot strafing sideways saw their rounds leave from behind and beside the ship, while the
     same thing on the host lined up perfectly.

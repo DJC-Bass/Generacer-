@@ -315,6 +315,7 @@ public class MultiplayerLobbyUI : MonoBehaviour
     void OnEnterGamePressed()
     {
         if (busy || Manager == null || !Manager.GameStarted) return;
+        if (Manager.GameEnding) return;   // the run is being wiped out — there is nothing to enter
         // Each player enters the hub on their own accord (the round loop waits for the full room;
         // mid-game joiners come through here too after filling a freed seat).
         SetStatus("ENTERING THE GAME...");
@@ -708,7 +709,13 @@ public class MultiplayerLobbyUI : MonoBehaviour
 
         // ENTER GAME appears only for CLIENTS once the host has started (and vanishes once used);
         // pre-start there's nothing to press — the host starts whenever they're ready.
-        bool showEnter = manager.GameStarted && !manager.IsSessionHost && !manager.WorldLaunched;
+        //
+        // ⚠️ And NOT while the run is ENDING. The Drone game-over drops players back here one at a
+        // time while their teammates are still being hunted, so `GameStarted` is legitimately still
+        // true for a room full of people who have already lost. Offering them the door would walk them
+        // straight back into it.
+        bool showEnter = manager.GameStarted && !manager.GameEnding
+                      && !manager.IsSessionHost && !manager.WorldLaunched;
         if (readyButton != null && readyButton.gameObject.activeSelf != showEnter)
         {
             readyButton.gameObject.SetActive(showEnter);
@@ -716,7 +723,16 @@ public class MultiplayerLobbyUI : MonoBehaviour
             if (showEnter) Focus(readyButton.gameObject);   // land the client straight on the door
         }
 
-        if (manager.GameStarted)
+        if (manager.GameEnding)
+        {
+            // The host clears this when they are out too, which re-arms START GAME for them and turns
+            // everyone else's status back to the ordinary pre-game one.
+            if (startButton != null) startButton.interactable = false;
+            SetStatus(manager.IsSessionHost
+                ? "GAME OVER — RETURN TO THE LOBBY TO START AGAIN"
+                : "GAME OVER — WAITING FOR THE HOST");
+        }
+        else if (manager.GameStarted)
         {
             if (startButton != null) startButton.interactable = false;
             SetStatus(manager.WorldLaunched

@@ -142,6 +142,7 @@ public class SupportShipAbility : MonoBehaviour
         ship.onCrashed += OnShipCrashed;
 
         AudioManager.PlaySupportShipActivate(ship.transform.position);
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.ShipSummon, ship.transform.position);
         StartLoop(ship.transform.position);
         Debug.Log($"[SupportShip] Summoned ({inv.GetCount(shipItem)} held).");
     }
@@ -159,6 +160,7 @@ public class SupportShipAbility : MonoBehaviour
 
         StopLoop();
         AudioManager.PlaySupportShipDeactivate(at);
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.ShipDismiss, at);
         Debug.Log("[SupportShip] Dismissed.");
     }
 

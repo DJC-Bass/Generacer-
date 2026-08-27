@@ -514,6 +514,8 @@ public class DronePlane : MonoBehaviour
 
         var projectile = proj.GetComponent<DroneProjectile>();
         AudioManager.PlayDroneShoot(origin, projectile != null ? projectile.audio3D : null);
+        NpcReplicator.ReportNpcSound(projectilePrefab != null ? projectilePrefab.name : null, origin,
+                                     NpcReplicator.NpcSound.DroneShoot);   // host-only otherwise
         if (projectile != null) projectile.Launch(direction, projectileSpeed);
 
         // Multiplayer host: stream the projectile to clients (visual puppets; hits stay host-authoritative).

@@ -171,7 +171,11 @@ public class SDAbilityController : MonoBehaviour
         EnsureCar();
 
         // SD audio (3D at the car): activation one-shot + start the "while active" loop.
-        if (carGO != null) AudioManager.PlaySdActivate(carGO.transform.position);
+        if (carGO != null)
+        {
+            AudioManager.PlaySdActivate(carGO.transform.position);
+            RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.SdOn, carGO.transform.position);
+        }
         StartSdLoop();
 
         // Latch the run's "used an SD" flag so a flawless (no-SD) win can route to the special ending.
@@ -187,7 +191,11 @@ public class SDAbilityController : MonoBehaviour
         if (carVFX != null) carVFX.Hide();      // stop this SD's particle effect
 
         // SD audio: deactivation one-shot at the car + stop the "while active" loop.
-        if (carGO != null) AudioManager.PlaySdDeactivate(carGO.transform.position);
+        if (carGO != null)
+        {
+            AudioManager.PlaySdDeactivate(carGO.transform.position);
+            RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.SdOff, carGO.transform.position);
+        }
         StopSdLoop();
 
         IsActive = false;

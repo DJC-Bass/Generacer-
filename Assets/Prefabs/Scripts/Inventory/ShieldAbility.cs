@@ -106,6 +106,7 @@ public class ShieldAbility : MonoBehaviour
 
         Vector3 at = carGO != null ? carGO.transform.position : transform.position;
         AudioManager.PlayShieldActivate(at);
+        RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.ShieldOn, at);
         StartShieldLoop(at);
 
         Debug.Log($"[Shield] Summoned for {shieldDuration:0.#}s ({inv.GetCount(shieldItem)} left).");
@@ -116,7 +117,11 @@ public class ShieldAbility : MonoBehaviour
         IsActive = false;
         if (shieldGO != null) shieldGO.SetActive(false);
         StopShieldLoop();
-        if (carGO != null) AudioManager.PlayShieldDeactivate(carGO.transform.position);
+        if (carGO != null)
+        {
+            AudioManager.PlayShieldDeactivate(carGO.transform.position);
+            RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.ShieldOff, carGO.transform.position);
+        }
     }
 
     // -------------------------------------------------------

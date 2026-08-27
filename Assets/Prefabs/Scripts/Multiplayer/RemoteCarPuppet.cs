@@ -33,9 +33,24 @@ public class RemoteCarPuppet : MonoBehaviour
     public float rotationTau = 0.10f;
     [Tooltip("Maximum seconds a state is projected forward — beyond this the car holds position.")]
     public float maxExtrapolation = 0.5f;
-    [Tooltip("Add gravity to the forward projection — for ballistic entities (boulders) whose " +
-             "velocity curves between updates. Player cars are hover-physics: leave false.")]
-    public bool projectGravity;
+    [Tooltip("Constant acceleration to fold into the forward projection — for ballistic entities " +
+             "(boulders) whose velocity curves between updates. Player cars are hover-physics: leave zero.")]
+    public Vector3 projectAcceleration;
+
+    /// <summary>Was this state sent while the sender had its own gravity switched OFF? A homing boulder
+    /// does exactly that - it kills gravity and thrusts at its target instead - so projecting a
+    /// ballistic arc through that phase predicts a fall that is not happening. The host reads it
+    /// straight off <c>Rigidbody.useGravity</c>, so it needs no per-entity special-casing.</summary>
+    private bool senderWeightless;
+
+    /// <summary>The acceleration to project with THIS tick: none while the sender is weightless.</summary>
+    Vector3 ProjectionAcceleration => senderWeightless ? Vector3.zero : projectAcceleration;
+
+    [Tooltip("Drive the kinematic Rigidbody with MovePosition instead of writing the transform. " +
+             "Only for puppets that must physically SHOVE the local car: a transform write teleports, " +
+             "which depenetrates without transferring any momentum.")]
+    public bool moveByPhysics;
+    private Rigidbody body;
 
     private Vector3 basePos;
     private Quaternion baseRot = Quaternion.identity;
@@ -61,11 +76,22 @@ public class RemoteCarPuppet : MonoBehaviour
     /// <summary>The last replicated linear velocity — RemoteCarAudio drives the engine rev off it.</summary>
     public Vector3 CurrentVelocity => linearVelocity;
 
-    /// <summary>Feeds a freshly received owner state. Out-of-order packets are dropped.</summary>
+    /// <summary>Whether this remote player is off the ground, from bit 6 of the state byte. The stand-in
+    /// for <c>CarController.IsAirborne</c>, which the puppet strip destroyed - see
+    /// <see cref="MultiplayerWorld.IsPlayerAirborne"/>, which every hunter should ask instead of
+    /// reaching for a CarController that only ever exists on the local car.</summary>
+    public bool Airborne { get; private set; }
+
+    /// <summary>Feeds a freshly received owner state. Out-of-order packets are dropped. The two drift
+    /// drives default to zero because NPC puppets share this method and no drone or boulder has tires -
+    /// only the CAR stream carries them.</summary>
     public void ApplyState(ushort sequence, Vector3 position, Quaternion rotation,
-                           Vector3 linVel, Vector3 angVel, byte effectFlags)
+                           Vector3 linVel, Vector3 angVel, byte effectFlags,
+                           float driftLevel = 0f, float driftSteer = 0f, bool weightless = false)
     {
         if (hasState && !IsNewer(sequence, lastSequence)) return;   // stale/out-of-order packet
+
+        senderWeightless = weightless;
 
         lastSequence = sequence;
         basePos = position;
@@ -82,17 +108,55 @@ public class RemoteCarPuppet : MonoBehaviour
             // first Update would compute (lead = positionTau) — otherwise a boulder pops in at its raw
             // ground spawn point, half-buried in the track scenery, until the projection lifts it out.
             Vector3 snapPos = position;
-            if (projectGravity)
-                snapPos += linVel * positionTau + 0.5f * positionTau * positionTau * Physics.gravity;
-            transform.SetPositionAndRotation(snapPos, baseRot);
+            if (ProjectionAcceleration.sqrMagnitude > 0.0001f)
+                snapPos += linVel * positionTau + 0.5f * positionTau * positionTau * ProjectionAcceleration;
+            WritePose(snapPos, baseRot, snap: true);
             hasState = true;
             if (fx != null) fx.ClearTrails();   // don't streak a trail ribbon across the teleport
         }
 
-        if (fx != null) fx.ApplyFlags(effectFlags);
+        Airborne = (effectFlags & RemoteCarEffects.FlagAirborne) != 0;
+
+        if (fx != null)
+        {
+            fx.ApplyFlags(effectFlags);
+            fx.ApplyDrift(driftLevel, driftSteer);
+        }
+    }
+
+    void Start()
+    {
+        if (!moveByPhysics) return;
+        body = GetComponent<Rigidbody>();
+        if (body == null) { moveByPhysics = false; return; }
+
+        // StripPuppet turns interpolation OFF for every puppet, and rightly so while the pose is a
+        // TRANSFORM write: physics would keep managing the transform for rendering and the visible mesh
+        // would drift away from the collider. MovePosition inverts that argument - the body is now the
+        // thing being moved, mesh and collider travel together, and interpolation is the only way to
+        // render its 50 Hz steps smoothly at any frame rate. Without this, switching a puppet to
+        // MovePosition would trade a weak shove for visible stepping.
+        body.interpolation = RigidbodyInterpolation.Interpolate;
     }
 
     void Update()
+    {
+        if (moveByPhysics) return;   // driven from FixedUpdate instead — see Advance
+        Advance(Time.deltaTime);
+    }
+
+    /// <summary>MovePosition has to be issued from FixedUpdate: it takes effect at the NEXT physics
+    /// step, so a puppet driven from Update gets it wrong at both ends — under 50 fps some physics steps
+    /// receive no move at all and the body stalls for a step then jumps, and over 50 fps every call but
+    /// the last is simply overwritten. Transform-written puppets stay on Update, where they belong:
+    /// their pose is a rendering concern and should run at the render rate.</summary>
+    void FixedUpdate()
+    {
+        if (!moveByPhysics) return;
+        Advance(Time.fixedDeltaTime);
+    }
+
+    void Advance(float dt)
     {
         if (!hasState) return;
 
@@ -102,23 +166,60 @@ public class RemoteCarPuppet : MonoBehaviour
         // doesn't trail a fast car (see class comment).
         float lead = age + positionTau;
         Vector3 targetPos = basePos + linearVelocity * lead;
-        if (projectGravity) targetPos += 0.5f * lead * lead * Physics.gravity;
+        Vector3 accel = ProjectionAcceleration;
+        if (accel.sqrMagnitude > 0.0001f) targetPos += 0.5f * lead * lead * accel;
         Quaternion targetRot = IntegrateRotation(baseRot, angularVelocity, age + rotationTau);
 
-        if (Vector3.Distance(transform.position, targetPos) > snapDistance)
+        if (Vector3.Distance(CurrentPosition, targetPos) > snapDistance)
         {
-            transform.SetPositionAndRotation(targetPos, targetRot);
+            WritePose(targetPos, targetRot, snap: true);
             var fx = Effects;
             if (fx != null) fx.ClearTrails();   // extrapolated past a teleport — don't streak
             return;
         }
 
-        // Exponential error blend — framerate-independent, absorbs correction smoothly.
-        float posBlend = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(0.001f, positionTau));
-        float rotBlend = 1f - Mathf.Exp(-Time.deltaTime / Mathf.Max(0.001f, rotationTau));
-        transform.SetPositionAndRotation(
-            Vector3.Lerp(transform.position, targetPos, posBlend),
-            Quaternion.Slerp(transform.rotation, targetRot, rotBlend));
+        // Exponential error blend — timestep-independent, absorbs correction smoothly.
+        float posBlend = 1f - Mathf.Exp(-dt / Mathf.Max(0.001f, positionTau));
+        float rotBlend = 1f - Mathf.Exp(-dt / Mathf.Max(0.001f, rotationTau));
+        WritePose(Vector3.Lerp(CurrentPosition, targetPos, posBlend),
+                  Quaternion.Slerp(CurrentRotation, targetRot, rotBlend), snap: false);
+    }
+
+    /// <summary>Where this puppet is RIGHT NOW, for the blend to correct from.
+    ///
+    /// ⚠️ For a MovePosition puppet that is the BODY, not the transform. Those bodies interpolate, and
+    /// interpolation means the transform carries a render pose that sits between two physics steps —
+    /// blending from it inside FixedUpdate would feed the interpolation offset back into the correction
+    /// every step and make the puppet chase its own smoothing.</summary>
+    Vector3 CurrentPosition => (moveByPhysics && body != null) ? body.position : transform.position;
+    Quaternion CurrentRotation => (moveByPhysics && body != null) ? body.rotation : transform.rotation;
+
+    /// <summary>The one place a puppet's pose is written.
+    ///
+    /// ⚠️ Writing <c>transform.position</c> on a kinematic Rigidbody TELEPORTS it: the solver sees a body
+    /// that was never moving, so a contact is resolved by depenetration alone and NO momentum crosses.
+    /// That is why a drone could sweep through the local car and barely disturb it, while the same drone
+    /// on the host hit like a truck. <c>MovePosition</c> gives the move an implied velocity, which is
+    /// what the solver needs to actually shove.
+    ///
+    /// It is opt-in (<see cref="moveByPhysics"/>) because it is not free: MovePosition takes effect at
+    /// the next physics step rather than immediately, so it is only worth it for puppets that must hit
+    /// something. A genuine discontinuity (spawn, portal) still writes the transform directly — you
+    /// cannot SWEEP across 35 km, and asking the solver to try would be a hyperspeed streak through
+    /// every collider in between.</summary>
+    void WritePose(Vector3 position, Quaternion rotation, bool snap)
+    {
+        if (moveByPhysics && !snap)
+        {
+            if (body == null) body = GetComponent<Rigidbody>();
+            if (body != null)
+            {
+                body.MovePosition(position);
+                body.MoveRotation(rotation);
+                return;
+            }
+        }
+        transform.SetPositionAndRotation(position, rotation);
     }
 
     static Quaternion IntegrateRotation(Quaternion rotation, Vector3 angVel, float dt)

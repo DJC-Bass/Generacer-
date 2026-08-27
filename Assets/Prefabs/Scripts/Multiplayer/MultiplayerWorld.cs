@@ -103,7 +103,7 @@ public class MultiplayerWorld : MonoBehaviour
     /// <summary>Picks a random player car for an entity to target and STICK with. On the multiplayer
     /// host: a random player currently in the track (`anyArea` widens to everyone — the hub ending
     /// swarm hunts both teams). Single-player: the local car, unchanged behaviour.</summary>
-    public static Transform PickStickyTarget(bool anyArea)
+    public static Transform PickStickyTarget(bool anyArea, bool preferAirborne = false)
     {
         if (!IsMultiplayerGame)
         {
@@ -123,7 +123,38 @@ public class MultiplayerWorld : MonoBehaviour
                 pool.Add(remote.Car.transform);
 
         if (pool.Count == 0) return null;
+
+        // Anti-air hunters (lava boulders) narrow the draw to whoever is actually in the air, then pick
+        // at RANDOM among them and stick - so with two players jumping, each is equally likely to be the
+        // one chased, rather than the host always being it. With nobody airborne the full pool stands,
+        // which keeps a boulder shower falling on a grounded field exactly as it always did.
+        if (preferAirborne)
+        {
+            var airborne = new List<Transform>();
+            foreach (var t in pool)
+                if (IsPlayerAirborne(t)) airborne.Add(t);
+            if (airborne.Count > 0) pool = airborne;
+        }
+
         return pool[UnityEngine.Random.Range(0, pool.Count)];
+    }
+
+    /// <summary>Is this player car off the ground? Works for ANY player - the local car answers from its
+    /// own CarController, a remote player from bit 6 of the replicated state byte.
+    ///
+    /// ⚠️ Every host-side hunter must ask THIS rather than reaching for a CarController. Remote players
+    /// are stripped puppets and have none, so a direct GetComponent returns null and the entity quietly
+    /// concludes "not airborne" - which is how lava boulders came to ignore airborne clients entirely
+    /// while hounding an airborne host. The failure is silent and looks like a tuning problem.</summary>
+    public static bool IsPlayerAirborne(Transform playerRoot)
+    {
+        if (playerRoot == null) return false;
+
+        var puppet = playerRoot.GetComponentInParent<RemoteCarPuppet>();
+        if (puppet != null) return puppet.Airborne;
+
+        var car = playerRoot.GetComponentInParent<CarController>();
+        return car != null && car.IsAirborne;
     }
 
     /// <summary>Returns the target unchanged while it's still valid; null once its player left the
@@ -194,6 +225,7 @@ public class MultiplayerWorld : MonoBehaviour
     const string MsgRoundEnd = "GNRC_ROUND_END";     // {reason: 0 timeout, 1 all racers left}
     const string MsgArea = "GNRC_AREA";              // client → server: {inTrack}
     const string MsgRacerFin = "GNRC_RACER_FIN";     // an AI racer crossed the finish — first place forfeit
+    const string MsgToLobby = "GNRC_TO_LOBBY";       // server → all: the HOST left the world, so the run is over
 
     const string MainMenuSceneName = "MainMenu";
 
@@ -315,6 +347,55 @@ public class MultiplayerWorld : MonoBehaviour
     public void TeardownToMenu(string reason)
     {
         if (!begun) return;
+        ReleaseWorld();
+
+        Debug.Log($"[MultiplayerWorld] Teardown to menu: {reason}");
+        SceneManager.LoadScene(MainMenuSceneName);   // single-mode load also clears the additive track
+        Destroy(gameObject);
+    }
+
+    /// <summary>Leave the WORLD but stay in the SESSION, landing back in the lobby room.
+    ///
+    /// The game-over exit, and the hub's MAIN MENU pad, in multiplayer. Everything about the run is
+    /// torn down exactly as TeardownToMenu does it — the same method does the work — but the session,
+    /// the roster and every player's team assignment survive, so the room the player lands in is the
+    /// one they started from and the host can run it again without anyone renavigating the menus.
+    ///
+    /// ⚠️ It must NOT call LeaveSessionAsync. That is the QUIT path, and for a HOST it DELETES the
+    /// session for everyone — which is exactly the behaviour we are moving away from. Losing is not
+    /// quitting.</summary>
+    public void TeardownToLobby(string reason)
+    {
+        if (!begun) return;
+
+        // ⚠️ THE HOST LEAVING TAKES EVERYONE WITH THEM, and this is not a courtesy — it is the only
+        // correct behaviour. The host runs the entire simulation: every drone, boulder, round timer and
+        // projectile. The moment they leave the world, the survivors' hub FREEZES — the drones stop
+        // moving, so nothing can shoot them, so nothing can ever send them to the lobby either. They
+        // were stranded in a dead world with no way out.
+        //
+        // Sent BEFORE ReleaseWorld, which unregisters the handlers this rides on. NGO itself stays up
+        // (only LeaveSessionAsync shuts it down), so the message reaches everyone and they land in the
+        // same room we do.
+        if (IsServer) BroadcastToLobby();
+
+        ReleaseWorld();
+
+        // Told BEFORE the scene load, so the host's auto-launch hook is already suppressed by the time
+        // the menu comes up and re-evaluates it — otherwise it drags them straight back in.
+        if (NetworkSessionManager.Instance != null) NetworkSessionManager.Instance.ReturnedToLobby();
+        MainMenuController.OpenLobbyOnLoad = true;
+
+        Debug.Log($"[MultiplayerWorld] Teardown to lobby: {reason}");
+        SceneManager.LoadScene(MainMenuSceneName);
+        Destroy(gameObject);
+    }
+
+    /// <summary>Everything both exits must undo: the run, the inventory, the voice channels, the
+    /// message handlers and every static this world set. Shared so the two cannot drift — a leak here
+    /// is the kind that only shows up as "the SECOND game of a session is broken".</summary>
+    void ReleaseWorld()
+    {
         begun = false;
 
         VoiceService.EndMatch();   // leave Vivox voice channels + log out
@@ -331,10 +412,7 @@ public class MultiplayerWorld : MonoBehaviour
         GameLoopManager.EndRun();
         if (PlayerInventory.Instance != null) PlayerInventory.Instance.ResetToStarting();
         if (loadingCanvas != null) Destroy(loadingCanvas);
-
-        Debug.Log($"[MultiplayerWorld] Teardown to menu: {reason}");
-        SceneManager.LoadScene(MainMenuSceneName);   // single-mode load also clears the additive track
-        Destroy(gameObject);
+        SetPilotPresentation(false);   // never leave a pilot's borrowed lighting on the menu
     }
 
     // -------------------------------------------------------
@@ -847,6 +925,12 @@ public class MultiplayerWorld : MonoBehaviour
         if (!begun) return;
         roundActive = false;   // belt-and-braces: no portal entry during an ending
 
+        // Shut the door on the lobby at the same moment. From here the Drone swarm picks players off
+        // ONE AT A TIME, and each casualty lands back in the lobby room while their teammates are still
+        // being hunted — so without this the first player out would see ENTER GAME and walk straight
+        // back into the massacre. Host-only and idempotent; cleared when the host starts the next run.
+        if (NetworkSessionManager.Instance != null) NetworkSessionManager.Instance.FlagRunEnding();
+
         var glm = GameLoopManager.Instance;
         if (glm == null) return;
 
@@ -1017,6 +1101,13 @@ public class MultiplayerWorld : MonoBehaviour
         var msg = Msg;
         if (msg == null) { Debug.LogWarning("[MultiplayerWorld] No CustomMessagingManager — is NGO running?"); return; }
 
+        msg.RegisterNamedMessageHandler(MsgToLobby, (sender, reader) =>
+        {
+            // The host has left the world. There is no world without them — they simulate every drone,
+            // boulder and round timer — so come back to the lobby rather than sit in a frozen hub.
+            if (!IsServer) TeardownToLobby("THE HOST ENDED THE RUN");
+        });
+
         msg.RegisterNamedMessageHandler(MsgRoundStart, (sender, reader) =>
         {
             reader.ReadValueSafe(out int round);
@@ -1071,6 +1162,16 @@ public class MultiplayerWorld : MonoBehaviour
         msg.UnregisterNamedMessageHandler(MsgReady);
         msg.UnregisterNamedMessageHandler(MsgArea);
         msg.UnregisterNamedMessageHandler(MsgRacerFin);
+        msg.UnregisterNamedMessageHandler(MsgToLobby);
+    }
+
+    /// <summary>HOST → everyone: abandon the world and regroup in the lobby. Carries no payload — the
+    /// fact that it arrived IS the message.</summary>
+    void BroadcastToLobby()
+    {
+        using var writer = new FastBufferWriter(sizeof(byte), Allocator.Temp);
+        writer.WriteValueSafe((byte)1);
+        SendToRemoteClients(MsgToLobby, writer);
     }
 
     void BroadcastRoundPreload(int round, int seed)
