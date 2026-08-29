@@ -28,7 +28,7 @@ using UnityEngine;
 /// </summary>
 public class SupportShipReplicator : MonoBehaviour
 {
-    const string MsgShip = "GNRC_SHIP";         // owner  → all: {ownerId, active, ownerInTrack}
+    const string MsgShip = "GNRC_SHIP";         // owner  → all: {ownerId, active, ownerInTrack, repairs}
     const string MsgAim = "GNRC_SHIP_AIM";      // pilot  → all: {ownerId, offset(Vec3), look(Vec3)}
     const string MsgPilot = "GNRC_SHIP_PILOT";  // client → server (request) / server → all (verdict)
     const string MsgDown = "GNRC_SHIP_DOWN";    // any    → server (report)  / server → all (verdict)
@@ -69,6 +69,7 @@ public class SupportShipReplicator : MonoBehaviour
     {
         public bool active;
         public bool inTrack;        // owner is racing — the ship may be piloted from the hub pad
+        public byte repairs;        // Support Ship Repairs the OWNER is carrying (see RepairsFor)
         public ulong pilotId = NoClient;
         public Vector3 offset;          // latest received (or locally flown) pilot offset
         public Vector3 smoothedOffset;
@@ -97,6 +98,29 @@ public class SupportShipReplicator : MonoBehaviour
     ///
     /// Our OWN ship answers from MultiplayerWorld directly rather than from the table: we never
     /// receive our own heartbeat, so the entry's flag would be whatever we last wrote.</summary>
+    static byte LocalRepairStock()
+    {
+        var inv = PlayerInventory.Instance;
+        return inv == null ? (byte)0 : (byte)Mathf.Clamp(inv.GetCount(RepairItem), 0, 255);
+    }
+
+    /// <summary>How many Support Ship Repairs are available to whoever is flying this ship.
+    ///
+    /// ⚠️ It is the OWNER's stock, not the pilot's, because that is whose inventory Y actually spends
+    /// from. Showing the pilot their OWN count would be worse than showing nothing: it would be a
+    /// confident number that has no bearing on whether the next press does anything.
+    ///
+    /// The owner is the only machine that can read it - `PlayerInventory.Instance` is a local singleton -
+    /// so it rides their existing twice-a-second ship heartbeat. Level-triggered like the rest of that
+    /// message, so a dropped packet heals on the next one rather than latching a stale count.</summary>
+    public static int RepairsFor(ulong ownerId)
+    {
+        // Our own ship: read the inventory directly rather than waiting for our own heartbeat to come
+        // back around, so spending one updates the readout on the very next frame.
+        if (ownerId == LocalClientId) return LocalRepairStock();
+        return Instance != null && Instance.ships.TryGetValue(ownerId, out var entry) ? entry.repairs : 0;
+    }
+
     public static bool IsPilotable(ulong ownerId)
     {
         if (ownerId == LocalClientId)
@@ -230,9 +254,12 @@ public class SupportShipReplicator : MonoBehaviour
         // Record our OWN ship in the same table everyone else's lives in. Without this the host's
         // table has no entry for the host's ship, and ResolvePilotRequest — which runs on the host and
         // checks `active` before granting — would refuse every attempt to fly it.
+        byte repairs = LocalRepairStock();
+
         var mine = GetOrCreate(LocalClientId);
         mine.active = active;
         mine.inTrack = inTrack;
+        mine.repairs = repairs;
 
         var msg = Msg;
         if (msg == null) return;
@@ -241,6 +268,7 @@ public class SupportShipReplicator : MonoBehaviour
         writer.WriteValueSafe(LocalClientId);
         writer.WriteValueSafe(active);
         writer.WriteValueSafe(inTrack);
+        writer.WriteValueSafe(repairs);
 
         // Summoning and dismissing must never be the packet that goes missing — a lost "dismissed"
         // would leave a ghost ship escorting everyone else's view of this player forever.
@@ -750,6 +778,7 @@ public class SupportShipReplicator : MonoBehaviour
             reader.ReadValueSafe(out ulong ownerId);
             reader.ReadValueSafe(out bool active);
             reader.ReadValueSafe(out bool inTrack);
+            reader.ReadValueSafe(out byte repairs);
 
             if (IsServer && ownerId != LocalClientId)
             {
@@ -757,6 +786,7 @@ public class SupportShipReplicator : MonoBehaviour
                 writer.WriteValueSafe(ownerId);
                 writer.WriteValueSafe(active);
                 writer.WriteValueSafe(inTrack);
+                writer.WriteValueSafe(repairs);
                 SendToRemoteClients(MsgShip, writer, NetworkDelivery.ReliableSequenced, excludeClientId: ownerId);
 
                 // A ship that can no longer be flown can't stay claimed — free THAT SHIP's controls so
@@ -772,6 +802,7 @@ public class SupportShipReplicator : MonoBehaviour
                 var entry = GetOrCreate(ownerId);
                 entry.active = active;
                 entry.inTrack = inTrack;
+                entry.repairs = repairs;
             }
         });
 

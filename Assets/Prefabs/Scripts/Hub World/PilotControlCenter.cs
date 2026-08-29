@@ -329,7 +329,7 @@ public class PilotControlCenter : MonoBehaviour
         // pilot cannot see it, so they go, and the ship's health pool takes their place. Credits stay -
         // currency is the player's, not the vehicle's.
         GameplayHud.SetPiloting(true);
-        SupportShipHealthHUD.Show(pilotedOwner);
+        SupportShipPilotHUD.Show(pilotedOwner);
         ShowHint("Stick Fly    B / X Fwd / Back    LT / RT Roll    A Fire    Y Repair    Select Release");
         // A fresh cockpit starts with the guns cold — the A press that TOOK the controls must not also
         // loose a burst on the way in.
@@ -472,7 +472,7 @@ public class PilotControlCenter : MonoBehaviour
 
         MultiplayerWorld.SetPilotPresentation(false);   // back to the hub they never actually left
         GameplayHud.SetPiloting(false);
-        SupportShipHealthHUD.Hide();
+        SupportShipPilotHUD.Hide();
         RestoreCamera();
         SuppressLocalCarInput(false);
         MenuState.AnyOpen = false;

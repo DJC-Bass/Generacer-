@@ -211,7 +211,7 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_GRAPPLE` | GrappleReplicator | owner → all (host relays) | state + **anchor KIND** + ids/offsets |
 | `GNRC_GRAPPLE_PULL` | GrappleReplicator | → victim (host relays) | acceleration applied on the OWNER's machine |
 | `GNRC_GRAPPLE_BREAK` | GrappleReplicator | victim → all | L3: release any hook attached to me |
-| `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | {active, ownerInTrack}: ship is out / put away, and whether its owner is RACING (a ship is only pilotable while they are); 2 Hz heartbeat, Reliable on change |
+| `GNRC_SHIP` | SupportShipReplicator | owner → all (host relays) | {active, ownerInTrack, repairs}: ship is out / put away, whether its owner is RACING (a ship is only pilotable while they are), and the owner's Support Ship Repair stock; 2 Hz heartbeat, Reliable on change |
 | `GNRC_SHIP_AIM` | SupportShipReplicator | **pilot** → all (host relays) | 20 Hz {Vector3 offset, Vector3 aim angles} for a named owner’s ship; receivers LEAD it by age+tau (see the firing-alignment entry) |
 | `GNRC_SHIP_PILOT` | SupportShipReplicator | client → server (request) / server → all (verdict) | claim/release the controls — server arbitrates |
 | `GNRC_SHIP_DOWN` | SupportShipReplicator | any → server (report) / server → all (verdict) | the ship was destroyed; owner spends one item |
@@ -2152,6 +2152,25 @@ and how many to buy, without having to be the one flying it.
   whose inventory this is.
 - Updated every frame while the screen is open, not only on Refresh: the inventory is readable mid-race
   with a teammate flying, so the number can move while the player is looking straight at it.
+
+**A "REPAIRS" COUNT FOR THE PILOT (2026-08-27), bottom-left.** `SupportShipHealthHUD` became
+**`SupportShipPilotHUD`** — it now owns the pilot’s whole instrument set, not just the bar, and the old
+name would have stopped being true. Both readouts take the slot the equivalent CAR readout vacates:
+health under the credits where `SDCardHUD` sits, repairs bottom-left at `TurboJetHUD`’s first slot
+(30px in, 24 up, 300 wide, 44pt — matched exactly, so the count lands where the eye already goes for a
+consumable).
+- ⚠️ **It shows the OWNER’s stock, not the pilot’s.** Y spends from the owner’s inventory, so the
+  pilot’s own count would be worse than showing nothing: a confident number with no bearing on whether
+  the next press does anything.
+- Which means it had to be REPLICATED, and only the owner can read it (`PlayerInventory.Instance` is a
+  local singleton). It rides the owner’s existing twice-a-second `GNRC_SHIP` heartbeat as one byte —
+  level-triggered like the rest of that message, so a dropped packet heals on the next one instead of
+  latching a stale count. `SupportShipReplicator.RepairsFor(ownerId)` reads it, and short-circuits to
+  the live inventory for our OWN ship so spending one updates the readout on the very next frame rather
+  than at the next heartbeat.
+- The count is drawn in the same blue as the pool it refills.
+- `Speedometer` hiding (added with the HUD split) was made unconditional: it used to `return` early on a
+  null car, which was the one path that never reached the visibility test and could leave the label up.
 - The store item is already authored on both hub StoreControllers (price 100, unlimited, grants 1). Its
   description reads "back to Full Health", which is exactly true at the default `maxHits` of 5 — worth
   rewording if `maxHits` is ever raised, since the repair is a flat 5 points (`repairHitPoints`).

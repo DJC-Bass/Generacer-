@@ -144,9 +144,9 @@ public class InventoryView : MonoBehaviour
 
         float fraction = Mathf.Clamp01(ship.HealthFraction);
         shipRow.fill.sizeDelta = new Vector2(BarWidth * fraction, BarHeight);
-        shipRow.fillImage.color = fraction <= SupportShipHealthHUD.LowFraction
-            ? SupportShipHealthHUD.LowColor
-            : SupportShipHealthHUD.FillColor;
+        shipRow.fillImage.color = fraction <= SupportShipPilotHUD.LowFraction
+            ? SupportShipPilotHUD.LowColor
+            : SupportShipPilotHUD.FillColor;
 
         int max = Mathf.Max(1, ship.maxHits);
         shipRow.barLabel.text = Mathf.Max(0, max - ship.HitsTaken) + " / " + max;
@@ -242,7 +242,7 @@ public class InventoryView : MonoBehaviour
         brt.anchorMin = brt.anchorMax = brt.pivot = new Vector2(1f, 0.5f);
         brt.sizeDelta = new Vector2(BarWidth, BarHeight);
         brt.anchoredPosition = Vector2.zero;
-        bar.AddComponent<Image>().color = SupportShipHealthHUD.TrackColor;
+        bar.AddComponent<Image>().color = SupportShipPilotHUD.TrackColor;
         row.bar = bar;
 
         // Left-pivoted inside the track, so shrinking drains it from the right rather than both ends.
@@ -253,7 +253,7 @@ public class InventoryView : MonoBehaviour
         row.fill.sizeDelta = new Vector2(BarWidth, BarHeight);
         row.fill.anchoredPosition = Vector2.zero;
         row.fillImage = fillGO.AddComponent<Image>();
-        row.fillImage.color = SupportShipHealthHUD.FillColor;
+        row.fillImage.color = SupportShipPilotHUD.FillColor;
 
         row.barLabel = NewText(bar.transform, "BarLabel", 16, TextAlignmentOptions.Center);
         row.barLabel.color = Color.white;

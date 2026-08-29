@@ -3,9 +3,12 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// The Support Ship pilot's health bar: a blue pool tucked under the credits readout in the top-left,
-/// shown only while somebody is actually flying a ship. It takes the slot the SD readout vacates while
-/// its owner is piloting, so the two views agree on where the top-left column of information lives.
+/// The Support Ship pilot's instruments, shown only while somebody is actually flying a ship. They sit
+/// in the slots the CAR's readouts vacate while piloting, so the two views agree on where information
+/// lives on screen:
+///
+///  • HEALTH — a blue pool under the credits, top-left, where the SD readout normally sits.
+///  • REPAIRS — a count bottom-left, where the Turbo stock normally sits.
 ///
 /// It exists because the two camera views are two different vehicles. A pilot is looking out of a ship
 /// while their car sits parked somewhere they cannot see, so the car's instruments hide (see
@@ -20,7 +23,7 @@ using UnityEngine.UI;
 /// wire in the inspector — the same approach the credits / turbo / SD readouts take.
 /// </summary>
 [DefaultExecutionOrder(1000)]
-public class SupportShipHealthHUD : MonoBehaviour
+public class SupportShipPilotHUD : MonoBehaviour
 {
     // Blue, to match the repair flash: the bar and the flash are two views of the same number, so a
     // pilot who has learnt one has learnt the other. Public because the INVENTORY draws the same bar
@@ -38,16 +41,23 @@ public class SupportShipHealthHUD : MonoBehaviour
     const float BarWidth = 300f;
     const float BarHeight = 24f;
 
+    // Bottom-left, matching TurboJetHUD's first slot exactly (30px in, 24px up, 300 wide, 44pt) so the
+    // Repairs count lands where the pilot's eye already goes for a consumable count.
+    const float CountIndent = 30f;
+    const float CountBottom = 24f;
+    const float CountWidth = 300f;
+
     /// <summary>Below this fraction the bar turns red — the one moment a pilot needs to be told rather
     /// than left to read a length.</summary>
     public const float LowFraction = 0.34f;
 
-    static SupportShipHealthHUD instance;
+    static SupportShipPilotHUD instance;
 
     private GameObject canvasGO;
     private RectTransform fill;
     private Image fillImage;
     private TextMeshProUGUI label;
+    private TextMeshProUGUI repairsLabel;
     private SupportShip ship;
     private ulong ownerId;
     private bool showing;
@@ -67,13 +77,13 @@ public class SupportShipHealthHUD : MonoBehaviour
         if (instance != null) instance.Bind(0, false);   // never builds one just to hide it
     }
 
-    static SupportShipHealthHUD Ensure()
+    static SupportShipPilotHUD Ensure()
     {
         if (instance == null)
         {
-            var go = new GameObject("SupportShipHealthHUD");
+            var go = new GameObject("SupportShipPilotHUD");
             DontDestroyOnLoad(go);
-            instance = go.AddComponent<SupportShipHealthHUD>();
+            instance = go.AddComponent<SupportShipPilotHUD>();
         }
         return instance;
     }
@@ -115,6 +125,12 @@ public class SupportShipHealthHUD : MonoBehaviour
         // decision a pilot makes, and a bar alone makes them estimate it.
         int max = Mathf.Max(1, ship.maxHits);
         label.text = Mathf.Max(0, max - ship.HitsTaken) + " / " + max;
+
+        // ⚠️ The OWNER's stock, not ours — Y spends from their inventory, so our own count would be a
+        // confident number with no bearing on whether the next press does anything.
+        // "Repairs: N" — the same shape as Turbo / Jet / Shield / Grapple / SD, since this sits in the
+        // slot those occupy and a lone item reading differently would look like a different KIND of thing.
+        repairsLabel.text = "Repairs: " + SupportShipReplicator.RepairsFor(ownerId);
     }
 
     void BuildUI()
@@ -153,6 +169,16 @@ public class SupportShipHealthHUD : MonoBehaviour
         label.color = Color.white;
         label.alignment = TextAlignmentOptions.Center;
         label.raycastTarget = false;
+
+        // Bottom-left: the Repairs the OWNER is carrying, which are the ones this pilot can spend.
+        var count = NewRect("Repairs", canvasGO.transform, CountWidth, 64f);
+        count.anchorMin = count.anchorMax = count.pivot = new Vector2(0f, 0f);
+        count.anchoredPosition = new Vector2(CountIndent, CountBottom);
+        repairsLabel = count.gameObject.AddComponent<TextMeshProUGUI>();
+        repairsLabel.fontSize = 44f;
+        repairsLabel.color = FillColor;   // the same blue as the pool it refills
+        repairsLabel.alignment = TextAlignmentOptions.BottomLeft;
+        repairsLabel.raycastTarget = false;
 
         // Park the whole canvas on the UI layer. Code-built UI defaults to the DEFAULT layer, which is
         // how the grappling hook was once able to latch onto a HUD. Applied last, so the children are
