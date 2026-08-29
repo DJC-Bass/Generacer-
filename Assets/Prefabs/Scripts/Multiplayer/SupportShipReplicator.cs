@@ -37,6 +37,8 @@ public class SupportShipReplicator : MonoBehaviour
     const string MsgLaserHit = "GNRC_SHIP_LHIT"; // server → victim: a Support Ship round popped YOUR car
     const string MsgShotSfx = "GNRC_SHIP_SFX";  // host   → all: a laser was fired / landed, so PLAY it
     const string MsgShipDmg = "GNRC_SHIP_DMG";  // host → all: ship X took a hit — flash + tint, EVENT
+    const string MsgRepair = "GNRC_SHIP_REPAIR";// the 3-hop repair handshake, phase byte says which leg
+    const string MsgHealth = "GNRC_SHIP_HP";    // host → all: ship X's health pool, ±the repair flourish
 
     // The aim stream is the only fast one, and only while somebody is actually flying.
     const float AimRate = 20f;
@@ -146,6 +148,8 @@ public class SupportShipReplicator : MonoBehaviour
             msg.UnregisterNamedMessageHandler(MsgFire);
             msg.UnregisterNamedMessageHandler(MsgLaserHit);
             msg.UnregisterNamedMessageHandler(MsgShipDmg);
+            msg.UnregisterNamedMessageHandler(MsgRepair);
+            msg.UnregisterNamedMessageHandler(MsgHealth);
         msg.UnregisterNamedMessageHandler(MsgShotSfx);
         }
         foreach (var kv in ships)
@@ -322,6 +326,10 @@ public class SupportShipReplicator : MonoBehaviour
         }
 
         BroadcastPilotVerdict(ownerId, entry.pilotId);
+
+        // A new pilot inherits a ship that may already be damaged, and their copy of the pool is only
+        // as current as the damage events they happened to be present for. Re-state it.
+        if (entry.pilotId != NoClient) ReportShipHealth(ownerId, repaired: false);
     }
 
     static void BroadcastPilotVerdict(ulong ownerId, ulong pilotId)
@@ -436,6 +444,143 @@ public class SupportShipReplicator : MonoBehaviour
     {
         var ship = GetShip(ownerId);
         if (ship != null) ship.FireLaserAt(offset, look, pilotClientId, pilotClientId == LocalClientId);
+    }
+
+    // -------------------------------------------------------
+    //  Repair: one item, spent on one machine, healing state held on another
+    // -------------------------------------------------------
+
+    /// <summary>The inventory item a repair spends. It sits in the SHIP OWNER's inventory, not the
+    /// pilot's - Player A buys the repair, Player B flies the ship and decides when to burn it.</summary>
+    public const string RepairItem = "Support Ship Repair";
+
+    /// <summary>Which leg of the handshake a GNRC_SHIP_REPAIR message is.
+    ///
+    /// ⚠️ Three hops, because the two halves of a repair live on two DIFFERENT machines and neither can
+    /// do the other's job. The health pool is host-side (only the host counts a ship's hits), while the
+    /// item is in the owner's inventory - and `PlayerInventory.Instance` is a purely LOCAL singleton, so
+    /// no other machine can even read it, let alone spend from it. The pilot, meanwhile, may be a third
+    /// machine again. So: the pilot asks the host, the host checks the damage and asks the owner to
+    /// spend, and the owner reports back that it did.
+    ///
+    /// The host still gates the chain, but only on whether the ship can take a repair AT ALL - not on
+    /// whether it needs one. Spending an item on a full-health ship is allowed and burns it: deciding
+    /// when to patch up is the pilot's call to get right.</summary>
+    enum RepairPhase : byte { PilotAsks = 0, OwnerSpends = 1, OwnerSpent = 2 }
+
+    /// <summary>Pilot side: "give the ship I am flying some health back". The verdict is asynchronous
+    /// and may simply not come - the ship may be undamaged, or the owner may hold no repair.</summary>
+    public static void RequestRepair(ulong ownerId)
+    {
+        // Solo (no session, or the pad used alone for testing): one machine holds the ship, the health
+        // and the inventory, so the whole handshake collapses to doing it.
+        if (Msg == null)
+        {
+            var ship = GetShip(ownerId);
+            if (ship == null || !ship.Repairable) return;
+            if (!SpendRepairLocally()) return;
+            ship.TryRepair();
+            ShowRepairAt(ship);
+            return;
+        }
+
+        if (IsServer) { BeginRepair(ownerId, LocalClientId); return; }
+        SendRepairPhase(ownerId, RepairPhase.PilotAsks, NetworkManager.ServerClientId);
+    }
+
+    static void SendRepairPhase(ulong ownerId, RepairPhase phase, ulong to)
+    {
+        var msg = Msg;
+        if (msg == null) return;
+        using var writer = new FastBufferWriter(16, Allocator.Temp);
+        writer.WriteValueSafe(ownerId);
+        writer.WriteValueSafe((byte)phase);
+        msg.SendNamedMessage(MsgRepair, to, writer, NetworkDelivery.ReliableSequenced);
+    }
+
+    /// <summary>HOST: a pilot asked to repair the ship they are flying. Validate, then find the item.</summary>
+    static void BeginRepair(ulong ownerId, ulong pilotId)
+    {
+        // Only whoever actually holds the controls, exactly as with the guns.
+        if (PilotOf(ownerId) != pilotId) return;
+
+        var ship = GetShip(ownerId);
+        if (ship == null || !ship.Repairable) return;   // a wreck cannot be patched; a healthy ship can
+
+        if (ownerId == LocalClientId)
+        {
+            // We ARE the owner: the inventory is right here.
+            if (SpendRepairLocally()) RepairOnAuthority(ownerId);
+            return;
+        }
+        SendRepairPhase(ownerId, RepairPhase.OwnerSpends, ownerId);
+    }
+
+    /// <summary>OWNER: the host says our ship needs a repair and someone is flying it. Spend one if we
+    /// have it, and only then tell the host to heal.</summary>
+    static void OwnerSpendRepair(ulong ownerId)
+    {
+        if (SpendRepairLocally()) SendRepairPhase(ownerId, RepairPhase.OwnerSpent, NetworkManager.ServerClientId);
+    }
+
+    static bool SpendRepairLocally()
+    {
+        var inv = PlayerInventory.Instance;
+        if (inv == null || !inv.Consume(RepairItem, 1)) return false;
+        Debug.Log($"[SupportShip] Repair spent ({inv.GetCount(RepairItem)} left).");
+        return true;
+    }
+
+    /// <summary>HOST: the owner paid, so give the health back and tell everyone to sound it.</summary>
+    static void RepairOnAuthority(ulong ownerId)
+    {
+        var ship = GetShip(ownerId);
+        if (ship == null) return;
+
+        // Not gated on the return value: at full health this heals nothing, and the item is spent all
+        // the same. The sound still plays either way, and that matters - the pilot cannot see the
+        // OWNER's inventory, so silence here would read as a dropped input and they would press again.
+        ship.TryRepair();
+        ShowRepairAt(ship);
+        ReportShipHealth(ownerId, repaired: true);
+    }
+
+    /// <summary>The repair's outward sign on THIS machine: a blue flash and the repair sound.
+    ///
+    /// It needs one, and pointedly so: since the damage tint became flash-only, a damaged ship looks
+    /// exactly like a healthy one, so without this the pilot presses Y and nothing whatsoever happens
+    /// on screen. Runs on every copy - the escorted racer sees their own ship patched up, and anyone
+    /// nearby sees it too.</summary>
+    static void ShowRepairAt(SupportShip ship)
+    {
+        if (ship != null) ship.ApplyRepairFeedback(ship.HitsTaken, ship.maxHits);
+    }
+
+    /// <summary>HOST → everyone: what a ship's health pool now reads.
+    ///
+    /// ⚠️ The pilot's health bar is the reason this exists. Only the host counts a ship's hits, so on
+    /// every other machine the pool was a number nobody maintained - and the pilot is very often a
+    /// client, looking at the one readout that has to be right. Damage already replicated (GNRC_SHIP_DMG
+    /// drives the flash); this covers the two moments that did not: a repair, and the instant someone
+    /// TAKES the controls, when their bar has to start off correct rather than at whatever their copy
+    /// last happened to hear.
+    ///
+    /// <paramref name="repaired"/> distinguishes the two: true also flashes blue and sounds, false just
+    /// sets the number.</summary>
+    public static void ReportShipHealth(ulong ownerId, bool repaired)
+    {
+        var msg = Msg;
+        if (msg == null || !IsServer) return;
+
+        var ship = GetShip(ownerId);
+        if (ship == null) return;
+
+        using var writer = new FastBufferWriter(24, Allocator.Temp);
+        writer.WriteValueSafe(ownerId);
+        writer.WriteValueSafe((byte)Mathf.Clamp(ship.HitsTaken, 0, 255));
+        writer.WriteValueSafe((byte)Mathf.Clamp(ship.maxHits, 1, 255));
+        writer.WriteValueSafe((byte)(repaired ? 1 : 0));
+        SendToRemoteClients(MsgHealth, writer, NetworkDelivery.ReliableSequenced);
     }
 
     /// <summary>Pays a Support Ship gunner for something their round destroyed. Called from the HOST
@@ -707,6 +852,38 @@ public class SupportShipReplicator : MonoBehaviour
                 default:
                     AudioManager.PlaySupportShipLaserHitEnvironment(position, laser != null ? laser.environmentAudio3D : null); break;
             }
+        });
+
+        msg.RegisterNamedMessageHandler(MsgRepair, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out ulong ownerId);
+            reader.ReadValueSafe(out byte phase);
+            switch ((RepairPhase)phase)
+            {
+                case RepairPhase.PilotAsks:
+                    if (IsServer) BeginRepair(ownerId, sender);
+                    break;
+                case RepairPhase.OwnerSpends:
+                    if (ownerId == LocalClientId) OwnerSpendRepair(ownerId);
+                    break;
+                case RepairPhase.OwnerSpent:
+                    // The owner is the only one who may claim to have paid for their own ship.
+                    if (IsServer && sender == ownerId) RepairOnAuthority(ownerId);
+                    break;
+            }
+        });
+
+        msg.RegisterNamedMessageHandler(MsgHealth, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out ulong ownerId);
+            reader.ReadValueSafe(out byte hits);
+            reader.ReadValueSafe(out byte max);
+            reader.ReadValueSafe(out byte repaired);
+
+            var ship = GetShip(ownerId);
+            if (ship == null) return;
+            if (repaired != 0) ship.ApplyRepairFeedback(hits, max);
+            else ship.SyncHealth(hits, max);
         });
 
         msg.RegisterNamedMessageHandler(MsgShipDmg, (sender, reader) =>

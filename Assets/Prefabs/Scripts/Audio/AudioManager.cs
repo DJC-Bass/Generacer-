@@ -438,6 +438,10 @@ public class AudioManager : MonoBehaviour
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipHit : null, position, Lib != null ? Lib.supportShipAudio3D : null);
     public static void PlaySupportShipDestroyed(Vector3 position) =>
         PlayLibrarySfxAt(Lib != null ? Lib.supportShipDestroyed : null, position, Lib != null ? Lib.supportShipAudio3D : null);
+    // The other direction: a repair item spent, hit points given back. Shares the ship's 3D block so it
+    // carries exactly as far as the damage it is undoing.
+    public static void PlaySupportShipRepair(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.supportShipRepair : null, position, Lib != null ? Lib.supportShipAudio3D : null);
 
     // The gun. Firing is at the muzzle (so it shares the ship's 3D tuning); the IMPACT can be hundreds
     // of metres downrange, so that one carries its own settings off the laser prefab.

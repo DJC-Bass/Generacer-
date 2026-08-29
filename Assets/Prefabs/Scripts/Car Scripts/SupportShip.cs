@@ -116,6 +116,9 @@ public class SupportShip : MonoBehaviour
     [Tooltip("Contacts the ship survives before going down. Every source shares the one pool — drone " +
              "fire, scenery, cars, other ships alike.")]
     public int maxHits = 5;
+    [Tooltip("Hit points one 'Support Ship Repair' gives back. Capped at full health, never past it: " +
+             "a 5-point repair on a ship sitting at 8 of 10 brings it to 10, not 13.")]
+    public int repairHitPoints = 5;
     [Tooltip("Minimum seconds between two PROJECTILE hits. A drone burst arrives faster than the ship " +
              "can react, so without this a single volley would empty the pool in a fraction of a second " +
              "and the health may as well not exist.")]
@@ -339,6 +342,7 @@ public class SupportShip : MonoBehaviour
         // and it is built by BuildShip + CopyTuningFrom — so without these it would count against code
         // defaults and ignore whatever the prefab was tuned to.
         maxHits = src.maxHits;
+        repairHitPoints = src.repairHitPoints;
         projectileHitCooldown = src.projectileHitCooldown;
         collisionHitCooldown = src.collisionHitCooldown;
         projectileLayerName = src.projectileLayerName;
@@ -678,6 +682,54 @@ public class SupportShip : MonoBehaviour
         return layer >= 0 && other.gameObject.layer == layer;
     }
 
+    /// <summary>How much of the health pool has been spent (0 = untouched). Only meaningful on the
+    /// machine that counts hits - see <see cref="detectCrashes"/>.</summary>
+    public int HitsTaken => hitsTaken;
+
+    /// <summary>0..1 of the health pool still intact, for the pilot's bar. Meaningful on EVERY machine,
+    /// not just the counting one, because both the damage and the health events below write the pool
+    /// back into every copy.</summary>
+    public float HealthFraction =>
+        1f - Mathf.Clamp01(hitsTaken / (float)Mathf.Max(1, maxHits));
+
+    /// <summary>Writes a replicated health reading into this copy of the ship.
+    ///
+    /// ⚠️ Only the host COUNTS hits, so on every other machine `hitsTaken` was a number nobody
+    /// maintained - fine while it drove nothing, but the pilot's health bar reads it and the pilot is
+    /// very often a client. On the host this re-states a value it just computed, which is a no-op.</summary>
+    public void SyncHealth(int hits, int max)
+    {
+        maxHits = Mathf.Max(1, max);
+        hitsTaken = Mathf.Clamp(hits, 0, maxHits);
+    }
+
+    /// <summary>Can this ship take a repair at all?
+    ///
+    /// Note what this deliberately does NOT test: whether there is any damage to undo. Spending a
+    /// repair on a pristine ship is allowed and burns the item, by design - judging when the ship
+    /// actually needs patching is the pilot's job, and a game that quietly refused the input would be
+    /// taking that judgement away from them.
+    ///
+    /// A WRECK is the one refusal, and it is a different case rather than an exception to that: the
+    /// pool sits at max for the frames between the killing hit and the crash, so a pilot still pressing
+    /// as the ship falls is not making a bad call - the ship is already gone and no press could have
+    /// worked. That is an input arriving at a dead object, not a wasted resource.</summary>
+    public bool Repairable => !IsRagdolling;
+
+    /// <summary>Gives <see cref="repairHitPoints"/> of the pool back, and returns whether it did
+    /// anything. Clamping at zero IS the "never past max" rule: the pool counts damage UP toward
+    /// maxHits, so empty is full health and there is nothing above it to overshoot into.
+    ///
+    /// ⚠️ Only the machine that counts hits may call this - the same one <see cref="TakeHit"/> runs on.
+    /// Everywhere else `hitsTaken` is a number nobody maintains, and healing it there would let a ship
+    /// look repaired on one screen while the host still had it one hit from the ground.</summary>
+    public bool TryRepair()
+    {
+        if (hitsTaken <= 0) return false;
+        hitsTaken = Mathf.Max(0, hitsTaken - Mathf.Max(1, repairHitPoints));
+        return true;
+    }
+
     /// <summary>Spends one point of the health pool, and downs the ship when it runs out.
     ///
     /// Both sources are rate-limited, and for the same reason from opposite directions: one physical
@@ -717,13 +769,35 @@ public class SupportShip : MonoBehaviour
     /// a DroneDamageTint on the SupportShip prefab only to TUNE it, and those values then win.</summary>
     public void ApplyDamageFeedback(int hits, int max)
     {
+        SyncHealth(hits, max);
+        ResolveTint().RegisterHit(hits, Mathf.Max(1, max));
+        AudioManager.PlaySupportShipHit(transform.position);
+    }
+
+    /// <summary>The repair's feedback: a BLUE flash and the repair sound. The exact mirror of
+    /// <see cref="ApplyDamageFeedback"/>, and public for the same reason - only the host knows a repair
+    /// happened, so every other copy of the ship is driven from the replicated event instead.
+    ///
+    /// Same flash duration and strength as a hit, only the colour differs. That is the point: health
+    /// leaving and health returning are the same KIND of event, so making the hue the only difference
+    /// is what lets a pilot read it at a glance without stopping to think.</summary>
+    public void ApplyRepairFeedback(int hits, int max)
+    {
+        SyncHealth(hits, max);
+        ResolveTint().FlashRepair();
+        AudioManager.PlaySupportShipRepair(transform.position);
+    }
+
+    /// <summary>The tint component, ADDED if the prefab does not carry one, so feedback needs no editor
+    /// wiring - put a DroneDamageTint on the SupportShip prefab only to TUNE it.</summary>
+    DroneDamageTint ResolveTint()
+    {
         if (damageTint == null)
         {
             damageTint = GetComponentInChildren<DroneDamageTint>(true);
             if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
         }
-        damageTint.RegisterHit(hits, Mathf.Max(1, max));
-        AudioManager.PlaySupportShipHit(transform.position);
+        return damageTint;
     }
 
     /// <summary>Paints the wreck red and holds it for the ragdoll.

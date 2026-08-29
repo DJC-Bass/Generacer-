@@ -37,6 +37,13 @@ public class Speedometer : MonoBehaviour
     void Update()
     {
         if (car == null || label == null) return;
+
+        // While its owner is flying a Support Ship this is reporting the speed of a car parked
+        // somewhere they cannot even see - so it goes away with the rest of the car's instruments.
+        bool show = GameplayHud.ShowCarHud;
+        if (label.gameObject.activeSelf != show) label.gameObject.SetActive(show);
+        if (!show) return;
+
         label.text = string.Format(format, car.SpeedMph);
     }
 

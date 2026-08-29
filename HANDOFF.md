@@ -218,6 +218,8 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 | `GNRC_SHIP_FIRE` | SupportShipReplicator | pilot → server | fire owner X’s lasers once, FROM the {offset, look} the pilot reports at the press; host spawns + NpcReplicator streams the round |
 | `GNRC_SHIP_LHIT` | SupportShipReplicator | server → victim | a Support Ship round popped YOUR car — victim applies the pop-up and judges its own i-frames |
 | `GNRC_SHIP_SFX` | SupportShipReplicator | host → all | a laser was fired / landed: {pos, kind}. SOUND ONLY — rounds exist only on the host, so no client would otherwise hear the guns. Unreliable |
+| `GNRC_SHIP_REPAIR` | SupportShipReplicator | 3-hop | {ownerId, phase}: pilot→host asks, host→owner spend one, owner→host spent. Reliable |
+| `GNRC_SHIP_HP` | SupportShipReplicator | host → all | {ownerId, hitsTaken, maxHits, repaired}: the ship’s health pool. `repaired` also flashes blue + sounds; otherwise it just sets the number |
 | `GNRC_SHIP_DMG` | SupportShipReplicator | host → all | a ship took a non-fatal hit — every copy flashes. EVENT, not streamed |
 
 **Four patterns this codebase leans on — copy them:**
@@ -2050,6 +2052,109 @@ rate) and `FixedUpdate` drives MovePosition ones, sharing one `Advance(dt)`.
   They interpolate, so the transform carries a render pose sitting between two physics steps; blending
   from it inside FixedUpdate feeds the interpolation offset back into the correction every step and the
   puppet ends up chasing its own smoothing. `CurrentPosition` / `CurrentRotation` pick the right one.
+
+**SUPPORT SHIP REPAIR — ONE ACTION SPLIT ACROSS THREE MACHINES (2026-08-27).** Player A buys a "Support
+Ship Repair"; Player B, flying A’s ship, presses **Y** to spend it and give the ship 5 hit points back.
+- ⚠️ **The two halves of this live on different machines, and neither can do the other’s job.** The
+  health pool is HOST-side (only the host counts a ship’s hits — see `SupportShip.detectCrashes`), while
+  the item is in the OWNER’s inventory, and `PlayerInventory.Instance` is a purely LOCAL singleton that
+  no other machine can read, let alone spend from. The pilot may be a third machine again. Hence the
+  three-hop handshake on `GNRC_SHIP_REPAIR` with a `RepairPhase` byte saying which leg it is.
+- **A repair on a PRISTINE ship is allowed and burns the item — deliberately** (design call, 2026-08-27).
+  Judging when the ship actually needs patching is the pilot’s job, and refusing the input would take
+  that judgement away from them. `TryRepair` still reports whether it healed anything, but no caller
+  gates on it. The sound plays either way, which matters: the pilot cannot see the OWNER’s inventory, so
+  silence would read as a dropped input and they would press again.
+- A WRECK is the one refusal (`SupportShip.Repairable`), and it is a different case rather than an
+  exception to the above: the pool sits at max for the frames between the killing hit and the crash, so
+  a pilot still pressing as the ship falls has not made a bad call — no press could have worked. That is
+  an input arriving at a dead object, not a wasted resource.
+- Authority at each leg: the host takes a repair request only from `PilotOf(ownerId)` (same rule as the
+  guns), and accepts "I spent one" only when `sender == ownerId` — nobody else can claim to have paid
+  out of someone else’s inventory.
+- **`SupportShip.TryRepair` clamps at zero, and that IS the "never past max" rule.** The pool counts
+  damage UP toward `maxHits`, so empty means full health and there is nothing above it to overshoot
+  into. 8-of-10 plus a 5-point repair lands on 10, not 13, with no separate cap needed.
+- `NeedsRepair` also excludes a ship that is already `IsRagdolling`. Narrow window, but real: the pool
+  sits at max for the frames between the killing hit and the crash, and a pilot who just watched the
+  ship die could otherwise spend an item on the wreck.
+- Solo (no session, or the pad used alone for testing) collapses the whole handshake — one machine holds
+  the ship, the health and the inventory — so `RequestRepair` just does it.
+- **Y was free while piloting**, and stays free: `SupportShipAbility` needs the L3+Y chord AND returns on
+  `MenuState.AnyOpen` (piloting sets it), and the `SelfLevel` action bound to buttonNorth is on the
+  Driving map, which piloting suppresses. Checked rather than assumed.
+- **Feedback: a BLUE flash + a repair sound**, run on every copy of the ship from `GNRC_SHIP_FIXED`
+  (`SupportShip.ApplyRepairFeedback`, the exact mirror of `ApplyDamageFeedback`). It needs to be visible
+  — since the damage tint became flash-only, a patched-up ship looks identical to a pristine one, so
+  without this the pilot presses Y and nothing happens on screen.
+  - `DroneDamageTint.Flash` now takes a COLOUR, held in `activeFlashColor` for the life of that flash:
+    a flash is punctuation WITH A MEANING attached, so the colour has to travel with it rather than be
+    read from a fixed field at draw time. `Flash()` = damage red, `FlashRepair()` = `repairColor` blue.
+  - Same duration and strength as a hit, only the hue differs. Deliberate: health leaving and health
+    returning are the same KIND of event, and making the colour the only difference is what lets a pilot
+    read it at a glance. It also means the emission boost carries the blue for free.
+  - No editor wiring for the colours: **nothing in the project authors a `DroneDamageTint`** — it is
+    always added at runtime, so both flash colours come from the code defaults.
+- New `AudioLibrary.supportShipRepair` + `AudioManager.PlaySupportShipRepair`, 3D at the ship, sharing
+  the ship’s `audio3D` block. NEEDS A CLIP ASSIGNED (the blue flash carries it until then).
+
+**TWO CAMERAS, TWO HUDS (2026-08-27).** A pilot is looking out of a different VEHICLE, so the car’s
+instruments hide and the ship gets its own readout. `GameplayHud` was already "the central rule for
+where the HUDs are shown"; it now answers two questions instead of one — WHERE (gameplay scene, as
+before) and WHOSE (`ShowShared` vs `ShowCarHud`), with an `OnVisibilityChanged` event because the
+piloting switch happens with **no scene load** and the old rule was only ever re-checked on one.
+- Hidden while piloting: `TurboJetHUD` (stock that cannot be spent from a ship), `SDCardHUD` (a car
+  ability — and its D-pad cycling is now gated too, since that stick is flying something else), and
+  `Speedometer` (reporting a car parked where the pilot cannot see it).
+- Shared: `CreditsHUD` only. Currency belongs to the PLAYER, not to whichever vehicle they are looking
+  out of. That is the whole dividing line.
+- Left alone deliberately: the VoiceService speaker list. It is a comms overlay rather than a car
+  instrument, and the LB team-voice work exists precisely so a pilot can talk to the racer they are
+  escorting. Say so if it should hide too.
+- Checked, not assumed: `LraAbortController`’s LT+RT+A chord is exactly the pilot’s roll+fire, but it
+  already gates on `MenuState.AnyOpen`, which piloting sets — no conflict.
+
+**⚠️ THE HEALTH BAR FORCED HEALTH TO BE REPLICATED AT ALL.** `SupportShipHealthHUD` (top-left, directly
+under the credits at the same 30px indent — the slot `SDCardHUD` vacates while piloting; blue to match
+the repair flash, red under a third) is the ONLY way to read a ship’s health: the damage tint
+is deliberately flash-only, so a hurt ship looks exactly like a fresh one — right for a drone in someone
+else’s sky, quite wrong for the vehicle you are flying. Before this a pilot counted red flashes and
+remembered.
+- Only the HOST counts hits, so on every other machine `hitsTaken` was a number nobody maintained — and
+  **the pilot is very often a client**. `SupportShip.SyncHealth` now writes replicated readings into any
+  copy, and `HealthFraction` is meaningful everywhere.
+- Damage already crossed the wire (`GNRC_SHIP_DMG` drives the flash and now syncs the pool as well). The
+  two moments that did NOT: a repair, and **the instant someone takes the controls** — a new pilot
+  inherits a possibly-damaged ship, and their copy was only as current as the damage events they
+  happened to be present for. `ResolvePilotRequest` re-states the pool on every successful claim.
+- The HUD resolves its ship through `SupportShipReplicator.GetShip(ownerId)` **every frame** rather than
+  capturing a reference: the ship object is not stable (dismissed, re-summoned, rebuilt from state) and
+  a captured one would leave the bar frozen on a corpse.
+- It bootstraps its own canvas on first use — nothing to place in a scene or wire in the inspector,
+  same as the credits / turbo / SD readouts. `UiLayer.Apply` last, so the grappling hook cannot latch
+  onto it.
+- The pad hint now reads "... A Fire    Y Repair    Select Release".
+
+**THE SAME BAR IN THE INVENTORY (2026-08-27)** — so the OWNER can see whether their ship needs repairs
+and how many to buy, without having to be the one flying it.
+- **`InventoryView` had to become ROWS to take it.** The list was one TMP text block built with
+  `AppendLine`, and "a bar beside the Support Ship item" cannot be positioned against a line inside a
+  text block without measuring glyphs. One GameObject per item makes the position a fact rather than a
+  calculation, and any future per-item adornment is now trivial. Rows are pooled and reused.
+- The bar is **right-aligned in the row**, not butted against the name: item names vary in length, and a
+  bar sliding left and right with them is far harder to read down a list than a column.
+- **Colours come from `SupportShipHealthHUD`** (`FillColor` / `LowColor` / `TrackColor` / `LowFraction`,
+  now public). Two screens showing one quantity must never disagree about what its colours mean, so
+  there is exactly one definition of them.
+- **It shows only while a ship is actually up.** Health belongs to the LIVE ship and a dismissed one is
+  re-summoned at full health, so a bar on the item itself would be describing something that does not
+  exist. Source is `SupportShipAbility.Instance.Ship` — the local player’s own ship, which is exactly
+  whose inventory this is.
+- Updated every frame while the screen is open, not only on Refresh: the inventory is readable mid-race
+  with a teammate flying, so the number can move while the player is looking straight at it.
+- The store item is already authored on both hub StoreControllers (price 100, unlimited, grants 1). Its
+  description reads "back to Full Health", which is exactly true at the default `maxHits` of 5 — worth
+  rewording if `maxHits` is ever raised, since the repair is a flat 5 points (`repairHitPoints`).
   - **⚠️ ROUNDS FIRED FROM THE PILOT'S POSE, NOT THE HOST'S COPY (fixed 2026-08-24).** Symptom: a
     CLIENT pilot strafing sideways saw their rounds leave from behind and beside the ship, while the
     same thing on the host lined up perfectly.

@@ -40,6 +40,7 @@ public class CreditsHUD : MonoBehaviour
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged += Refresh;
         SceneManager.sceneLoaded += OnSceneLoaded;
+        GameplayHud.OnVisibilityChanged += ApplyVisibility;
         Refresh();
         ApplyVisibility();
     }
@@ -49,15 +50,18 @@ public class CreditsHUD : MonoBehaviour
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged -= Refresh;
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        GameplayHud.OnVisibilityChanged -= ApplyVisibility;
     }
 
     // Gameplay HUDs are hidden outside gameplay scenes (e.g. the main menu).
     void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyVisibility();
 
+    /// <summary>Credits are the ONE readout shared by both camera views: currency belongs to the
+    /// player, not to whichever vehicle they are looking out of. So this asks ShowShared and stays up
+    /// while its owner is off flying a Support Ship.</summary>
     void ApplyVisibility()
     {
-        if (canvasGO != null)
-            canvasGO.SetActive(GameplayHud.VisibleInScene(SceneManager.GetActiveScene().name));
+        if (canvasGO != null) canvasGO.SetActive(GameplayHud.ShowShared);
     }
 
     void Refresh()

@@ -325,7 +325,12 @@ public class PilotControlCenter : MonoBehaviour
         // Borrow the track's lights and music: the pilot's eyes and ears are out there even though
         // their car is not. The sky is handled per-camera in BindCamera.
         MultiplayerWorld.SetPilotPresentation(true);
-        ShowHint("Stick Fly    B / X Fwd / Back    LT / RT Roll    A Fire    Select Release");
+        // Swap the HUD over with the camera: the car's instruments report on a vehicle parked where the
+        // pilot cannot see it, so they go, and the ship's health pool takes their place. Credits stay -
+        // currency is the player's, not the vehicle's.
+        GameplayHud.SetPiloting(true);
+        SupportShipHealthHUD.Show(pilotedOwner);
+        ShowHint("Stick Fly    B / X Fwd / Back    LT / RT Roll    A Fire    Y Repair    Select Release");
         // A fresh cockpit starts with the guns cold — the A press that TOOK the controls must not also
         // loose a burst on the way in.
         burstFired = Mathf.Max(1, burstRounds);
@@ -417,6 +422,13 @@ public class PilotControlCenter : MonoBehaviour
         float roll = RollAxis(gp.rightTrigger.ReadValue()) - RollAxis(gp.leftTrigger.ReadValue());
         ship.ApplyPilotMove(new Vector3(stick.x, stick.y, depth), roll, Time.deltaTime);
         TickGuns(gp);
+
+        // Y spends one of the OWNER's "Support Ship Repair" items to give their ship hit points back.
+        // The pilot decides WHEN; the owner paid for it. Nothing is validated here - the host checks the
+        // ship is actually damaged and the owner's machine checks the item is actually held, because
+        // neither of those facts exists on this one.
+        if (gp.buttonNorth.wasPressedThisFrame)
+            SupportShipReplicator.RequestRepair(pilotedOwner);
     }
 
     /// <summary>One trigger's contribution to the roll, dead-zoned and rescaled so the usable travel
@@ -459,6 +471,8 @@ public class PilotControlCenter : MonoBehaviour
         SupportShipReplicator.RequestPilot(pilotedOwner, claim: false);
 
         MultiplayerWorld.SetPilotPresentation(false);   // back to the hub they never actually left
+        GameplayHud.SetPiloting(false);
+        SupportShipHealthHUD.Hide();
         RestoreCamera();
         SuppressLocalCarInput(false);
         MenuState.AnyOpen = false;

@@ -405,14 +405,14 @@ public class StoreController : MonoBehaviour
             var bg = rowGO.AddComponent<Image>();
             bg.color = rowNormal;
             StretchTop(rowGO.GetComponent<RectTransform>(),
-                       panelWidth - 40f, rowHeight - 8f, headerHeight + i * rowHeight);
+                       panelWidth - 40f, rowHeight - 6f, headerHeight + i * rowHeight);
 
             // Name (left)
-            var nameTxt = NewText(rowGO.transform, "Name", 34, TextAlignmentOptions.MidlineLeft);
+            var nameTxt = NewText(rowGO.transform, "Name", 28, TextAlignmentOptions.MidlineLeft);
             FillWithPadding(nameTxt.rectTransform, 22f, 22f);
 
             // Price (right)
-            var priceTxt = NewText(rowGO.transform, "Price", 34, TextAlignmentOptions.MidlineRight);
+            var priceTxt = NewText(rowGO.transform, "Price", 28, TextAlignmentOptions.MidlineRight);
             FillWithPadding(priceTxt.rectTransform, 22f, 22f);
 
             rowBackgrounds.Add(bg);

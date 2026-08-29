@@ -1,4 +1,4 @@
-using System.Text;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -19,8 +19,30 @@ public class InventoryView : MonoBehaviour
     public static InventoryView Instance { get; private set; }
 
     private GameObject root;          // canvas root, toggled active
-    private TextMeshProUGUI bodyText;
+    private RectTransform rowsRoot;   // one child row per held item
     private bool isOpen;
+
+    /// <summary>The item whose row carries a health bar. Matches SupportShipAbility.shipItem.</summary>
+    const string ShipItem = "Support Ship";
+
+    const float RowHeight = 46f;
+    const float RowWidth = 620f;
+    const float BarWidth = 190f;
+    const float BarHeight = 18f;
+
+    /// <summary>One built row, kept and reused. The list only ever grows to the largest inventory the
+    /// player has had this session, which is a handful.</summary>
+    private class Row
+    {
+        public GameObject go;
+        public TextMeshProUGUI label;
+        public GameObject bar;          // the whole bar, hidden on rows that are not the ship
+        public RectTransform fill;
+        public Image fillImage;
+        public TextMeshProUGUI barLabel;
+    }
+    private readonly List<Row> rows = new List<Row>();
+    private Row shipRow;                // the row currently showing the ship bar, if any
 
     void Awake()
     {
@@ -49,6 +71,7 @@ public class InventoryView : MonoBehaviour
         // B also closes while open.
         if (isOpen && gp.buttonEast.wasPressedThisFrame)
             Close();
+        else if (isOpen) UpdateShipBar();   // the ship can be taking hits while this is on screen
     }
 
     void Open()
@@ -72,26 +95,73 @@ public class InventoryView : MonoBehaviour
     void Refresh()
     {
         var inv = PlayerInventory.Instance;
-        var sb = new StringBuilder();
+        int used = 0;
+        shipRow = null;
 
-        if (inv != null && inv.Order.Count > 0)
+        if (inv != null)
         {
-            bool any = false;
             foreach (string name in inv.Order)
             {
                 int count = inv.GetCount(name);
                 if (count <= 0) continue;
-                sb.AppendLine($"{name}   x{count}");
-                any = true;
+
+                var row = RowAt(used++);
+                row.label.text = $"{name}   x{count}";
+
+                // Only the Support Ship line carries a bar, and only while a ship is actually up: the
+                // health belongs to the LIVE ship, and a dismissed one is re-summoned at full health, so
+                // a bar sitting on the item itself would be describing something that does not exist.
+                bool isShip = name == ShipItem;
+                if (isShip) shipRow = row;
+                if (row.bar.activeSelf != isShip) row.bar.SetActive(isShip);
             }
-            if (!any) sb.Append("(empty)");
-        }
-        else
-        {
-            sb.Append("(empty)");
         }
 
-        bodyText.text = sb.ToString();
+        if (used == 0)
+        {
+            var row = RowAt(used++);
+            row.label.text = "(empty)";
+            if (row.bar.activeSelf) row.bar.SetActive(false);
+        }
+
+        for (int i = used; i < rows.Count; i++)
+            if (rows[i].go.activeSelf) rows[i].go.SetActive(false);
+
+        UpdateShipBar();
+    }
+
+    /// <summary>Fills the Support Ship row's bar from the LOCAL player's own ship. Run every frame
+    /// while the screen is open, not just on Refresh: the inventory is readable mid-race with a
+    /// teammate flying, so the number can move while the player is looking straight at it.</summary>
+    void UpdateShipBar()
+    {
+        if (shipRow == null) return;
+
+        var ship = SupportShipAbility.Instance != null ? SupportShipAbility.Instance.Ship : null;
+        bool show = ship != null;
+        if (shipRow.bar.activeSelf != show) shipRow.bar.SetActive(show);
+        if (!show) return;
+
+        float fraction = Mathf.Clamp01(ship.HealthFraction);
+        shipRow.fill.sizeDelta = new Vector2(BarWidth * fraction, BarHeight);
+        shipRow.fillImage.color = fraction <= SupportShipHealthHUD.LowFraction
+            ? SupportShipHealthHUD.LowColor
+            : SupportShipHealthHUD.FillColor;
+
+        int max = Mathf.Max(1, ship.maxHits);
+        shipRow.barLabel.text = Mathf.Max(0, max - ship.HitsTaken) + " / " + max;
+    }
+
+    /// <summary>The row at this index, built on first use and reused thereafter.</summary>
+    Row RowAt(int index)
+    {
+        while (rows.Count <= index) rows.Add(BuildRow());
+        var row = rows[index];
+        if (!row.go.activeSelf) row.go.SetActive(true);
+
+        var rt = (RectTransform)row.go.transform;
+        rt.anchoredPosition = new Vector2(0f, -index * RowHeight);
+        return row;
     }
 
     // -------------------------------------------------------
@@ -126,9 +196,9 @@ public class InventoryView : MonoBehaviour
         title.color = Color.white;
         StretchTop(title.rectTransform, 660f, 70f, 24f);
 
-        bodyText = NewText(panel.transform, "Body", 34, TextAlignmentOptions.TopLeft);
-        bodyText.color = Color.white;
-        StretchTop(bodyText.rectTransform, 620f, 420f, 110f);
+        var rowsGO = NewUI("Rows", panel.transform);
+        rowsRoot = rowsGO.GetComponent<RectTransform>();
+        StretchTop(rowsRoot, RowWidth, 420f, 110f);
 
         var hint = NewText(panel.transform, "Hint", 26, TextAlignmentOptions.Bottom);
         hint.text = "Select / B : Close";
@@ -139,6 +209,63 @@ public class InventoryView : MonoBehaviour
         hrt.anchoredPosition = new Vector2(0f, 20f);
 
         root.SetActive(false);
+    }
+
+    /// <summary>Builds one reusable row: a name on the left and a hidden health bar on the right.
+    ///
+    /// Rows exist at all because the list used to be a single text block, and "a bar beside the Support
+    /// Ship item" cannot be positioned against a line inside one - it would mean measuring glyphs. One
+    /// object per item makes the position a fact rather than a calculation, and any future per-item
+    /// adornment becomes trivial.</summary>
+    Row BuildRow()
+    {
+        var row = new Row();
+
+        var go = NewUI("Row", rowsRoot);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 1f);
+        rt.sizeDelta = new Vector2(RowWidth, RowHeight);
+        row.go = go;
+
+        row.label = NewText(go.transform, "Name", 34, TextAlignmentOptions.Left);
+        row.label.color = Color.white;
+        var lrt = row.label.rectTransform;
+        lrt.anchorMin = new Vector2(0f, 0f);
+        lrt.anchorMax = new Vector2(1f, 1f);
+        lrt.offsetMin = Vector2.zero;
+        lrt.offsetMax = Vector2.zero;
+
+        // Right-aligned rather than butted against the name: item names vary in length, and a bar that
+        // slid left and right with them would be far harder to read down the list than a column.
+        var bar = NewUI("Bar", go.transform);
+        var brt = bar.GetComponent<RectTransform>();
+        brt.anchorMin = brt.anchorMax = brt.pivot = new Vector2(1f, 0.5f);
+        brt.sizeDelta = new Vector2(BarWidth, BarHeight);
+        brt.anchoredPosition = Vector2.zero;
+        bar.AddComponent<Image>().color = SupportShipHealthHUD.TrackColor;
+        row.bar = bar;
+
+        // Left-pivoted inside the track, so shrinking drains it from the right rather than both ends.
+        var fillGO = NewUI("Fill", bar.transform);
+        row.fill = fillGO.GetComponent<RectTransform>();
+        row.fill.anchorMin = row.fill.anchorMax = new Vector2(0f, 0.5f);
+        row.fill.pivot = new Vector2(0f, 0.5f);
+        row.fill.sizeDelta = new Vector2(BarWidth, BarHeight);
+        row.fill.anchoredPosition = Vector2.zero;
+        row.fillImage = fillGO.AddComponent<Image>();
+        row.fillImage.color = SupportShipHealthHUD.FillColor;
+
+        row.barLabel = NewText(bar.transform, "BarLabel", 16, TextAlignmentOptions.Center);
+        row.barLabel.color = Color.white;
+        row.barLabel.raycastTarget = false;
+        var qrt = row.barLabel.rectTransform;
+        qrt.anchorMin = Vector2.zero;
+        qrt.anchorMax = Vector2.one;
+        qrt.offsetMin = Vector2.zero;
+        qrt.offsetMax = Vector2.zero;
+
+        bar.SetActive(false);
+        return row;
     }
 
     static GameObject NewUI(string name, Transform parent)

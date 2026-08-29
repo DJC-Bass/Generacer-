@@ -382,6 +382,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PilotControlCenter
   playerTag: Player
   padExitGrace: 0.5
+  rollDeadzone: 0.06
   burstRounds: 3
   burstInterval: 0.06
   teamOnly: 0
@@ -1162,8 +1163,12 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 2100000, guid: 06747d9d7f0c3ab4aab4c7cf073c2026, type: 2}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: enforceCredits
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.size
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].price
@@ -1180,6 +1185,10 @@ PrefabInstance:
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].price
       value: 200
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].price
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].itemName
@@ -1211,11 +1220,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].itemName
-      value: SupportShip
+      value: Support Ship
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].maxOwned
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].itemName
+      value: Support Ship Repair
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].description
@@ -1253,6 +1266,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].grantAmount
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].description
+      value: Pilot can use this item to repair 50% of your Support Ship.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].grantAmount
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6872381292332018610, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
@@ -5610,8 +5631,12 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: enforceCredits
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.size
-      value: 9
+      value: 10
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].price
@@ -5628,6 +5653,10 @@ PrefabInstance:
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].price
       value: 200
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].price
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].itemName
@@ -5663,11 +5692,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].itemName
-      value: SupportShip
+      value: Support Ship
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].maxOwned
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].itemName
+      value: Support Ship Repair
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].maxOwned
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].description
@@ -5705,6 +5742,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].grantAmount
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].description
+      value: Pilot can use this item to repair 50% of your Support Ship.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[9].grantAmount
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6872381292332018610, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
@@ -6437,6 +6482,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PilotControlCenter
   playerTag: Player
   padExitGrace: 0.5
+  rollDeadzone: 0.06
   burstRounds: 3
   burstInterval: 0.06
   teamOnly: 0

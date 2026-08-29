@@ -33,6 +33,7 @@ public class SDCardHUD : MonoBehaviour
     {
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged += Refresh;
+        GameplayHud.OnVisibilityChanged += Refresh;
         Refresh();
     }
 
@@ -40,11 +41,12 @@ public class SDCardHUD : MonoBehaviour
     {
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged -= Refresh;
+        GameplayHud.OnVisibilityChanged -= Refresh;
     }
 
     void Update()
     {
-        if (MenuState.AnyOpen) return;   // don't switch SDs while a menu is open
+        if (MenuState.AnyOpen || GameplayHud.Piloting) return;   // no switching from a menu, or from a ship
         var gp = Gamepad.current;
         if (gp == null) return;
 
@@ -73,6 +75,10 @@ public class SDCardHUD : MonoBehaviour
     void Refresh()
     {
         if (label == null) return;
+
+        // The equipped SD is a CAR ability, and D-pad left/right cycles it - both meaningless from the
+        // cockpit of a Support Ship, where the same stick is flying something else entirely.
+        if (!GameplayHud.ShowCarHud) { label.gameObject.SetActive(false); return; }
 
         var inv = PlayerInventory.Instance;
         var held = (inv != null) ? HeldSDs() : new List<string>();

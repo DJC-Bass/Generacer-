@@ -43,6 +43,10 @@ public class DroneDamageTint : MonoBehaviour
     [Range(0f, 1f)]
     [Tooltip("How completely the flash overrides the model's own colour at its peak.")]
     public float flashStrength = 1f;
+    [Tooltip("Colour flashed when a Support Ship Repair is spent. Blue reads as the OPPOSITE of the " +
+             "red hit flash at a glance, which is the whole job: the two use the same duration and " +
+             "strength, so only the hue tells the pilot whether the ship just lost health or got it back.")]
+    public Color repairColor = new Color(0.2f, 0.62f, 1f, 1f);
 
     [Header("Wreck Tint (downed / ragdolling only)")]
     [Tooltip("Colour the wreck is tinted toward once it goes down. Held for the whole ragdoll, so a " +
@@ -85,9 +89,15 @@ public class DroneDamageTint : MonoBehaviour
     private bool dirty;
     private bool overrideActive;     // our property block is currently installed on the renderers
 
+    /// <summary>The colour the CURRENT flash is using. A flash is punctuation with a meaning attached -
+    /// red for damage, blue for a repair - so the colour has to travel with the flash rather than be
+    /// read from a fixed field when it is drawn.</summary>
+    private Color activeFlashColor;
+
     void Awake()
     {
         block = new MaterialPropertyBlock();
+        activeFlashColor = flashColor;
         CacheSlots();
     }
 
@@ -141,15 +151,24 @@ public class DroneDamageTint : MonoBehaviour
         flashColor = src.flashColor;
         flashDuration = src.flashDuration;
         flashStrength = src.flashStrength;
+        repairColor = src.repairColor;
         downedColor = src.downedColor;
         downedTintStrength = src.downedTintStrength;
         boostEmission = src.boostEmission;
         emissionIntensity = src.emissionIntensity;
     }
 
-    /// <summary>Punches the flash for <see cref="flashDuration"/>. Call once per hit landed.</summary>
-    public void Flash()
+    /// <summary>Punches the damage flash for <see cref="flashDuration"/>. Call once per hit landed.</summary>
+    public void Flash() => Flash(flashColor);
+
+    /// <summary>The same punch in <see cref="repairColor"/>, for health going back IN rather than out.
+    /// Deliberately identical in timing and strength to the damage flash - a repair is the same kind of
+    /// event, and making only the hue differ is what lets a pilot read it without thinking.</summary>
+    public void FlashRepair() => Flash(repairColor);
+
+    void Flash(Color color)
     {
+        activeFlashColor = color;
         flashUntil = Time.time + Mathf.Max(0.01f, flashDuration);
         dirty = true;
     }
@@ -205,7 +224,7 @@ public class DroneDamageTint : MonoBehaviour
             if (slot.hasColor)
             {
                 Color c = Color.Lerp(slot.baseColor, downedColor, tint);
-                c = Color.Lerp(c, flashColor, flash);
+                c = Color.Lerp(c, activeFlashColor, flash);
                 block.SetColor(slot.colorId, c);
             }
 
@@ -213,7 +232,7 @@ public class DroneDamageTint : MonoBehaviour
             {
                 // ADDED to whatever the model already emits, so a drone with glowing panels keeps them
                 // and simply runs hotter when it is hit or wrecked.
-                Color glow = (downedColor * tint + flashColor * flash) * emissionIntensity;
+                Color glow = (downedColor * tint + activeFlashColor * flash) * emissionIntensity;
                 block.SetColor(EmissionId, slot.baseEmission + glow);
             }
 

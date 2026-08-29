@@ -46,6 +46,7 @@ public class TurboJetHUD : MonoBehaviour
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged += Refresh;
         SceneManager.sceneLoaded += OnSceneLoaded;
+        GameplayHud.OnVisibilityChanged += ApplyVisibility;
         Refresh();
         ApplyVisibility();
     }
@@ -55,15 +56,17 @@ public class TurboJetHUD : MonoBehaviour
         if (PlayerInventory.Instance != null)
             PlayerInventory.Instance.OnChanged -= Refresh;
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        GameplayHud.OnVisibilityChanged -= ApplyVisibility;
     }
 
     // Gameplay HUDs are hidden outside gameplay scenes (e.g. the main menu).
     void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ApplyVisibility();
 
+    /// <summary>Turbo and Jet stock belong to the CAR, so this hides while its owner is flying a
+    /// Support Ship - neither can be spent from the cockpit of something else.</summary>
     void ApplyVisibility()
     {
-        if (canvasGO != null)
-            canvasGO.SetActive(GameplayHud.VisibleInScene(SceneManager.GetActiveScene().name));
+        if (canvasGO != null) canvasGO.SetActive(GameplayHud.ShowCarHud);
     }
 
     void Refresh()

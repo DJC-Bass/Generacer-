@@ -166,6 +166,11 @@ public class AudioLibrary : ScriptableObject
              "times before the ship is lost: it is the pilot's only warning that the pool is draining, " +
              "and it wants to read as clearly SURVIVABLE next to Support Ship Destroyed.")]
     public AudioClip supportShipHit;
+    [Tooltip("One-shot (3D) when a 'Support Ship Repair' is spent and the ship gets hit points back. " +
+             "Plays AT THE SHIP on every machine. It is the repair's only outward sign - the damage " +
+             "tint is flash-only, so a patched-up ship looks no different from a pristine one - and it " +
+             "wants to read as clearly RESTORATIVE against Support Ship Hit.")]
+    public AudioClip supportShipRepair;
     [Tooltip("One-shot (3D) when the Support Ship is downed by a collision or a projectile — plays at " +
              "the wreck, so it doubles as a positional cue for where the ship was lost. The FINAL hit " +
              "plays this INSTEAD of Support Ship Hit, never both, so the kill is never muddied.")]

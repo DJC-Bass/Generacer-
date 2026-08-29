@@ -37,7 +37,7 @@ public class SupportShipAbility : MonoBehaviour
              "summoning and dismissing cost nothing. MUST match the store row's granted name EXACTLY " +
              "(inventory keys are only trimmed, not space- or case-folded), so 'SupportShip' and " +
              "'Support Ship' are two different items as far as the inventory is concerned.")]
-    public string shipItem = "SupportShip";
+    public string shipItem = "Support Ship";
     [Tooltip("Layer applied to the summoned ship and all its children. Its collision matrix is what " +
              "decides what can down the ship — see SupportShip. Blank = keep the prefab's layer.")]
     public string shipLayerName = "SupportShip";
