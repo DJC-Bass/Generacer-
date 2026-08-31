@@ -241,14 +241,30 @@ public class NpcReplicator : MonoBehaviour
     {
         if (!clientPuppets.TryGetValue(id, out var puppet) || puppet.go == null) return;
 
+        prefabs.TryGetValue(puppet.prefabKey, out var prefab);
+
         var tint = puppet.go.GetComponent<DroneDamageTint>();
         if (tint == null)
         {
             tint = puppet.go.AddComponent<DroneDamageTint>();
-            if (prefabs.TryGetValue(puppet.prefabKey, out var prefab) && prefab != null)
+            if (prefab != null)
                 tint.CopyTuningFrom(prefab.GetComponentInChildren<DroneDamageTint>(true));
         }
         tint.RegisterHit(hitsTaken, maxHits);
+
+        // ⚠️ The matching half of DronePlane.ShowDamage / ShowDowned. The plane only exists on the host,
+        // so without this a client watching one break up watched it in silence - and the gunner shooting
+        // it is very often the client. Same event, same split: the pool spent is a KILL, anything less
+        // is a hit, exactly as DroneDamageTint reads it.
+        //
+        // Keyed on the prefab actually being a plane so a future damage report from another NPC kind
+        // cannot borrow these sounds. Falloff comes off that prefab: a GigaPlus carries further.
+        var plane = prefab != null ? prefab.GetComponent<DronePlane>() : null;
+        if (plane == null) return;
+
+        Vector3 at = puppet.go.transform.position;
+        if (hitsTaken >= Mathf.Max(1, maxHits)) AudioManager.PlayDronePlaneDestroyed(at, plane.audio3D);
+        else AudioManager.PlayDronePlaneHit(at, plane.audio3D);
     }
 
     /// <summary>Gives a boulder puppet its noise back.

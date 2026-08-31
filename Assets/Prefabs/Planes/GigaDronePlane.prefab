@@ -203,6 +203,13 @@ MonoBehaviour:
   standoffDistance: 240
   chaseHeightOffset: 60
   turnRate: 5
+  audio3D:
+    spatialBlend: 1
+    volume: 0.9
+    minDistance: 300
+    maxDistance: 600
+    rolloffMode: 1
+    dopplerLevel: 0
   projectilePrefab: {fileID: 649201523486564178, guid: b3b3d8bca964f614baebbab975af2b26, type: 3}
   projectileLayerName: Projectile
   muzzleForwardOffset: 80
@@ -212,9 +219,9 @@ MonoBehaviour:
   fireWindowDuration: 0.5
   fireCooldownDuration: 0.5
   leadTarget: 1
-  leadTime: 0.5
+  leadTime: 1
   useProjectileFlightTime: 0
-  maxLeadTime: 1
+  maxLeadTime: 2
   ragdollDuration: 3
   killReward: 25
   maxHits: 20

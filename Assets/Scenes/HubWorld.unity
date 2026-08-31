@@ -1231,8 +1231,26 @@ PrefabInstance:
       value: Support Ship Repair
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[0].description
+      value: The max amount of Turbos you can carry. Turbos must first be crafted.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[1].description
+      value: Each pack allows you to hold 5 more Jets. Jets must first be crafted.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[2].description
+      value: Juice to craft Turbos on the Upgrade Ramp. Press B to use a crafted
+        Turbo.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[3].description
+      value: A bundle of 5 Fuel canisters to craft Jets on the Upgrade Ramp. Use
+        a Jet with A.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].description
-      value: Used to craft Shields in the Upgrade Ramp.
+      value: Used to craft Shields in the Upgrade Ramp. Use a Shield with L3.
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].description
@@ -1244,7 +1262,8 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[6].description
-      value: Can be used to craft Grappling Hooks on the Upgrade Ramp.
+      value: Can be used to craft Grappling Hooks on the Upgrade Ramp. Use with RB
+        and reel in with Y+RT
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[6].grantAmount
@@ -1261,8 +1280,8 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].description
-      value: Summon a Support Ship that a teammate from the Hub can control to assist
-        you
+      value: Summon a Support Ship with Y+L3 that a teammate from the Hub can control
+        to assist you.
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].grantAmount
@@ -5632,7 +5651,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: enforceCredits
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.size
@@ -5707,8 +5726,26 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[0].description
+      value: The max amount of Turbos you can carry. Turbos must first be crafted.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[1].description
+      value: Each pack allows you to hold 5 more Jets. Jets must first be crafted.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[2].description
+      value: Juice to craft Turbos on the Upgrade Ramp. Press B to use a crafted
+        Turbo.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
+      propertyPath: items.Array.data[3].description
+      value: A bundle of 5 Fuel canisters to craft Jets on the Upgrade Ramp. Use
+        a Jet with A.
+      objectReference: {fileID: 0}
+    - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[4].description
-      value: Used to craft Shields in the Upgrade Ramp.
+      value: Used to craft Shields in the Upgrade Ramp. Use a Shield with L3.
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[5].description
@@ -5720,7 +5757,8 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[6].description
-      value: Can be used to craft Grappling Hooks on the Upgrade Ramp.
+      value: Can be used to craft Grappling Hooks on the Upgrade Ramp. Use with RB
+        and reel in with Y+RT
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[6].grantAmount
@@ -5737,8 +5775,8 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].description
-      value: Summon a Support Ship that a teammate from the Hub can control to assist
-        you
+      value: Summon a Support Ship with Y+L3 that a teammate from the Hub can control
+        to assist you.
       objectReference: {fileID: 0}
     - target: {fileID: 4624771126400271512, guid: 435fadad3fe8ece489fbd86f1651ca7b, type: 3}
       propertyPath: items.Array.data[8].grantAmount

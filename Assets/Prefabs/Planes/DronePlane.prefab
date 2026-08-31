@@ -203,6 +203,13 @@ MonoBehaviour:
   standoffDistance: 60
   chaseHeightOffset: 60
   turnRate: 5
+  audio3D:
+    spatialBlend: 1
+    volume: 0.9
+    minDistance: 200
+    maxDistance: 400
+    rolloffMode: 1
+    dopplerLevel: 0
   projectilePrefab: {fileID: 9138268012567457525, guid: 23f9fe9df395b2f41b955e917243a421, type: 3}
   projectileLayerName: Projectile
   muzzleForwardOffset: 4

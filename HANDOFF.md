@@ -1390,6 +1390,9 @@ Each of these makes a finished feature silently do nothing until it's wired:
 - **Vivox must be enabled in the Unity Cloud Dashboard** or voice throws at login and degrades to silence.
 - **Skybox material** must be named with the **`SimpleSkybox` prefix** to receive the per-scene hue
   randomisation; add `Skybox/ProceduralSkyClouds` to Always Included Shaders if it renders in-editor only.
+- **`dronePlaneHit` / `dronePlaneDestroyed`** (2026-08-27) — unassigned. Plus each plane PREFAB
+  (DronePlane / GigaDronePlane / GigaPlusDronePlane) now has its own `audio3D` falloff to set.
+- **`supportShipRepair`** (2026-08-27) — unassigned.
 - **18 unassigned AudioLibrary slots** (shield ×5, grapple ×5, support ship ×8) — see the empty-slots
   section. Two of those support-ship slots are SPLIT PAIRS and are only worth the slot if the clips
   actually differ: the laser impacts (scenery vs. something that reacted) and the ship's own damage
@@ -2169,6 +2172,26 @@ consumable).
   the live inventory for our OWN ship so spending one updates the readout on the very next frame rather
   than at the next heartbeat.
 - The count is drawn in the same blue as the pool it refills.
+- **Neither health bar carries a number** (2026-08-27, both the pilot HUD and the inventory row). The
+  LENGTH already says it, and a figure sitting on a shrinking blue strip only competes with it. The
+  Repairs count is the deliberate exception: a stock has no bar to read, so it has to be a number.
+
+**DRONE PLANE HIT / DESTROYED AUDIO (2026-08-27)** — the same two-flavour split the Support Ship has, and
+for the same reason: the gunner has to hear the difference between "that hurt" and "that was the last
+one". `dronePlaneHit` fires on a survivable hit, `dronePlaneDestroyed` at the ragdoll; the killing blow
+plays only the second, so they never overlap.
+- ⚠️ **The calls go in `ShowDamage` / `ShowDowned`, NOT in `TakeHit`.** Only the host counts hits, so a
+  sound played in `TakeHit` would exist on the host alone. Those two methods are what EVERY machine runs
+  once per event — the host directly, clients via `ApplyNpcDamage` off the replicated damage message —
+  which is what makes a plane audible to the gunner, who is very often a client. Same rule as
+  `SupportShip.ApplyDamageFeedback`.
+- `ApplyNpcDamage` reads the split the way `DroneDamageTint` already does: pool spent = a kill, anything
+  less = a hit. No new message and no protocol change.
+- It is keyed on the prefab actually having a `DronePlane`, so a future damage report from another NPC
+  kind cannot borrow these sounds. (`DroneCar` does not send damage today.)
+- **The falloff lives on the PLANE PREFAB** (`DronePlane.audio3D`), not in the library, following the
+  rule the projectile variants already set: a GigaPlusDronePlane should be heard breaking up from far
+  further away than a plain one, and a shared block could not say that.
 - `Speedometer` hiding (added with the HUD split) was made unconditional: it used to `return` early on a
   null car, which was the one path that never reached the visibility test and could leave the label up.
 - The store item is already authored on both hub StoreControllers (price 100, unlimited, grants 1). Its

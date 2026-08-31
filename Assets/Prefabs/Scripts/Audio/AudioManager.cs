@@ -470,6 +470,11 @@ public class AudioManager : MonoBehaviour
     public static void PlayDroneShoot(Vector3 position, Spatial3DSettings settings = null)              => PlayLibrarySfxAt(Lib != null ? Lib.droneShoot               : null, position, settings);
     public static void PlayProjectileHitEnvironment(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitEnvironment : null, position, settings);
     public static void PlayProjectileHitPlayer(Vector3 position, Spatial3DSettings settings = null)      => PlayLibrarySfxAt(Lib != null ? Lib.projectileHitPlayer      : null, position, settings);
+    // A plane taking damage vs. going down — two flavours for the same reason the Support Ship has two:
+    // the gunner has to hear the difference between "that hurt" and "that was the last one". The caller
+    // passes the falloff off the PLANE prefab, so a GigaPlus carries further than a plain one.
+    public static void PlayDronePlaneHit(Vector3 position, Spatial3DSettings settings = null)            => PlayLibrarySfxAt(Lib != null ? Lib.dronePlaneHit            : null, position, settings);
+    public static void PlayDronePlaneDestroyed(Vector3 position, Spatial3DSettings settings = null)      => PlayLibrarySfxAt(Lib != null ? Lib.dronePlaneDestroyed      : null, position, settings);
 
     // Boost Gate one-shots (3D, at the gate). Optional Spatial3DSettings let the gate prefab tweak
     // the 3D falloff.

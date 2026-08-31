@@ -74,11 +74,13 @@ MonoBehaviour:
   droneShoot: {fileID: 8300000, guid: 3226991065b1c9a4e957b99fd38ccb97, type: 3}
   projectileHitEnvironment: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
   projectileHitPlayer: {fileID: 8300000, guid: 7386e744a71532c4e933902c6eb6851a, type: 3}
+  dronePlaneHit: {fileID: 8300000, guid: 7fc846414dc2dc34eb871cbb97c33238, type: 3}
+  dronePlaneDestroyed: {fileID: 8300000, guid: 3788a813ebb7a154ca9b48f754ddbe65, type: 3}
   sdActivate: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
   sdActiveLoop: {fileID: 0}
   sdDeactivate: {fileID: 8300000, guid: 503158f0b57e3a9499f29e33022d0391, type: 3}
   shieldActivate: {fileID: 8300000, guid: 496d67392db98e146970006b80840af5, type: 3}
-  shieldActiveLoop: {fileID: 8300000, guid: 38f994c7e40032e438d4148ba8f01be3, type: 3}
+  shieldActiveLoop: {fileID: 0}
   shieldDeactivate: {fileID: 8300000, guid: 503158f0b57e3a9499f29e33022d0391, type: 3}
   shieldAudio3D:
     spatialBlend: 1
@@ -101,6 +103,7 @@ MonoBehaviour:
   supportShipLoop: {fileID: 0}
   supportShipDeactivate: {fileID: 8300000, guid: f1cb03db9e893644dbda47a22e285c4d, type: 3}
   supportShipHit: {fileID: 8300000, guid: 3c2715988bb70ee41aff3fa09a3b4db6, type: 3}
+  supportShipRepair: {fileID: 8300000, guid: e1e78a190927307468b2e0e9b2c1a222, type: 3}
   supportShipDestroyed: {fileID: 8300000, guid: c986be7241ce0b445bd24965d29866dd, type: 3}
   supportShipLaserFire: {fileID: 8300000, guid: 651fc93acbe86984595c13d4924982b9, type: 3}
   supportShipLaserHitEnvironment: {fileID: 8300000, guid: 3e1625d8084f82d40af45aacc46a0142, type: 3}

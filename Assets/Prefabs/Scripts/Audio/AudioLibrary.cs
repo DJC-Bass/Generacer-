@@ -118,6 +118,15 @@ public class AudioLibrary : ScriptableObject
     public AudioClip projectileHitEnvironment;
     [Tooltip("Played (3D) when the DronePissBall projectile hits the Player.")]
     public AudioClip projectileHitPlayer;
+    [Tooltip("One-shot (3D, at the plane) each time a Drone Plane takes a NON-FATAL hit and survives " +
+             "it. Like the Support Ship pair, this is the gunner's only sign that the pool is draining " +
+             "- the plane does not stay tinted - so it wants to read as clearly SURVIVABLE next to " +
+             "Drone Plane Destroyed. Shared by every plane variant; each PREFAB carries its own falloff.")]
+    public AudioClip dronePlaneHit;
+    [Tooltip("One-shot (3D) when a Drone Plane is downed and goes into its ragdoll. Plays at the wreck, " +
+             "so it doubles as a positional cue for where it fell. The FINAL hit plays THIS and not " +
+             "Drone Plane Hit, so the two never overlap.")]
+    public AudioClip dronePlaneDestroyed;
 
     [Header("SD Ability SFX (uniform across all SDs)")]
     [Tooltip("One-shot (3D, at the car) when an SD ability is activated.")]

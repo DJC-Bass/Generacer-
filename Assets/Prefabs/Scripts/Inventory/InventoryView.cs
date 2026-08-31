@@ -39,7 +39,6 @@ public class InventoryView : MonoBehaviour
         public GameObject bar;          // the whole bar, hidden on rows that are not the ship
         public RectTransform fill;
         public Image fillImage;
-        public TextMeshProUGUI barLabel;
     }
     private readonly List<Row> rows = new List<Row>();
     private Row shipRow;                // the row currently showing the ship bar, if any
@@ -147,9 +146,6 @@ public class InventoryView : MonoBehaviour
         shipRow.fillImage.color = fraction <= SupportShipPilotHUD.LowFraction
             ? SupportShipPilotHUD.LowColor
             : SupportShipPilotHUD.FillColor;
-
-        int max = Mathf.Max(1, ship.maxHits);
-        shipRow.barLabel.text = Mathf.Max(0, max - ship.HitsTaken) + " / " + max;
     }
 
     /// <summary>The row at this index, built on first use and reused thereafter.</summary>
@@ -254,15 +250,6 @@ public class InventoryView : MonoBehaviour
         row.fill.anchoredPosition = Vector2.zero;
         row.fillImage = fillGO.AddComponent<Image>();
         row.fillImage.color = SupportShipPilotHUD.FillColor;
-
-        row.barLabel = NewText(bar.transform, "BarLabel", 16, TextAlignmentOptions.Center);
-        row.barLabel.color = Color.white;
-        row.barLabel.raycastTarget = false;
-        var qrt = row.barLabel.rectTransform;
-        qrt.anchorMin = Vector2.zero;
-        qrt.anchorMax = Vector2.one;
-        qrt.offsetMin = Vector2.zero;
-        qrt.offsetMax = Vector2.zero;
 
         bar.SetActive(false);
         return row;

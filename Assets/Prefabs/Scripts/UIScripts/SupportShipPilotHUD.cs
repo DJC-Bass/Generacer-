@@ -56,7 +56,6 @@ public class SupportShipPilotHUD : MonoBehaviour
     private GameObject canvasGO;
     private RectTransform fill;
     private Image fillImage;
-    private TextMeshProUGUI label;
     private TextMeshProUGUI repairsLabel;
     private SupportShip ship;
     private ulong ownerId;
@@ -121,11 +120,6 @@ public class SupportShipPilotHUD : MonoBehaviour
         fill.sizeDelta = new Vector2(BarWidth * fraction, BarHeight);
         fillImage.color = fraction <= LowFraction ? LowColor : FillColor;
 
-        // The number as well as the length. A pool of five is small enough that "two hits left" is a
-        // decision a pilot makes, and a bar alone makes them estimate it.
-        int max = Mathf.Max(1, ship.maxHits);
-        label.text = Mathf.Max(0, max - ship.HitsTaken) + " / " + max;
-
         // ⚠️ The OWNER's stock, not ours — Y spends from their inventory, so our own count would be a
         // confident number with no bearing on whether the next press does anything.
         // "Repairs: N" — the same shape as Turbo / Jet / Shield / Grapple / SD, since this sits in the
@@ -160,15 +154,9 @@ public class SupportShipPilotHUD : MonoBehaviour
         fillImage = fill.gameObject.AddComponent<Image>();
         fillImage.color = FillColor;
 
-        // Centred ON the bar, so it stays readable whatever the fill is doing behind it.
-        var labelRect = NewRect("Label", track, BarWidth, BarHeight);
-        labelRect.anchorMin = labelRect.anchorMax = labelRect.pivot = new Vector2(0.5f, 0.5f);
-        labelRect.anchoredPosition = Vector2.zero;
-        label = labelRect.gameObject.AddComponent<TextMeshProUGUI>();
-        label.fontSize = 18f;
-        label.color = Color.white;
-        label.alignment = TextAlignmentOptions.Center;
-        label.raycastTarget = false;
+        // No numeric readout on the bar: the LENGTH already says it, and a figure sitting on top of a
+        // shrinking blue strip only competes with it. The Repairs count below is a different case — a
+        // stock has no bar to read, so it has to be a number.
 
         // Bottom-left: the Repairs the OWNER is carrying, which are the ones this pilot can spend.
         var count = NewRect("Repairs", canvasGO.transform, CountWidth, 64f);

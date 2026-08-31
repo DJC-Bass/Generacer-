@@ -78,6 +78,13 @@ public class DronePlane : MonoBehaviour
     [Tooltip("How fast the plane swings to face its heading (higher = tighter turns).")]
     public float turnRate = 3.5f;
 
+    [Header("Audio")]
+    [Tooltip("3D falloff for this plane's own damage and destruction one-shots. Lives on the PREFAB " +
+             "rather than in the AudioLibrary because the variants are not the same size: a " +
+             "GigaPlusDronePlane should be heard going down from far further away than a plain one, " +
+             "exactly as each projectile variant carries its own range.")]
+    public Spatial3DSettings audio3D = new Spatial3DSettings();
+
     [Header("Shooting")]
     [Tooltip("Projectile prefab to fire. Same one the DroneCars use.")]
     public GameObject projectilePrefab;
@@ -613,8 +620,14 @@ public class DronePlane : MonoBehaviour
         else Crash();
     }
 
-    /// <summary>Flashes this plane's own copy. Cached because a 10-hit plane calls it nine times and
-    /// GetComponentInChildren is not free.
+    /// <summary>Flashes this plane's own copy and sounds the hit. Cached because a 10-hit plane calls
+    /// it nine times and GetComponentInChildren is not free.
+    ///
+    /// ⚠️ The AUDIO belongs here rather than in TakeHit, and the reason is the same one the Support Ship
+    /// pair documents: only the host counts hits, so a sound played in TakeHit would exist on the host
+    /// alone. This method is what EVERY machine runs once per hit - the host directly, the clients from
+    /// the replicated damage event - which is what makes the plane audible to the gunner who is very
+    /// often one of them.
     ///
     /// The component is ADDED if the prefab doesn't carry one, so damage feedback needs no editor
     /// wiring to work at all — put a DroneDamageTint on the prefab only when you want to TUNE it, and
@@ -627,6 +640,7 @@ public class DronePlane : MonoBehaviour
             if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
         }
         damageTint.RegisterHit(hitsTaken, Mathf.Max(1, maxHits));
+        AudioManager.PlayDronePlaneHit(transform.position, audio3D);
     }
 
     /// <summary>Paints the wreck red and holds it there for the ragdoll, on every machine.
@@ -644,6 +658,7 @@ public class DronePlane : MonoBehaviour
             if (damageTint == null) damageTint = gameObject.AddComponent<DroneDamageTint>();
         }
         damageTint.MarkDowned();
+        AudioManager.PlayDronePlaneDestroyed(transform.position, audio3D);
         NpcReplicator.SendNpcDamage(gameObject, max, max);
     }
 
