@@ -645,6 +645,12 @@ public class MainMenuController : MonoBehaviour
         // but not the composite parent itself.
         foreach (var action in map.actions)
         {
+            // Self-Level was removed from the car (2026-08-27). The ACTION is left in the input asset -
+            // deleting it would mean regenerating GeneracerControls.cs, and keeping it costs nothing -
+            // but nothing reads it any more, so offering a rebind row would be offering a control that
+            // does not exist.
+            if (action.name == "SelfLevel") continue;
+
             for (int i = 0; i < action.bindings.Count; i++)
             {
                 var b = action.bindings[i];
@@ -695,7 +701,6 @@ public class MainMenuController : MonoBehaviour
         {
             case "SD":        return "SD Card";
             case "RearView":  return "Rear View";
-            case "SelfLevel": return "Self-Level";
             default:          return actionName;
         }
     }

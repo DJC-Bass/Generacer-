@@ -191,12 +191,6 @@ public class CarController : MonoBehaviour
              "0 = no air drag.")]
     public float airDrag = 0.5f;
 
-    [Header("Airborne Self-Leveling (manual — hold the Self-Level button)")]
-    [Tooltip("How quickly the car's pitch and roll return to level while the Self-Level button " +
-             "(default Y) is HELD in the air (degrees/second). Purely a re-orientation aid — no air " +
-             "ability depends on it. Releasing early stops the level mid-way; reaching fully level " +
-             "ends the hold (press again next time).")]
-    public float airLevelingSpeed = 90f;
     [Header("Turbo Boost")]
     [Tooltip("Multiplier applied to top speed and acceleration during turbo.")]
     public float turboMultiplier = 2f;
@@ -292,8 +286,6 @@ public class CarController : MonoBehaviour
     private float turboCooldownTimer = 0f;
     private bool jumpRequested;
     private float jumpRayTimer;            // >0 = use the shortened jump suspension ray
-    private bool selfLevelHeld;            // Self-Level button (Y) is currently held
-    private bool selfLevelArmed;           // the hold is live: set by a fresh press, cleared on release
                                            // or once the car reaches fully level (press again to re-arm)
     private bool isDrifting;
     private bool loopFlag;                // "in a loop" state for the camera (hysteresis)
@@ -436,8 +428,6 @@ public class CarController : MonoBehaviour
         if (InputSuppressed)
         {
             throttleInput = steerInput = manualPitchInput = manualYawInput = brakeInput = 0f;
-            selfLevelHeld = false;
-            selfLevelArmed = false;
 
             UpdateWheelMeshes();
             UpdateTurboTrails();
@@ -458,13 +448,6 @@ public class CarController : MonoBehaviour
         // fire a jump (and spend a Jet).
         if (!MenuState.AnyOpen && controls.Driving.Jump.triggered && !BothTriggersHeld())
             jumpRequested = true;
-
-        // Y (Self-Level, rebindable) = hold to manually level the car in the air. A fresh press ARMS
-        // the hold; releasing disarms it (leveling stops mid-way until pressed again). Reaching fully
-        // level also disarms — handled in UpdateManualSelfLevel — so holding past level does nothing.
-        selfLevelHeld = !MenuState.AnyOpen && controls.Driving.SelfLevel.IsPressed();
-        if (!MenuState.AnyOpen && controls.Driving.SelfLevel.triggered) selfLevelArmed = true;
-        if (!selfLevelHeld) selfLevelArmed = false;
 
         UpdateWheelMeshes();
         UpdateTurboTrails();
@@ -572,18 +555,18 @@ public class CarController : MonoBehaviour
         }
         else if (inRealAir)
         {
-            // Airborne past the grace window — gravity rules; the player gets air control.
-            // Self-leveling is MANUAL: it only runs while the Self-Level button is held (and the
-            // hold is armed). Manual rotation (right stick: pitch up/down, yaw left/right, roll
-            // left/right while holding LT) is available immediately; when leveling is active it
-            // takes priority so the two don't fight over the car's rotation. Neither active =
-            // normal physics on the car's rotation.
-            if (!UpdateManualSelfLevel())
-                ApplyManualAirRotation();
+            // Airborne past the grace window — gravity rules; the player gets air control, entirely on
+            // the right stick: pitch up/down, yaw left/right, roll left/right while holding LT. With no
+            // stick input the car's rotation is left to normal physics.
+            //
+            // There used to be a HOLD-Y self-level here as well. It was removed (2026-08-27) for two
+            // reasons: manual rotation already covers everything it did, and Y is the grapple's reel
+            // modifier — so every attempt to reel in while airborne also snapped the car flat.
+            ApplyManualAirRotation();
 
             // Air abilities run at ANY orientation past the grace period (the drift math is lossless
             // in every pose — even sideways or inverted): air drift slides the car like a steady
-            // side-wind, and braking dives. Holding Self-Level (Y) is purely cosmetic re-orientation.
+            // side-wind, and braking dives.
             ApplyAirDrift();
             ApplyAirBrakeGravity();
 
@@ -1013,23 +996,6 @@ public class CarController : MonoBehaviour
     }
 
     /// <summary>
-    /// MANUAL self-leveling: while the Self-Level button (Y) is held — and the hold is armed by a
-    /// fresh press — pitch and roll move toward 0. Releasing early stops the level mid-way (normal
-    /// physics resume; press again to continue). Reaching FULLY level consumes the hold, so keeping
-    /// the button down does nothing further — a new press is needed once the car tilts again (a
-    /// press made while already level is consumed the same way). Returns true if it levelled this
-    /// step (so manual rotation can yield for the frame).
-    /// </summary>
-    bool UpdateManualSelfLevel()
-    {
-        if (!selfLevelArmed || !selfLevelHeld) return false;
-        if (IsFullyLevel()) { selfLevelArmed = false; return false; }   // level — consume the hold
-
-        ApplyAirLeveling();
-        return true;
-    }
-
-    /// <summary>
     /// Manual air rotation on the right stick, available for the whole post-grace airtime — all
     /// three LOCAL axes:
     ///   • up/down         → PITCH around local X;
@@ -1064,35 +1030,6 @@ public class CarController : MonoBehaviour
             rot = Quaternion.AngleAxis(-manualYawInput * manualRollSpeed * Time.fixedDeltaTime, transform.forward) * rot;
         rb.MoveRotation(rot);
         rb.angularVelocity = Vector3.up * rb.angularVelocity.y;
-    }
-
-    void ApplyAirLeveling()
-    {
-        Vector3 currentEuler = transform.eulerAngles;
-        float currentPitch = NormalizeAngle(currentEuler.x);
-        float currentRoll = NormalizeAngle(currentEuler.z);
-
-        float newPitch = Mathf.MoveTowardsAngle(currentPitch, 0f, airLevelingSpeed * Time.fixedDeltaTime);
-        float newRoll = Mathf.MoveTowardsAngle(currentRoll, 0f, airLevelingSpeed * Time.fixedDeltaTime);
-
-        rb.MoveRotation(Quaternion.Euler(newPitch, currentEuler.y, newRoll));
-        rb.angularVelocity = Vector3.up * rb.angularVelocity.y;
-    }
-
-    /// <summary>Fully level = pitch AND roll at 0 (tiny epsilon for float/euler round-trips) — the
-    /// manual self-level's finish line.</summary>
-    bool IsFullyLevel()
-    {
-        float pitch = Mathf.Abs(NormalizeAngle(transform.eulerAngles.x));
-        float roll = Mathf.Abs(NormalizeAngle(transform.eulerAngles.z));
-        return pitch < 0.05f && roll < 0.05f;
-    }
-
-    float NormalizeAngle(float angle)
-    {
-        angle %= 360f;
-        if (angle > 180f) angle -= 360f;
-        return angle;
     }
 
     /// <summary>

@@ -1095,6 +1095,18 @@ Code-built on the existing `MainMenuCanvas` (no scene setup). `MainMenuControlle
   long-lived instance. **Pattern for adding another rebindable action later:** add it to the `.inputactions`
   + the `.cs` embedded JSON/accessors, read it via `controls.Driving.<Name>`, and it auto-appears in the
   CONTROLS list.
+- ⚠️ **SELF-LEVELLING WAS REMOVED ENTIRELY (2026-08-27).** Everything in the entry below is history —
+  the car no longer levels itself in the air at all. Two reasons, and the second is the one that forced it:
+  manual air rotation already does everything the level did, and **Y is also the grapple’s reel modifier**
+  (`GrappleHook.HandleReel` needs RT + Y held), so every attempt to reel in while airborne also snapped
+  the car flat. Deleted: `selfLevelHeld` / `selfLevelArmed`, `UpdateManualSelfLevel`, `ApplyAirLeveling`,
+  `IsFullyLevel`, `NormalizeAngle` (its only callers went with it) and the `airLevelingSpeed` tuning. The
+  airborne branch now calls `ApplyManualAirRotation` unconditionally.
+  - The `SelfLevel` ACTION is still in the input asset: deleting it would mean regenerating
+    `GeneracerControls.cs`, and leaving it costs nothing. But the Controls list now SKIPS it
+    (`MainMenuController`), because offering a rebind row for a control that does nothing is worse than
+    not listing it. Both `FriendlyActionName` cases were dropped too.
+  - If it is ever wanted back, it needs a button that is not Y.
 - **Airborne self-leveling is now MANUAL (hold Self-Level, default Y/buttonNorth).** Added a `SelfLevel`
   button action to the `Driving` map (both `.inputactions` + generated `.cs`, same pattern as SD; shows as
   "Self-Level" in both Controls screens). `CarController` changes: `airDriftGracePeriod` renamed

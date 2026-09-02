@@ -40,7 +40,6 @@ public static class SettingsUI
         {
             case "SD":        return "SD Card";
             case "RearView":  return "Rear View";
-            case "SelfLevel": return "Self-Level";
             default:          return actionName;
         }
     }
