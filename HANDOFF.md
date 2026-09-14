@@ -116,6 +116,30 @@ through URP's Default Volume Profile), and SMAA to match the car cameras.
 - `trackSkybox` must be assigned per TV (same `SimpleSkybox.mat` the TrackScene uses). It warns once if
   blank rather than silently showing the hub's sky.
 
+**WINNING ENDS THE SESSION THROUGH A PORTAL (2026-09-14).** The victory ending used to leave the hub
+with no way out: the banner faded and the run simply sat there. Now the boost gate and hub portal spawn
+one last time — the same `SpawnPortalAndGate()` the Drone ending uses — and driving into that portal
+ends the run: **to the LOBBY in multiplayer, to the main menu solo**.
+- ⚠️ **This portal does the OPPOSITE of every other one.** `PortalTrigger.OnTriggerEnter` checks
+  `GameLoopManager.PlayerWinActive` FIRST, before `NotifyEnteredTrack` — there is no track left to
+  enter, and notifying would be recording a round entry that never happens. Everything downstream (the
+  MP teleport, the solo scene load, the Drone-ending `ClipperEnding` escape) is left untouched.
+- It reuses `TeardownToLobby`, so **a host driving through takes everyone with them** even if teammates
+  are still pottering around the hub — the standing rule, for the standing reason: the host runs the
+  simulation, and a hub they have left is frozen for everyone else. See `GNRC_TO_LOBBY` below.
+- ⚠️ **`DespawnPortalAndGate` now refuses while the victory sequence is running.** In multiplayer
+  "the round ended" and "your team won" are separate messages (`GNRC_ENDING` is its own), and nothing
+  orders them — so a late round-end despawn could otherwise delete the only way out of a won run.
+  Guarding there rather than trying to order the two makes the spawn order-INDEPENDENT: arrive early
+  and the despawn refuses, arrive late and `BeginPlayerVictory` just spawns it again.
+- The gate and portal spawn IMMEDIATELY, not after the banner: a player who drives straight at the exit
+  should never be waiting on a piece of presentation.
+- Re-entry blocking came free — `MultiplayerWorld.ApplyEnding` calls `FlagRunEnding()` before it
+  branches on which ending it is, so a victory already shut the lobby door the same way a loss does.
+- Solo tears the run down exactly as the exit pad does (`GameLoopManager.EndRun()` +
+  `PlayerInventory.ResetToStarting()`), so the next game starts clean instead of inheriting a finished
+  one’s inventory and loop state. `PortalTrigger.mainMenuSceneName` is the destination.
+
 **GAME OVER RETURNS TO THE LOBBY, NOT THE MAIN MENU (2026-08-27).** Losing a run no longer costs the
 room. A player killed by a DronePissBall during the Drone ending — and anyone driving onto the hub's
 MAIN MENU pad — lands back in the lobby ROOM, still in the session, on the same team, ready to go
@@ -151,8 +175,9 @@ again the moment the host starts another run.
   - Broadcast from `TeardownToLobby` **before** `ReleaseWorld`, which unregisters the handler it rides
     on. NGO itself stays up (only `LeaveSessionAsync` shuts it down), so the message lands and everyone
     regroups in the same room.
-  - Applies to BOTH host exits: the DronePissBall game-over and the exit pad. A host taking the pad
-    mid-race therefore ends the run for the room, which is right for the same reason.
+  - Applies to EVERY host exit: the DronePissBall game-over, the exit pad, and (2026-09-14) the
+    VICTORY portal. A host taking any of them ends the run for the room, which is right for the same
+    reason each time.
   - A CLIENT leaving is unchanged and still solitary — the run continues without them, and (outside an
     ending) their room offers ENTER GAME so they can come back.
 - **The exit pad is not hub-specific.** `MainMenuReturnTrigger` gates on the player TAG only, with no

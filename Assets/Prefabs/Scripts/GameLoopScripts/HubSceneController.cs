@@ -7,7 +7,8 @@ using UnityEngine.UI;
 /// Manages hub-side reactions to GameLoopManager events. Spawns and
 /// despawns the boost gate and portal as round phases change. Also runs the two game-over endings:
 /// the Drone ending (portal spawns and a relentless drone swarm chases the player) and the player
-/// Victory ending (no portal; a "BOTS DEFEATED" banner flashes centre-screen, then fades).
+/// Victory ending (a "BOTS DEFEATED" banner flashes centre-screen and fades, and the portal spawns one
+/// last time as the way OUT of the run).
 /// </summary>
 public class HubSceneController : MonoBehaviour
 {
@@ -115,6 +116,13 @@ public class HubSceneController : MonoBehaviour
 
     void DespawnPortalAndGate()
     {
+        // ⚠️ The victory portal is NOT the round portal. Once the run is won it is the only way out, so
+        // a late round-end despawn must never take it away — in multiplayer "the round ended" and "your
+        // team won" are two separate messages (GNRC_ENDING is its own), and nothing guarantees which
+        // one lands first. Guarding here rather than ordering them makes the spawn order-independent:
+        // arrive early and this refuses, arrive late and BeginPlayerVictory simply spawns it again.
+        if (playerVictoryStarted) return;
+
         // Null the refs after destroying so a same-frame re-spawn (e.g. the Drone ending firing
         // right after a hub timeout despawns the portal) isn't blocked by the stale reference.
         if (spawnedBoostGate != null) { Destroy(spawnedBoostGate); spawnedBoostGate = null; }
@@ -212,8 +220,8 @@ public class HubSceneController : MonoBehaviour
     }
 
     // -------------------------------------------------------
-    //  Player victory ending — the player collected enough SDs to win. The portal never spawns;
-    //  we flash a centre-screen "BOTS DEFEATED" banner that holds, then fades away.
+    //  Player victory ending — the player collected enough SDs to win. A centre-screen banner holds
+    //  and fades, and the boost gate + portal spawn one last time as the way OUT of the run.
     // -------------------------------------------------------
 
     void BeginPlayerVictory()
@@ -221,8 +229,16 @@ public class HubSceneController : MonoBehaviour
         if (playerVictoryStarted) return;
         playerVictoryStarted = true;
 
-        Debug.Log("[HubSceneController] Player victory — BOTS DEFEATED. Portal stays down.");
+        Debug.Log("[HubSceneController] Player victory — BOTS DEFEATED. Final portal is up.");
         AudioManager.RefreshSceneMusic();            // swap the hub theme for the player-victory track
+
+        // The gate and portal come back for the last time (2026-09-14), spawned the same way the Drone
+        // ending spawns them. This one is the EXIT, not an entrance: PortalTrigger reads the same
+        // PlayerWinActive flag and ends the session instead of starting a round. Spawned immediately
+        // rather than after the banner, so a player who drives straight at it is never made to wait on
+        // a piece of presentation.
+        SpawnPortalAndGate();
+
         StartCoroutine(ShowVictoryBanner());
     }
 

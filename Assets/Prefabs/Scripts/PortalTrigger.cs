@@ -17,6 +17,12 @@ public class PortalTrigger : MonoBehaviour
     public float activationDelay = 0.5f;      // Seconds before scene loads (feels better)
     public bool portalActive = true;          // Can disable portal via other scripts
 
+    [Header("Player Victory Exit")]
+    [Tooltip("Scene loaded when a SINGLE-PLAYER run is won and the player drives into this portal. " +
+             "Multiplayer ignores this and returns to the lobby instead, so the team can start " +
+             "another session straight away.")]
+    public string mainMenuSceneName = "MainMenu";
+
     [Header("Drone Ending Secret Exit")]
     [Tooltip("If the player reaches this portal DURING the game-over Drone ending, they escape to " +
              "this secret scene (loaded by name) instead of loading the normal track.")]
@@ -51,10 +57,23 @@ public class PortalTrigger : MonoBehaviour
 
     void OnTriggerEnter(Collider other)
     {
+        var gm = GameLoopManager.Instance;
+
+        // ⚠️ VICTORY: this is the last portal of the run and it does the OPPOSITE of every other one —
+        // it ends the session rather than starting a round. Handled before anything else, and
+        // NotifyEnteredTrack is skipped along with it: there is no track left to enter.
+        if (gm != null && gm.PlayerWinActive)
+        {
+            if (!portalActive || isLoading || !other.CompareTag("Player")) return;
+            isLoading = true;
+            StartCoroutine(LeaveAfterVictory());
+            return;
+        }
+
         // Inside OnTriggerEnter, after confirming the player entered the portal,
         // before SceneManager.LoadScene
-        if (GameLoopManager.Instance != null)
-            GameLoopManager.Instance.NotifyEnteredTrack();
+        if (gm != null)
+            gm.NotifyEnteredTrack();
 
         // Only react to the player car, and only once
         if (!portalActive || isLoading) return;
@@ -85,6 +104,39 @@ public class PortalTrigger : MonoBehaviour
         if (MultiplayerWorld.IsMultiplayerGame)
             MultiplayerWorld.Instance.EnterTrackLocally();
         isLoading = false;   // the portal persists; the same player may re-enter after returning
+    }
+
+    /// <summary>The run is over and WON: leave, and set up for the next one.
+    ///
+    /// Multiplayer returns to the LOBBY rather than the main menu, so the team can start another
+    /// session immediately instead of rebuilding a room from scratch — the same destination the exit
+    /// pad and the Drone-ending boot use.
+    ///
+    /// ⚠️ When the HOST goes through, TeardownToLobby pulls EVERYONE back with them, even players still
+    /// driving around the hub. That is not a courtesy: the host runs the entire simulation, so a hub
+    /// they have left is a frozen one nobody else can act in or escape from. Same rule as a host
+    /// leaving by any other route.</summary>
+    IEnumerator LeaveAfterVictory()
+    {
+        // The same beat the other branches use, so the portal still "activates" rather than cutting.
+        yield return new WaitForSeconds(activationDelay);
+
+        if (MultiplayerWorld.IsMultiplayerGame)
+        {
+            MultiplayerWorld.Instance.TeardownToLobby("RUN COMPLETE");
+            yield break;
+        }
+
+        // Solo: tear the run down like the exit pad does, so the NEXT game starts clean rather than
+        // inheriting a finished one's inventory and loop state.
+        AudioManager.ArmPortalExit();
+        GameLoopManager.EndRun();
+        if (PlayerInventory.Instance != null) PlayerInventory.Instance.ResetToStarting();
+
+        if (!string.IsNullOrEmpty(mainMenuSceneName) && Application.CanStreamedLevelBeLoaded(mainMenuSceneName))
+            SceneManager.LoadScene(mainMenuSceneName);
+        else
+            Debug.LogWarning($"[PortalTrigger] Main menu scene '{mainMenuSceneName}' isn't in Build Settings.");
     }
 
     IEnumerator LoadTrackScene()
