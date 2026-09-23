@@ -8,6 +8,9 @@
 //
 // Draw order is sky → stars → sun → clouds, so clouds correctly occlude both the stars and the sun.
 //
+// The sky gradient has THREE stops — horizon, upper sky (_SkyTint), and zenith — so it darkens
+// overhead the way the real one does.
+//
 // It deliberately exposes _SkyTint and _GroundColor with the same names the built-in shader uses, so
 // SkyboxHueRandomizer can hue-shift it exactly like the existing SimpleSkybox (see that script — it
 // matches on the material NAME starting with "SimpleSkybox").
@@ -16,7 +19,9 @@ Shader "Skybox/ProceduralSkyClouds"
     Properties
     {
         [Header(Sky)]
-        _SkyTint("Sky Tint (zenith)", Color) = (0.34, 0.55, 0.9, 1)
+        _SkyTint("Sky Tint (upper sky)", Color) = (0.34, 0.55, 0.9, 1)
+        _ZenithColor("Zenith Color (straight overhead)", Color) = (0.17, 0.3, 0.62, 1)
+        _ZenithFalloff("Zenith Falloff (higher = tighter overhead)", Range(0.5, 8)) = 2.5
         _HorizonColor("Horizon Color", Color) = (0.78, 0.87, 0.96, 1)
         _GroundColor("Ground Color", Color) = (0.369, 0.349, 0.341, 1)
         _AtmosphereThickness("Atmosphere Thickness", Range(0.1, 5)) = 1
@@ -99,6 +104,8 @@ Shader "Skybox/ProceduralSkyClouds"
 
             CBUFFER_START(UnityPerMaterial)
                 half4 _SkyTint;
+                half4 _ZenithColor;
+                half  _ZenithFalloff;
                 half4 _HorizonColor;
                 half4 _GroundColor;
                 half  _AtmosphereThickness;
@@ -264,6 +271,18 @@ Shader "Skybox/ProceduralSkyClouds"
                 float atmo = max(_AtmosphereThickness, 0.01);
                 float horizonFalloff = pow(saturate(1.0 - saturate(up)), 6.0 / atmo);
                 float3 sky = lerp(_SkyTint.rgb, _HorizonColor.rgb, horizonFalloff);
+
+                // A real sky is not one tint from horizon to overhead: looking straight up is looking
+                // through the LEAST atmosphere, so less light scatters back and the top of the dome
+                // goes deeper (and usually a touch cooler). That is the darkening the built-in
+                // procedural skybox has and this one was missing.
+                //
+                // Layered OVER the two-stop gradient rather than folded into it, deliberately: the
+                // horizon end keeps its existing behaviour untouched, and setting _ZenithColor equal to
+                // _SkyTint reproduces the old sky exactly. The exponent only reaches 1 at the exact
+                // zenith, so the blend arrives gradually however tight the falloff is set.
+                float zenithFalloff = pow(saturate(up), max(_ZenithFalloff, 0.01));
+                sky = lerp(sky, _ZenithColor.rgb, zenithFalloff);
 
                 // ---- Ground texture ------------------------------------------------
                 // The same cloud noise projected onto the ground plane, but with NO time term, so it's

@@ -116,6 +116,49 @@ through URP's Default Volume Profile), and SMAA to match the car cameras.
 - `trackSkybox` must be assigned per TV (same `SimpleSkybox.mat` the TrackScene uses). It warns once if
   blank rather than silently showing the hub's sky.
 
+**START-MENU QUIT GOES TO THE LOBBY IN MULTIPLAYER (2026-09-20).** It used to call
+`LeaveSessionAsync()` and then `TeardownToMenu` — so the pause menu’s QUIT was a SESSION quit, and for
+a HOST that deletes the room out from under everybody. The one button most likely to be pressed
+mid-run was also the one most likely to end the evening. It now calls `TeardownToLobby` instead.
+- Solo is unchanged: `EndRun()` + inventory reset + load the main menu.
+- ⚠️ **`LeaveSessionAsync` is gone from this path entirely.** Leaving for real is the lobby’s own BACK
+  button, one screen further out — the same split the hub exit pad already draws between "done with
+  this run" and "done with these people".
+- A HOST quitting still pulls everyone to the lobby (`TeardownToLobby` broadcasts `GNRC_TO_LOBBY`),
+  which is unchanged and right for the standing reason: the host runs the whole simulation, so a world
+  they have left is frozen for everyone else.
+- **The LABEL says which one it is**: "QUIT TO LOBBY" in a session, plain "QUIT" solo. A bare QUIT
+  over the lobby behaviour reads as "leave these people", the opposite of what happens — and that
+  reading is exactly what would stop someone pressing it.
+  - Refreshed in `Open()`, NOT set once at build. The menu is built the first time it is summoned and
+    then lives for the rest of the scene, so building the label would leave a single-player one stale
+    for a session joined afterwards.
+
+**THE SKY DARKENS OVERHEAD (2026-09-14).** `ProceduralSkyClouds` had a TWO-stop gradient — horizon to
+`_SkyTint` — so the dome was one flat tint from head height to straight up. It now has a third stop,
+`_ZenithColor`, because looking straight up is looking through the LEAST atmosphere: less light
+scatters back, and the top of the sky goes deeper and slightly cooler, as the built-in procedural
+skybox already does.
+- **Layered OVER the two-stop gradient, not folded into it.** `sky = lerp(sky, _ZenithColor, pow(up,
+  _ZenithFalloff))` after the existing horizon lerp. The horizon end is therefore untouched, and
+  `_ZenithColor == _SkyTint` reproduces the old sky exactly — which is what makes this safe to land on
+  a material that has been art-directed already.
+- `_SkyTint`’s LABEL changed from "(zenith)" to "(upper sky)"; the PROPERTY NAME must never change,
+  since both the built-in-shader compatibility and `SkyboxHueRandomizer` key on it.
+- ⚠️ **The darkening lives in the MATERIAL, not in the randomizer.** `ShiftHue` preserves each
+  property’s own saturation and value, so authoring `_ZenithColor` darker than `_SkyTint` (V 0.55x,
+  S 1.35x on SimpleSkybox.mat) means every random hue inherits that same relationship for free. Trying
+  to darken it in code would have duplicated a fact the material already states.
+- The zenith hue is **DERIVED** (`hSky + zenithHueOffset`, default 0.03 ≈ 11°), like the horizon — not
+  rolled. Smaller offset than the horizon’s on purpose: the zenith is the same air seen deeper, not a
+  different layer, so it should read as the sky darkening rather than as a second colour.
+  - ⚠️ Deriving is also what keeps this SAFE. The independent draws in `BuildRecoloured` must stay the
+    same NUMBER forever — a fifth roll would shift every hue after it, and two builds disagreeing about
+    the roll count would disagree about a sky both derived from the same seed. A derived hue costs zero
+    draws. Add future sky colours the same way.
+- `HasProperty` guards it, so `SimpleSkybox [Default].mat` (built-in `Skybox/Procedural`, which has no
+  such property) is unaffected.
+
 **WINNING ENDS THE SESSION THROUGH A PORTAL (2026-09-14).** The victory ending used to leave the hub
 with no way out: the banner faded and the run simply sat there. Now the boost gate and hub portal spawn
 one last time — the same `SpawnPortalAndGate()` the Drone ending uses — and driving into that portal

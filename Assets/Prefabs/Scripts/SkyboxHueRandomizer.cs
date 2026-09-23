@@ -24,6 +24,7 @@ public class SkyboxHueRandomizer : MonoBehaviour
     // Optional properties, present only on Skybox/ProceduralSkyClouds. Guarded with HasProperty so the
     // built-in Skybox/Procedural material (which has neither) is unaffected.
     const string HorizonProp = "_HorizonColor";
+    const string ZenithProp = "_ZenithColor";
     const string CloudProp = "_CloudColor";
     const string GroundCloudProp = "_GroundCloudColor";
     const string NightTintProp = "_NightTint";
@@ -37,6 +38,13 @@ public class SkyboxHueRandomizer : MonoBehaviour
              "Derived rather than rolled independently so the gradient always reads as one atmosphere " +
              "instead of occasionally clashing. 0 = identical hue to the sky.")]
     public float horizonHueOffset = 0.06f;
+
+    [Tooltip("How far the ZENITH hue sits from the sky hue (0..1 = the full colour wheel; 0.03 ≈ 11°). " +
+             "Smaller than the horizon offset on purpose: the zenith is the SAME air seen deeper, not a " +
+             "different layer, so it should read as the sky going darker rather than as a second " +
+             "colour. Its darkness is not set here — the hue shift keeps whatever value the material " +
+             "authored, so the zenith stays as far below the sky tint as it was painted.")]
+    public float zenithHueOffset = 0.03f;
 
     [Tooltip("How far the GROUND TEXTURE hue sits from the ground hue. Same reasoning as the horizon " +
              "offset — it keeps the mottling reading as part of the ground rather than a separate layer.")]
@@ -197,10 +205,16 @@ public class SkyboxHueRandomizer : MonoBehaviour
             hNight = (float)rng.NextDouble();
         }
 
-        // Horizon and ground-texture hues are DERIVED, not rolled: each sits a fixed step around the
-        // wheel from the layer it belongs to, so the sky gradient and the ground always read as single
-        // coherent surfaces instead of occasionally landing on clashing pairs.
+        // Horizon, zenith and ground-texture hues are DERIVED, not rolled: each sits a fixed step
+        // around the wheel from the layer it belongs to, so the sky gradient and the ground always read
+        // as single coherent surfaces instead of occasionally landing on clashing pairs.
+        //
+        // ⚠️ Deriving rather than rolling is also what keeps this safe to extend. The independent draws
+        // above must stay the same NUMBER of draws forever: a fifth roll slipped in here would shift
+        // every hue after it, so a build with one more roll than another would disagree about a sky
+        // both machines derived from the same seed. A derived hue costs zero draws.
         float hHorizon = Mathf.Repeat(hSky + horizonHueOffset, 1f);
+        float hZenith = Mathf.Repeat(hSky + zenithHueOffset, 1f);
         float hGroundTexture = Mathf.Repeat(hGround + groundTextureHueOffset, 1f);
 
         ShiftHue(instance, "_SkyTint", hSky);
@@ -208,6 +222,7 @@ public class SkyboxHueRandomizer : MonoBehaviour
 
         // Only on the ProceduralSkyClouds shader — the built-in procedural material has none of these.
         if (instance.HasProperty(HorizonProp)) ShiftHue(instance, HorizonProp, hHorizon);
+        if (instance.HasProperty(ZenithProp)) ShiftHue(instance, ZenithProp, hZenith);
         if (instance.HasProperty(CloudProp)) ShiftHue(instance, CloudProp, hCloud, cloudMinSaturation);
         if (instance.HasProperty(GroundCloudProp)) ShiftHue(instance, GroundCloudProp, hGroundTexture);
         if (instance.HasProperty(NightTintProp))

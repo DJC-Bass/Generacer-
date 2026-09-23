@@ -13,8 +13,9 @@ using UnityEngine.InputSystem.UI;
 /// In-game "start menu" (like a pause menu, but it does NOT pause the game — no Time.timeScale
 /// change, so the car, AI and round timer keep running behind it). Toggled with the gamepad Start
 /// button while in a gameplay scene (HubWorld / TrackScene). Lists RESUME, AUDIO, CONTROLS,
-/// SETTINGS, QUIT top-to-bottom; A selects, B backs out, Start closes. RESUME closes, QUIT returns
-/// to the main menu.
+/// SETTINGS, QUIT top-to-bottom; A selects, B backs out, Start closes. RESUME closes, and QUIT ends
+/// the RUN — to the main menu solo, to the session LOBBY in multiplayer, where the team stays intact
+/// and the host can start another game.
 ///
 /// The AUDIO / CONTROLS / SETTINGS sub-screens mirror the Main Menu's settings, built from the shared
 /// <see cref="SettingsUI"/> widgets + <see cref="RebindController"/>: AUDIO = Music/SFX volume sliders,
@@ -45,6 +46,7 @@ public class StartMenuController : MonoBehaviour
     private GameObject mainPanel;
     private TextMeshProUGUI titleText;
     private TextMeshProUGUI hintText;
+    private TextMeshProUGUI quitLabel;   // retitled per session state — see RefreshQuitLabel
     private GameObject firstButton;            // RESUME — focused on open
     private GameObject currentFirst;           // the current screen's first control (nav rescue target)
 
@@ -145,8 +147,24 @@ public class StartMenuController : MonoBehaviour
         isOpen = true;
         MenuState.AnyOpen = true;   // stop A/B from also jumping/turbo-ing the car (game still runs)
         subReturnButton = null;
+        RefreshQuitLabel();
         ShowMain();
         AudioManager.PlayMenuOpen();
+    }
+
+    /// <summary>Says what QUIT will actually DO, which is two different things.
+    ///
+    /// Solo it leaves for the main menu; in a session it drops to the lobby ROOM with the team intact
+    /// and the session alive. A bare "QUIT" over the second one reads as "leave these people", which is
+    /// the opposite of what happens - and it is the reading that would stop someone pressing it.
+    ///
+    /// Refreshed on every OPEN rather than set once at build: the menu is built the first time it is
+    /// summoned and then lives for the rest of the scene, so a single-player build would keep a stale
+    /// label for a session joined afterwards.</summary>
+    void RefreshQuitLabel()
+    {
+        if (quitLabel != null)
+            quitLabel.text = MultiplayerWorld.IsMultiplayerGame ? "QUIT TO LOBBY" : "QUIT";
     }
 
     void Close()
@@ -274,13 +292,22 @@ public class StartMenuController : MonoBehaviour
     {
         Close();
 
-        // Multiplayer: leave the session first (a HOST leave deletes it for everyone), then the world
-        // teardown resets the run/inventory and loads the Main Menu itself.
+        // Multiplayer: QUIT ends the RUN, not the session (2026-09-20). It drops back to the lobby
+        // ROOM with the team intact, ready for the host to start another game, instead of dumping
+        // everyone at the title screen to rebuild a room from scratch.
+        //
+        // ⚠️ It deliberately does NOT call LeaveSessionAsync any more. That is the QUIT-the-session
+        // path, and for a HOST it DELETES the room out from under everybody — so the one button most
+        // likely to be pressed mid-run was also the one most likely to end the evening. Leaving for
+        // real is what the lobby's own BACK button is for, one screen further out: the same split the
+        // hub exit pad already draws between "done with this run" and "done with these people".
+        //
+        // A HOST quitting still takes everyone to the lobby with them — TeardownToLobby broadcasts it.
+        // That is unchanged and correct: the host runs the whole simulation, so a world they have left
+        // is a frozen one nobody else can act in.
         if (MultiplayerWorld.IsMultiplayerGame)
         {
-            if (NetworkSessionManager.Instance != null)
-                _ = NetworkSessionManager.Instance.LeaveSessionAsync();
-            MultiplayerWorld.Instance.TeardownToMenu("QUIT FROM START MENU");
+            MultiplayerWorld.Instance.TeardownToLobby("QUIT FROM START MENU");
             return;
         }
 
@@ -357,6 +384,7 @@ public class StartMenuController : MonoBehaviour
         controlsBtn = CreateButton("CONTROLS", mainPanel.transform, OnControls);
         settingsBtn = CreateButton("SETTINGS", mainPanel.transform, OnSettings);
         var quit = CreateButton("QUIT", mainPanel.transform, OnQuit);
+        quitLabel = quit.GetComponentInChildren<TextMeshProUGUI>();
 
         firstButton = resume.gameObject;
 
