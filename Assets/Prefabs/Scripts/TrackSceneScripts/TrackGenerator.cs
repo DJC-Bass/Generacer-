@@ -135,7 +135,9 @@ public class TrackGenerator : MonoBehaviour
     public float spawnVelocityMph = 300f;
 
     [Header("Loops")]
-    [Tooltip("Probability that any given convergence segment is replaced with a loop (0-1).")]
+    [Tooltip("Probability that any given convergence segment is replaced with a loop (0-1). " +
+             "Rolled independently of Side Loop Chance; if both claim the same segment it's a " +
+             "50/50 coin flip which one forms.")]
     [Range(0f, 1f)] public float loopChance = 0.2f;
     [Tooltip("Minimum loop radius (units).")]
     public float minLoopRadius = 200f;
@@ -151,6 +153,28 @@ public class TrackGenerator : MonoBehaviour
              "along the direction of travel. 0 = exit directly beside the entry; " +
              "positive pushes the following segment further ahead; negative pulls it back.")]
     public float loopExitForwardOffset = 0f;
+
+    [Header("Side Loops")]
+    [Tooltip("Probability that any given convergence segment is replaced with a side loop (0-1) — " +
+             "a flat 360° left or right turn that passes over/under itself. Rolled independently " +
+             "of Loop Chance; if both claim the same segment it's a 50/50 coin flip which one forms.")]
+    [Range(0f, 1f)] public float sideLoopChance = 0f;
+    [Tooltip("Minimum side loop radius (units). The car holds a full-steer turn of roughly " +
+             "160 units at 300 mph, so keep this well above that for a comfortable turn at speed.")]
+    public float minSideLoopRadius = 600f;
+    [Tooltip("Maximum side loop radius (units).")]
+    public float maxSideLoopRadius = 800f;
+    [Tooltip("Minimum up/down gap between the side loop entry and exit — the clearance where the " +
+             "road passes over itself. Each side loop picks a random value between min and max, " +
+             "and randomly climbs (exit above the entry) or descends (exit below).")]
+    public float minSideLoopExitOffset = 120f;
+    [Tooltip("Maximum up/down gap between the side loop entry and exit.")]
+    public float maxSideLoopExitOffset = 300f;
+    [Tooltip("Forward (+) or backward (-) offset of the side loop exit from the entry, along the " +
+             "direction of travel. 0 = exit stacked directly over/under the entry, so the road " +
+             "rejoins itself tangentially. Around the loop radius = the road crosses over itself " +
+             "at an angle. At 2x the radius or more the loop no longer crosses itself.")]
+    public float sideLoopExitForwardOffset = 700f;
 
     // -------------------------------------------------------
     //  Edge structure — one Bezier curve per edge, one mesh per edge
@@ -172,6 +196,7 @@ public class TrackGenerator : MonoBehaviour
         // a circle around loopCenter with loopRadius, in the plane defined by
         // loopForward and the world-up rotation axis.
         public bool isLoop;
+        public bool isSideLoop;               // loop laid flat (a 360° left/right turn); left untagged so it gets no loop boost
         public float loopFlattenStart = 1f;   // 1 = no exit-flattening
         public Vector3 loopCenter;
         public float loopRadius;
@@ -637,14 +662,26 @@ public class TrackGenerator : MonoBehaviour
             // first or last segment — the first feels disorienting right after the
             // outward tree, and the last would dump the player at the finish portal
             // mid-loop. Middle segments are best for loops.
-            bool wantsLoop = (i > 0 && i < numSegments - 1) && Random.value < loopChance;
+            bool middleSegment = i > 0 && i < numSegments - 1;
+            bool wantsLoop = middleSegment && Random.value < loopChance;
 
-            if (wantsLoop)
+            // Side loops roll independently. The roll is skipped entirely while they're disabled
+            // so a given seed generates exactly the same track it did before side loops existed.
+            bool wantsSideLoop = middleSegment && sideLoopChance > 0f && Random.value < sideLoopChance;
+
+            // Both claim this segment: 50/50 which one forms.
+            if (wantsLoop && wantsSideLoop)
+            {
+                if (Random.value < 0.5f) wantsSideLoop = false;
+                else wantsLoop = false;
+            }
+
+            if (wantsLoop || wantsSideLoop)
             {
                 previousEdge = BuildLoopSequence(previousEdge,
                                                   segStart, segStartDir,
                                                   segEnd, segEndDir,
-                                                  segmentLength);
+                                                  segmentLength, sideLoop: wantsSideLoop);
             }
             else
             {
@@ -677,13 +714,19 @@ public class TrackGenerator : MonoBehaviour
     /// edge — no apex/split/ramp — so it adapts smoothly to any offset (closed
     /// teardrop when the offset is small, open arch when stretched), exactly like
     /// a real pliable wire.
+    ///
+    /// Side loops (sideLoop = true) use the same approach -> loop -> post-loop
+    /// scaffolding, but the circle lies flat and turns left or right, and the exit
+    /// slides up or down instead of sideways so the road clears itself where it
+    /// crosses over.
     /// </summary>
     TrackEdge BuildLoopSequence(TrackEdge parent,
                                  Vector3 approachStart, Vector3 approachStartDir,
                                  Vector3 originalEnd, Vector3 originalEndDir,
-                                 float segmentLength)
+                                 float segmentLength, bool sideLoop)
     {
-        float loopRadius = Random.Range(minLoopRadius, maxLoopRadius);
+        float loopRadius = sideLoop ? Random.Range(minSideLoopRadius, maxSideLoopRadius)
+                                    : Random.Range(minLoopRadius, maxLoopRadius);
 
         // Horizontal entry direction.
         Vector3 fwd = approachStartDir;
@@ -692,7 +735,7 @@ public class TrackGenerator : MonoBehaviour
         fwd.Normalize();
 
         // ----- Approach edge: flat road blending up to the loop entry. -----
-        float approachLength = segmentLength * 0.25f;
+        float approachLength = segmentLength * .50f;
         Vector3 loopEntry = approachStart + fwd * approachLength;
 
         var approach = new TrackEdge
@@ -708,29 +751,54 @@ public class TrackGenerator : MonoBehaviour
         parent.children.Add(approach);
         allEdges.Add(approach);
 
-        // ----- Loop exit point: offset forward + sideways from the entry. -----
-        // The offset magnitude vs. loopRadius is what makes it loop (tight) or
-        // arch (stretched) — the pliable-wire behaviour.
         Vector3 side = Vector3.Cross(Vector3.up, fwd).normalized;
         if (side.sqrMagnitude < 0.0001f) side = Vector3.right;
-        float sideSign = (Random.value < 0.5f) ? -1f : 1f;
 
-        // Sideways gap comes from Loop Exit Offset (slides the exit left/right,
-        // like the ribbon's far end). Forward/back comes from its own field so the
-        // two axes are independent and can be tuned separately.
-        // Random sideways gap within the configured band, like Loop Radius.
-        float sideOffset = Random.Range(minLoopExitOffset, maxLoopExitOffset);
-        float sideDrift = sideOffset * sideSign;
-        float forwardDrift = loopExitForwardOffset;
-
-        Vector3 loopExit = loopEntry + side * sideDrift + fwd * forwardDrift;
-
-        // ----- Generate the continuous loop centerline. -----
         int loopSamples = Mathf.Max(48, Mathf.RoundToInt(loopRadius * 0.5f));
-        List<Vector3> loopPts = BuildPliableLoopPoints(loopEntry, fwd, loopExit, loopRadius, loopSamples, out List<Vector3> loopNrm);
+        Vector3 loopExit;
+        Vector3 loopCenter;   // only used as a fallback by the mesh; a sensible value
+        List<Vector3> loopPts, loopNrm;
 
-        // loopCenter is only used as a fallback by the mesh; compute a sensible one.
-        Vector3 loopCenter = loopEntry + Vector3.up * loopRadius;
+        if (sideLoop)
+        {
+            // ----- Side loop exit point: offset forward + up/down from the entry. -----
+            // The up/down gap is the clearance where the road passes over itself.
+            // Left vs right turn and climb vs descend are each a 50/50 roll.
+            float turnSign = (Random.value < 0.5f) ? -1f : 1f;   // -1 = left loop, +1 = right loop
+            float vertSign = (Random.value < 0.5f) ? -1f : 1f;   // -1 = exit below entry, +1 = above
+            float vertOffset = Random.Range(minSideLoopExitOffset, maxSideLoopExitOffset);
+
+            // Never descend through the altitude floor — climb instead.
+            if (loopEntry.y - vertOffset < minAltitude) vertSign = 1f;
+
+            loopExit = loopEntry + Vector3.up * (vertOffset * vertSign)
+                                 + fwd * sideLoopExitForwardOffset;
+
+            Vector3 turnDir = side * turnSign;
+            loopPts = BuildPliableSideLoopPoints(loopEntry, fwd, turnDir, loopExit, loopRadius, loopSamples, out loopNrm);
+            loopCenter = loopEntry + turnDir * loopRadius;
+        }
+        else
+        {
+            // ----- Loop exit point: offset forward + sideways from the entry. -----
+            // The offset magnitude vs. loopRadius is what makes it loop (tight) or
+            // arch (stretched) — the pliable-wire behaviour.
+            float sideSign = (Random.value < 0.5f) ? -1f : 1f;
+
+            // Sideways gap comes from Loop Exit Offset (slides the exit left/right,
+            // like the ribbon's far end). Forward/back comes from its own field so the
+            // two axes are independent and can be tuned separately.
+            // Random sideways gap within the configured band, like Loop Radius.
+            float sideOffset = Random.Range(minLoopExitOffset, maxLoopExitOffset);
+            float sideDrift = sideOffset * sideSign;
+            float forwardDrift = loopExitForwardOffset;
+
+            loopExit = loopEntry + side * sideDrift + fwd * forwardDrift;
+
+            // ----- Generate the continuous loop centerline. -----
+            loopPts = BuildPliableLoopPoints(loopEntry, fwd, loopExit, loopRadius, loopSamples, out loopNrm);
+            loopCenter = loopEntry + Vector3.up * loopRadius;
+        }
 
         var loop = new TrackEdge
         {
@@ -741,6 +809,7 @@ public class TrackGenerator : MonoBehaviour
             endDir = (loopPts[loopPts.Count - 1] - loopPts[loopPts.Count - 2]).normalized,
             parent = approach,
             isLoop = true,
+            isSideLoop = sideLoop,
             loopCenter = loopCenter,
             loopRadius = loopRadius,
             loopForward = fwd,
@@ -859,6 +928,69 @@ public class TrackGenerator : MonoBehaviour
 
             // Orthogonalize against the tangent so width = tangent x normal is clean.
             n = (n - Vector3.Dot(n, tangent) * tangent);
+            if (n.sqrMagnitude < 1e-6f) n = up;
+            n.Normalize();
+            normals.Add(n);
+        }
+
+        return pts;
+    }
+
+    /// <summary>
+    /// Side-loop counterpart of BuildPliableLoopPoints: the same drifted circle,
+    /// laid flat. It curves toward `turnDir` (the car's left or right) so the car
+    /// makes one continuous 360° turn, while the smootherstep drift carries it up
+    /// or down (and forward) to `exit`. That drift is what lifts the road clear
+    /// where it passes over itself. The road stays flat across its width, so it
+    /// meets the ordinary road flat at both ends.
+    /// </summary>
+    List<Vector3> BuildPliableSideLoopPoints(Vector3 entry, Vector3 entryDir, Vector3 turnDir,
+                                              Vector3 exit, float radius, int samples,
+                                              out List<Vector3> normals)
+    {
+        Vector3 up = Vector3.up;
+
+        Vector3 e_t = entryDir; e_t.y = 0f;   // along travel
+        if (e_t.sqrMagnitude < 1e-6f) e_t = Vector3.forward;
+        e_t.Normalize();
+
+        // Toward the loop centre: horizontal and square to the direction of travel.
+        Vector3 e_c = turnDir - Vector3.Dot(turnDir, e_t) * e_t;
+        e_c.y = 0f;
+        if (e_c.sqrMagnitude < 1e-6f) e_c = Vector3.Cross(up, e_t);
+        e_c.Normalize();
+
+        Vector3 center = entry + e_c * radius;
+        float sweep = Mathf.PI * 2f;
+
+        Vector3 startCircle = center + (-e_c * radius);
+        Vector3 endCircle = center + (-Mathf.Cos(sweep) * e_c + Mathf.Sin(sweep) * e_t) * radius;
+
+        var pts = new List<Vector3>(samples + 1);
+        for (int i = 0; i <= samples; i++)
+        {
+            float t = i / (float)samples;
+            float theta = t * sweep;
+
+            Vector3 circlePt = center + (-Mathf.Cos(theta) * e_c + Mathf.Sin(theta) * e_t) * radius;
+            float ss = t * t * t * (t * (t * 6f - 15f) + 10f);
+            Vector3 drift = (exit - endCircle) * ss + (entry - startCircle) * (1f - ss);
+
+            pts.Add(circlePt + drift);
+        }
+
+        // Surface normals: world up, tilted only along the direction of travel as
+        // the road climbs/descends — no banking, so the car steers the whole turn.
+        normals = new List<Vector3>(samples + 1);
+        for (int i = 0; i <= samples; i++)
+        {
+            Vector3 tangent;
+            if (i == 0) tangent = (pts[1] - pts[0]);
+            else if (i == samples) tangent = (pts[samples] - pts[samples - 1]);
+            else tangent = (pts[i + 1] - pts[i - 1]);
+            tangent.Normalize();
+
+            Vector3 n = up - Vector3.Dot(up, tangent) * tangent;
             if (n.sqrMagnitude < 1e-6f) n = up;
             n.Normalize();
             normals.Add(n);
@@ -1064,7 +1196,10 @@ public class TrackGenerator : MonoBehaviour
     /// </summary>
     void BuildLoopMeshObject(TrackEdge edge, Vector3 rotationAxis)
     {
-        GameObject obj = new GameObject("RoadEdge_Loop");
+        // Side loops keep the "RoadEdge" name prefix (the obstacle spawners sample every
+        // RoadEdge*) but are left untagged: the "Loop" tag is what triggers the car's
+        // loop speed boost, and side loops get no automatic turbo.
+        GameObject obj = new GameObject(edge.isSideLoop ? "RoadEdge_SideLoop" : "RoadEdge_Loop");
         obj.transform.SetParent(transform);
 
         Mesh loopMesh = TrackMeshBuilder.BuildLoopMeshExplicit(
@@ -1074,7 +1209,7 @@ public class TrackGenerator : MonoBehaviour
         obj.AddComponent<MeshCollider>().sharedMesh = loopMesh;
         obj.AddComponent<MeshRenderer>().sharedMaterial = GetRoadMaterial();
 
-        obj.tag = "Loop";
+        if (!edge.isSideLoop) obj.tag = "Loop";
 
         if (shoulderWidth > 0f)
         {
@@ -1090,7 +1225,7 @@ public class TrackGenerator : MonoBehaviour
     {
         var shoulderObj = new GameObject(rightSide ? "LoopShoulderRight" : "LoopShoulderLeft");
         shoulderObj.transform.SetParent(parent);
-        shoulderObj.tag = "Loop";
+        if (!edge.isSideLoop) shoulderObj.tag = "Loop";
 
         Mesh shoulderMesh = TrackMeshBuilder.BuildLoopShoulderMeshExplicit(
                     edge.sampledPoints, edge.loopNormals, roadWidth, shoulderWidth, roadThickness, rightSide, uvTilingFactor);
