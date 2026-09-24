@@ -423,6 +423,88 @@ public static class TrackMeshBuilder
         return mesh;
     }
 
+    /// <summary>
+    /// Builds the rail "teeth" for one shoulder strip: every `every`-th square segment of
+    /// the shoulder is extruded straight up by `height` into a solid block (top + 4 sides),
+    /// leaving open gaps between teeth. Reads the finished shoulder mesh's vertices (4 per
+    /// cross-section: inner-top, outer-top, inner-bot, outer-bot), so it works the same for
+    /// ordinary and loop shoulders — "up" is the slab's bottom-to-top direction (world up on
+    /// ordinary road, the surface normal on loops). `phase` shifts the pattern so it can run
+    /// on unbroken from the previous edge. Returns an empty mesh if no segment qualifies.
+    /// </summary>
+    public static Mesh BuildShoulderTeethMesh(Vector3[] shoulderVerts, int every, float height, int phase)
+    {
+        every = Mathf.Max(1, every);
+        int sections = shoulderVerts.Length / 4;
+
+        var verts = new List<Vector3>();
+        var uvs = new List<Vector2>();
+        var tris = new List<int>();
+
+        for (int s = 0; s < sections - 1; s++)
+        {
+            if ((phase + s) % every != 0) continue;
+
+            int a = s * 4, b = (s + 1) * 4;
+            Vector3 i0 = shoulderVerts[a], o0 = shoulderVerts[a + 1];
+            Vector3 i1 = shoulderVerts[b], o1 = shoulderVerts[b + 1];
+
+            Vector3 up0 = SlabUp(shoulderVerts, a);
+            Vector3 up1 = SlabUp(shoulderVerts, b);
+            Vector3 ti0 = i0 + up0 * height, to0 = o0 + up0 * height;
+            Vector3 ti1 = i1 + up1 * height, to1 = o1 + up1 * height;
+
+            Vector3 along = (i1 + o1) - (i0 + o0);     // direction of travel
+            Vector3 across = (o0 + o1) - (i0 + i1);    // outward, away from the road
+
+            // Each face gets its own 4 vertices so the block shades with crisp edges.
+            AddQuad(verts, uvs, tris, ti0, to0, to1, ti1, up0 + up1);  // top
+            AddQuad(verts, uvs, tris, i0, o0, to0, ti0, -along);       // front (faces oncoming cars)
+            AddQuad(verts, uvs, tris, i1, o1, to1, ti1, along);        // back
+            AddQuad(verts, uvs, tris, o0, o1, to1, to0, across);       // outer side
+            AddQuad(verts, uvs, tris, i0, i1, ti1, ti0, -across);      // inner side (faces the road)
+        }
+
+        Mesh mesh = new Mesh { name = "ShoulderTeeth" };
+        mesh.indexFormat = verts.Count > 65000
+            ? UnityEngine.Rendering.IndexFormat.UInt32
+            : UnityEngine.Rendering.IndexFormat.UInt16;
+        mesh.SetVertices(verts);
+        mesh.SetUVs(0, uvs);
+        mesh.SetTriangles(tris, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    /// <summary>Bottom-to-top direction of the shoulder slab at the cross-section starting at vertex `vi`.</summary>
+    static Vector3 SlabUp(Vector3[] shoulderVerts, int vi)
+    {
+        Vector3 d = shoulderVerts[vi] - shoulderVerts[vi + 2];   // inner-top minus inner-bot
+        return d.sqrMagnitude > 1e-8f ? d.normalized : Vector3.up;
+    }
+
+    /// <summary>Adds quad p0-p1-p2-p3 (in order around its edge), wound so it faces `outward`.</summary>
+    static void AddQuad(List<Vector3> verts, List<Vector2> uvs, List<int> tris,
+                        Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, Vector3 outward)
+    {
+        int v = verts.Count;
+        verts.Add(p0); verts.Add(p1); verts.Add(p2); verts.Add(p3);
+        uvs.Add(new Vector2(0f, 0f)); uvs.Add(new Vector2(1f, 0f));
+        uvs.Add(new Vector2(1f, 1f)); uvs.Add(new Vector2(0f, 1f));
+
+        if (Vector3.Dot(Vector3.Cross(p1 - p0, p2 - p0), outward) >= 0f)
+        {
+            tris.Add(v); tris.Add(v + 1); tris.Add(v + 2);
+            tris.Add(v); tris.Add(v + 2); tris.Add(v + 3);
+        }
+        else
+        {
+            tris.Add(v); tris.Add(v + 2); tris.Add(v + 1);
+            tris.Add(v); tris.Add(v + 3); tris.Add(v + 2);
+        }
+    }
+
     public static Mesh BuildJunctionMesh(float radius, int segments = 24)
     {
         Vector3[] verts = new Vector3[segments + 1];

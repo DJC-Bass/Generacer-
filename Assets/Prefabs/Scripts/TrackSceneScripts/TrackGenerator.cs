@@ -52,6 +52,19 @@ public class TrackGenerator : MonoBehaviour
              "with an emission color to make them glow.")]
     public Material shoulderMaterial;
 
+    [Header("Rail Teeth")]
+    [Tooltip("Raise square 'teeth' along both shoulders so turns read clearly, with open " +
+             "gaps between them the car can still drive through to leave the track.")]
+    public bool railTeeth = true;
+    [Tooltip("Every Nth shoulder segment is raised into a tooth. 4 = one tooth then three " +
+             "open segments; higher spreads them out; 1 = a continuous wall.")]
+    [Min(1)] public int railToothEvery = 4;
+    [Tooltip("How far each tooth rises straight up off the shoulder (units).")]
+    public float railToothHeight = 4f;
+    [Tooltip("On = the teeth are solid and the car bumps off them. Off = visual only; " +
+             "the car passes straight through.")]
+    public bool railTeethCollide = true;
+
     [Header("Altitude Layering")]
     [Tooltip("Vertical spacing between adjacent paths so they don't intersect on the way back.")]
     public float altitudeLayerSpacing = 120f;
@@ -61,6 +74,9 @@ public class TrackGenerator : MonoBehaviour
     // Per-generation instance of the road material with a randomised Base Map hue, so each track comes
     // out a different colour without ever modifying the shared RoadMaterial asset.
     private Material runtimeRoadMaterial;
+    // Per-generation instance of the Shoulder Material whose Emission colour takes the SAME random hue
+    // as the road, so the glow always matches — again without modifying the shared asset.
+    private Material runtimeShoulderMaterial;
     public GameObject carPrefab;
     public GameObject endPortalPrefab;
 
@@ -191,6 +207,7 @@ public class TrackGenerator : MonoBehaviour
         public TrackEdge parent;
         public List<TrackEdge> children = new List<TrackEdge>();
         public List<Vector3> sampledPoints;
+        public int railToothPhaseEnd;         // rail-tooth pattern position where this edge ends; its children carry it on
 
         // Loop-specific fields. If isLoop is true, sampledPoints is generated as
         // a circle around loopCenter with loopRadius, in the plane defined by
@@ -247,8 +264,9 @@ public class TrackGenerator : MonoBehaviour
         allEdges.Clear();
         leafEdges.Clear();
 
-        // Build this track's road material (a randomised-hue instance) before any road edge is made.
-        PrepareRoadMaterial();
+        // Build this track's road + shoulder materials (instances sharing one randomised hue)
+        // before any road edge is made.
+        PrepareTrackMaterials();
 
         // Roll the convergence altitude swing once per generation so every leaf's
         // return path shares the same vertical character, but successive runs
@@ -1180,11 +1198,13 @@ public class TrackGenerator : MonoBehaviour
         obj.AddComponent<MeshRenderer>().sharedMaterial = GetRoadMaterial();
 
         // Shoulder strips on both sides
+        int toothPhase = RailToothPhaseAtStart(edge);
         if (shoulderWidth > 0f)
         {
-            SpawnShoulder(obj.transform, spline, resolution, rightSide: true);
-            SpawnShoulder(obj.transform, spline, resolution, rightSide: false);
+            SpawnShoulder(obj.transform, spline, resolution, rightSide: true, toothPhase);
+            SpawnShoulder(obj.transform, spline, resolution, rightSide: false, toothPhase);
         }
+        SetRailToothPhaseEnd(edge, toothPhase, resolution);
 
         // Put the road edge and its shoulder children on the Track layer.
         ApplyTrackLayer(obj);
@@ -1211,17 +1231,19 @@ public class TrackGenerator : MonoBehaviour
 
         if (!edge.isSideLoop) obj.tag = "Loop";
 
+        int toothPhase = RailToothPhaseAtStart(edge);
         if (shoulderWidth > 0f)
         {
-            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, true);
-            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, false);
+            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, true, toothPhase);
+            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, false, toothPhase);
         }
+        SetRailToothPhaseEnd(edge, toothPhase, edge.sampledPoints.Count - 1);
 
         // Put the loop mesh and its shoulder children on the Track layer.
         ApplyTrackLayer(obj);
     }
 
-    void SpawnLoopShoulder(Transform parent, TrackEdge edge, Vector3 rotationAxis, bool rightSide)
+    void SpawnLoopShoulder(Transform parent, TrackEdge edge, Vector3 rotationAxis, bool rightSide, int toothPhase)
     {
         var shoulderObj = new GameObject(rightSide ? "LoopShoulderRight" : "LoopShoulderLeft");
         shoulderObj.transform.SetParent(parent);
@@ -1233,7 +1255,9 @@ public class TrackGenerator : MonoBehaviour
         shoulderObj.AddComponent<MeshFilter>().sharedMesh = shoulderMesh;
         shoulderObj.AddComponent<MeshCollider>().sharedMesh = shoulderMesh;
         var renderer = shoulderObj.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = shoulderMaterial != null ? shoulderMaterial : GetRoadMaterial();
+        renderer.sharedMaterial = GetShoulderMaterial();
+
+        SpawnRailTeeth(shoulderObj, shoulderMesh, renderer.sharedMaterial, toothPhase);
     }
 
     /// <summary>
@@ -1242,7 +1266,7 @@ public class TrackGenerator : MonoBehaviour
     /// so it can have emission separate from the main road. Also gets a
     /// MeshCollider so the car can drive on it just like the road.
     /// </summary>
-    void SpawnShoulder(Transform parent, TrackSpline spline, int resolution, bool rightSide)
+    void SpawnShoulder(Transform parent, TrackSpline spline, int resolution, bool rightSide, int toothPhase)
     {
         var shoulderObj = new GameObject(rightSide ? "ShoulderRight" : "ShoulderLeft");
         shoulderObj.transform.SetParent(parent);
@@ -1255,41 +1279,97 @@ public class TrackGenerator : MonoBehaviour
         shoulderObj.AddComponent<MeshCollider>().sharedMesh = shoulderMesh;
 
         var renderer = shoulderObj.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = shoulderMaterial != null ? shoulderMaterial : GetRoadMaterial();
+        renderer.sharedMaterial = GetShoulderMaterial();
+
+        SpawnRailTeeth(shoulderObj, shoulderMesh, renderer.sharedMaterial, toothPhase);
+    }
+
+    /// <summary>
+    /// Adds the rail teeth for one shoulder as a child of it, in the shoulder's own
+    /// material. Children of the shoulder, so they land on the Track layer with it and
+    /// take its tag (a loop's teeth count as loop, like its shoulders).
+    /// </summary>
+    void SpawnRailTeeth(GameObject shoulderObj, Mesh shoulderMesh, Material material, int toothPhase)
+    {
+        if (!railTeeth || railToothHeight <= 0f) return;
+
+        Mesh teethMesh = TrackMeshBuilder.BuildShoulderTeethMesh(
+            shoulderMesh.vertices, railToothEvery, railToothHeight, toothPhase);
+        if (teethMesh.vertexCount == 0) return;   // edge too short to hold a tooth
+
+        var teethObj = new GameObject("RailTeeth");
+        teethObj.transform.SetParent(shoulderObj.transform);
+        teethObj.tag = shoulderObj.tag;
+
+        teethObj.AddComponent<MeshFilter>().sharedMesh = teethMesh;
+        if (railTeethCollide) teethObj.AddComponent<MeshCollider>().sharedMesh = teethMesh;
+        teethObj.AddComponent<MeshRenderer>().sharedMaterial = material;
+    }
+
+    /// <summary>
+    /// Where the tooth pattern stands at the start of `edge`: carried on from its parent
+    /// so the teeth keep an even rhythm across edge joins instead of restarting.
+    /// </summary>
+    int RailToothPhaseAtStart(TrackEdge edge) => edge.parent != null ? edge.parent.railToothPhaseEnd : 0;
+
+    void SetRailToothPhaseEnd(TrackEdge edge, int startPhase, int segments)
+    {
+        edge.railToothPhaseEnd = (startPhase + segments) % Mathf.Max(1, railToothEvery);
     }
 
     Material GetRoadMaterial()
     {
-        // GenerateTrack prepares the randomised instance up front; this is just a guard.
-        if (runtimeRoadMaterial == null) PrepareRoadMaterial();
+        // GenerateTrack prepares the randomised instances up front; this is just a guard.
+        if (runtimeRoadMaterial == null) PrepareTrackMaterials();
         return runtimeRoadMaterial;
     }
 
-    /// <summary>Builds this generation's road material as an INSTANCE of the assigned RoadMaterial (so
-    /// the shared asset on disk is never touched), with a randomised Base Map HUE — saturation and
-    /// value (and every other material value) left as they are — so each track comes out a different
-    /// colour. Uses an independent RNG so the colour doesn't perturb the seeded track-geometry
-    /// generation.</summary>
-    void PrepareRoadMaterial()
+    /// <summary>The shoulders' (and their rail teeth's) material: this generation's hue-matched
+    /// Shoulder Material instance, or the road material when no Shoulder Material is assigned.</summary>
+    Material GetShoulderMaterial()
     {
-        if (runtimeRoadMaterial != null) Destroy(runtimeRoadMaterial);   // drop a prior generation's instance
-        runtimeRoadMaterial = roadMaterial != null ? new Material(roadMaterial) : BuildFallbackRoadMaterial();
+        if (runtimeRoadMaterial == null) PrepareTrackMaterials();
+        return runtimeShoulderMaterial != null ? runtimeShoulderMaterial : runtimeRoadMaterial;
+    }
 
+    /// <summary>Builds this generation's road and shoulder materials as INSTANCES of the assigned
+    /// RoadMaterial / Shoulder Material (so the shared assets on disk are never touched), with ONE
+    /// randomised HUE shared by both: the road's Base Map colour and the shoulder's Emission colour.
+    /// Saturation and value (the emission's HDR intensity included), and every other material value,
+    /// are left as they are — so each track comes out a different colour with the road and its glow
+    /// always matching. Uses an independent RNG so the colour doesn't perturb the seeded
+    /// track-geometry generation.</summary>
+    void PrepareTrackMaterials()
+    {
+        // Drop a prior generation's instances.
+        if (runtimeRoadMaterial != null) Destroy(runtimeRoadMaterial);
+        if (runtimeShoulderMaterial != null) Destroy(runtimeShoulderMaterial);
+
+        // Multiplayer: derive the hue from the round seed so every client's track matches.
+        System.Random hueRng = MultiplayerWorld.IsMultiplayerGame
+            ? MultiplayerWorld.DeriveRandom("roadhue")
+            : new System.Random();
+        float hue = (float)hueRng.NextDouble();   // 0..1 == the full 0..360 hue wheel
+
+        runtimeRoadMaterial = roadMaterial != null ? new Material(roadMaterial) : BuildFallbackRoadMaterial();
         // URP/Lit's "Base Map" tint (Surface Inputs) is the "_BaseColor" property.
-        const string prop = "_BaseColor";
-        if (runtimeRoadMaterial.HasProperty(prop))
-        {
-            Color c = runtimeRoadMaterial.GetColor(prop);
-            Color.RGBToHSV(c, out _, out float s, out float v);            // keep saturation + value
-            // Multiplayer: derive the hue from the round seed so every client's road matches.
-            System.Random hueRng = MultiplayerWorld.IsMultiplayerGame
-                ? MultiplayerWorld.DeriveRandom("roadhue")
-                : new System.Random();
-            float hue = (float)hueRng.NextDouble();                        // 0..1 == the full 0..360 hue wheel
-            Color randomized = Color.HSVToRGB(hue, s, v);
-            randomized.a = c.a;                                            // leave alpha untouched
-            runtimeRoadMaterial.SetColor(prop, randomized);
-        }
+        SetColorHue(runtimeRoadMaterial, "_BaseColor", hue);
+
+        runtimeShoulderMaterial = shoulderMaterial != null ? new Material(shoulderMaterial) : null;
+        // URP/Lit's "Emission Map" colour (the HDR swatch beside the Emission Map slot) is "_EmissionColor".
+        if (runtimeShoulderMaterial != null) SetColorHue(runtimeShoulderMaterial, "_EmissionColor", hue);
+    }
+
+    /// <summary>Swaps a colour property's hue, keeping its saturation, value and alpha. HDR stays
+    /// HDR: an emission intensity above 1 comes back out unchanged.</summary>
+    static void SetColorHue(Material mat, string prop, float hue)
+    {
+        if (!mat.HasProperty(prop)) return;
+        Color c = mat.GetColor(prop);
+        Color.RGBToHSV(c, out _, out float s, out float v);
+        Color shifted = Color.HSVToRGB(hue, s, v, true);
+        shifted.a = c.a;   // leave alpha untouched
+        mat.SetColor(prop, shifted);
     }
 
     Material BuildFallbackRoadMaterial()
@@ -1302,8 +1382,9 @@ public class TrackGenerator : MonoBehaviour
     void OnDestroy()
     {
         if (Current == this) Current = null;
-        // The runtime instance isn't owned by any GameObject, so free it when the generator is torn down.
+        // The runtime instances aren't owned by any GameObject, so free them when the generator is torn down.
         if (runtimeRoadMaterial != null) Destroy(runtimeRoadMaterial);
+        if (runtimeShoulderMaterial != null) Destroy(runtimeShoulderMaterial);
     }
 
     // -------------------------------------------------------
