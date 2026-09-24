@@ -51,19 +51,10 @@ public class TrackGenerator : MonoBehaviour
     [Tooltip("Material applied to the shoulder strips. Use a URP/Lit material " +
              "with an emission color to make them glow.")]
     public Material shoulderMaterial;
-
-    [Header("Rail Teeth")]
-    [Tooltip("Raise square 'teeth' along both shoulders so turns read clearly, with open " +
-             "gaps between them the car can still drive through to leave the track.")]
-    public bool railTeeth = true;
-    [Tooltip("Every Nth shoulder segment is raised into a tooth. 4 = one tooth then three " +
-             "open segments; higher spreads them out; 1 = a continuous wall.")]
-    [Min(1)] public int railToothEvery = 4;
-    [Tooltip("How far each tooth rises straight up off the shoulder (units).")]
-    public float railToothHeight = 4f;
-    [Tooltip("On = the teeth are solid and the car bumps off them. Off = visual only; " +
-             "the car passes straight through.")]
-    public bool railTeethCollide = true;
+    [Tooltip("How far the shoulders rise above the road surface, forming a low curb rail " +
+             "that outlines the turns (units). Visual only — the car still drives on the flat " +
+             "shoulder underneath, so it can run off the track smoothly. 0 = flush shoulders.")]
+    [Min(0f)] public float shoulderRailHeight = 1f;
 
     [Header("Altitude Layering")]
     [Tooltip("Vertical spacing between adjacent paths so they don't intersect on the way back.")]
@@ -207,7 +198,6 @@ public class TrackGenerator : MonoBehaviour
         public TrackEdge parent;
         public List<TrackEdge> children = new List<TrackEdge>();
         public List<Vector3> sampledPoints;
-        public int railToothPhaseEnd;         // rail-tooth pattern position where this edge ends; its children carry it on
 
         // Loop-specific fields. If isLoop is true, sampledPoints is generated as
         // a circle around loopCenter with loopRadius, in the plane defined by
@@ -1198,13 +1188,11 @@ public class TrackGenerator : MonoBehaviour
         obj.AddComponent<MeshRenderer>().sharedMaterial = GetRoadMaterial();
 
         // Shoulder strips on both sides
-        int toothPhase = RailToothPhaseAtStart(edge);
         if (shoulderWidth > 0f)
         {
-            SpawnShoulder(obj.transform, spline, resolution, rightSide: true, toothPhase);
-            SpawnShoulder(obj.transform, spline, resolution, rightSide: false, toothPhase);
+            SpawnShoulder(obj.transform, spline, resolution, rightSide: true);
+            SpawnShoulder(obj.transform, spline, resolution, rightSide: false);
         }
-        SetRailToothPhaseEnd(edge, toothPhase, resolution);
 
         // Put the road edge and its shoulder children on the Track layer.
         ApplyTrackLayer(obj);
@@ -1231,19 +1219,17 @@ public class TrackGenerator : MonoBehaviour
 
         if (!edge.isSideLoop) obj.tag = "Loop";
 
-        int toothPhase = RailToothPhaseAtStart(edge);
         if (shoulderWidth > 0f)
         {
-            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, true, toothPhase);
-            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, false, toothPhase);
+            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, true);
+            SpawnLoopShoulder(obj.transform, edge, Vector3.zero, false);
         }
-        SetRailToothPhaseEnd(edge, toothPhase, edge.sampledPoints.Count - 1);
 
         // Put the loop mesh and its shoulder children on the Track layer.
         ApplyTrackLayer(obj);
     }
 
-    void SpawnLoopShoulder(Transform parent, TrackEdge edge, Vector3 rotationAxis, bool rightSide, int toothPhase)
+    void SpawnLoopShoulder(Transform parent, TrackEdge edge, Vector3 rotationAxis, bool rightSide)
     {
         var shoulderObj = new GameObject(rightSide ? "LoopShoulderRight" : "LoopShoulderLeft");
         shoulderObj.transform.SetParent(parent);
@@ -1252,12 +1238,10 @@ public class TrackGenerator : MonoBehaviour
         Mesh shoulderMesh = TrackMeshBuilder.BuildLoopShoulderMeshExplicit(
                     edge.sampledPoints, edge.loopNormals, roadWidth, shoulderWidth, roadThickness, rightSide, uvTilingFactor);
 
-        shoulderObj.AddComponent<MeshFilter>().sharedMesh = shoulderMesh;
+        shoulderObj.AddComponent<MeshFilter>().sharedMesh = ShoulderVisualMesh(shoulderMesh);
         shoulderObj.AddComponent<MeshCollider>().sharedMesh = shoulderMesh;
         var renderer = shoulderObj.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = GetShoulderMaterial();
-
-        SpawnRailTeeth(shoulderObj, shoulderMesh, renderer.sharedMaterial, toothPhase);
     }
 
     /// <summary>
@@ -1266,7 +1250,7 @@ public class TrackGenerator : MonoBehaviour
     /// so it can have emission separate from the main road. Also gets a
     /// MeshCollider so the car can drive on it just like the road.
     /// </summary>
-    void SpawnShoulder(Transform parent, TrackSpline spline, int resolution, bool rightSide, int toothPhase)
+    void SpawnShoulder(Transform parent, TrackSpline spline, int resolution, bool rightSide)
     {
         var shoulderObj = new GameObject(rightSide ? "ShoulderRight" : "ShoulderLeft");
         shoulderObj.transform.SetParent(parent);
@@ -1275,46 +1259,22 @@ public class TrackGenerator : MonoBehaviour
             spline, roadWidth, shoulderWidth, resolution, roadThickness, rightSide, uvTilingFactor
         );
 
-        shoulderObj.AddComponent<MeshFilter>().sharedMesh = shoulderMesh;
+        shoulderObj.AddComponent<MeshFilter>().sharedMesh = ShoulderVisualMesh(shoulderMesh);
         shoulderObj.AddComponent<MeshCollider>().sharedMesh = shoulderMesh;
 
         var renderer = shoulderObj.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = GetShoulderMaterial();
-
-        SpawnRailTeeth(shoulderObj, shoulderMesh, renderer.sharedMaterial, toothPhase);
     }
 
     /// <summary>
-    /// Adds the rail teeth for one shoulder as a child of it, in the shoulder's own
-    /// material. Children of the shoulder, so they land on the Track layer with it and
-    /// take its tag (a loop's teeth count as loop, like its shoulders).
+    /// The mesh a shoulder renders: its flat slab lifted into a curb rail by Shoulder Rail
+    /// Height, or the flat slab itself when that's 0. The flat slab stays the collider either
+    /// way, so the rail is visual only and the car can still run off the track smoothly.
     /// </summary>
-    void SpawnRailTeeth(GameObject shoulderObj, Mesh shoulderMesh, Material material, int toothPhase)
+    Mesh ShoulderVisualMesh(Mesh flatShoulder)
     {
-        if (!railTeeth || railToothHeight <= 0f) return;
-
-        Mesh teethMesh = TrackMeshBuilder.BuildShoulderTeethMesh(
-            shoulderMesh.vertices, railToothEvery, railToothHeight, toothPhase);
-        if (teethMesh.vertexCount == 0) return;   // edge too short to hold a tooth
-
-        var teethObj = new GameObject("RailTeeth");
-        teethObj.transform.SetParent(shoulderObj.transform);
-        teethObj.tag = shoulderObj.tag;
-
-        teethObj.AddComponent<MeshFilter>().sharedMesh = teethMesh;
-        if (railTeethCollide) teethObj.AddComponent<MeshCollider>().sharedMesh = teethMesh;
-        teethObj.AddComponent<MeshRenderer>().sharedMaterial = material;
-    }
-
-    /// <summary>
-    /// Where the tooth pattern stands at the start of `edge`: carried on from its parent
-    /// so the teeth keep an even rhythm across edge joins instead of restarting.
-    /// </summary>
-    int RailToothPhaseAtStart(TrackEdge edge) => edge.parent != null ? edge.parent.railToothPhaseEnd : 0;
-
-    void SetRailToothPhaseEnd(TrackEdge edge, int startPhase, int segments)
-    {
-        edge.railToothPhaseEnd = (startPhase + segments) % Mathf.Max(1, railToothEvery);
+        if (shoulderRailHeight <= 0f) return flatShoulder;
+        return TrackMeshBuilder.BuildRaisedShoulderMesh(flatShoulder.vertices, flatShoulder.uv, shoulderRailHeight);
     }
 
     Material GetRoadMaterial()

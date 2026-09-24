@@ -612,6 +612,14 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 2100000, guid: bc7690c75e844554c9bfbd7387a4843f, type: 2}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: railToothEvery
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: railToothHeight
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: waypointSpacing
       value: 200
       objectReference: {fileID: 0}
