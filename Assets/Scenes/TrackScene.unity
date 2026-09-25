@@ -633,6 +633,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 0}
     - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
+      propertyPath: brakeStrength
+      value: 150
+      objectReference: {fileID: 0}
+    - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: turboItemName
       value: 
       objectReference: {fileID: 0}

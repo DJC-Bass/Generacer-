@@ -109,9 +109,10 @@ public class CarController : MonoBehaviour
     public Transform centerOfMass;
 
     [Header("Drift")]
-    [Tooltip("Hold Throttle (RT) and Brake (X) together to drift. The car keeps power " +
-         "but brakes softly, loses grip, and gains heavy downforce so it slides in a " +
-         "controlled arc. Release either input to leave the drift.")]
+    [Tooltip("Hold Brake (X) with Throttle (RT) to drift forward, or with Reverse (LT) to drift " +
+         "backward — chain the two for a quick 180. The car keeps power but brakes softly, " +
+         "loses grip, and gains heavy downforce so it slides in a controlled arc. Release X or " +
+         "the trigger to leave the drift.")]
     [Range(0f, 1f)] public float driftGripFactor = 0.35f;
     [Tooltip("Deceleration while drifting (m/s^2) — much softer than the normal brake " +
              "so the car keeps rolling and slides rather than stopping.")]
@@ -122,10 +123,10 @@ public class CarController : MonoBehaviour
     [Tooltip("Turn rate (deg/s) at high speed while drifting — higher than the normal " +
          "high-speed rate so the player can counter-steer through a slide.")]
     public float driftTurnRateHighSpeed = 110f;
-    [Tooltip("Top-speed multiplier while drifting, scaled by how far the stick is steered. At " +
-         "full steer the cap reaches this multiple of Max Speed (2 = 600 mph from 300); at half " +
+    [Tooltip("Top-speed multiplier while drifting FORWARD, scaled by how far the stick is steered. " +
+         "At full steer the cap reaches this multiple of Max Speed (2 = 600 mph from 300); at half " +
          "steer it's halfway (1.5x). The car accelerates up to the raised cap; the normal cap " +
-         "(and overspeed damping) returns when the drift ends.")]
+         "(and overspeed damping) returns when the drift ends. Reverse drifts keep the normal cap.")]
     public float driftMaxSpeedMultiplier = 2f;
 
     [Header("Downforce / Stick")]
@@ -710,9 +711,15 @@ public class CarController : MonoBehaviour
         float moveScale = Mathf.Clamp01(rb.linearVelocity.magnitude / 4f);
 
         // Flip the steering yaw when reversing so the car curves toward the way the front
-        // wheels point (like a real car backing up), instead of mirroring it.
-        float forwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
-        if (forwardSpeed < 0f) moveScale = -moveScale;
+        // wheels point (like a real car backing up), instead of mirroring it. Normally that
+        // follows the momentum; while drifting the TRIGGER decides instead — a reverse drift
+        // (LT + X) always steers reversed and a forward drift (RT + X) always steers forward —
+        // so switching between them mid-slide swings the car the intended way straight away,
+        // rather than only once the momentum has turned around.
+        bool steerReversed = isDrifting
+            ? throttleInput < 0f
+            : Vector3.Dot(rb.linearVelocity, transform.forward) < 0f;
+        if (steerReversed) moveScale = -moveScale;
 
         float yawDelta = smoothedSteer * turnRate * moveScale * Time.fixedDeltaTime;
 
@@ -764,7 +771,10 @@ public class CarController : MonoBehaviour
 
         // While drifting, raise the top-speed cap with the steering angle: full stick = the
         // full drift multiplier (e.g. 2x -> 600 mph), scaling linearly down to 1x at centre.
-        if (isDrifting)
+        // FORWARD drifts only: reverse top speed is this same cap, so a reverse drift would let
+        // the car back up toward 600 mph. Switching from a fast forward drift into a reverse one
+        // therefore drops the cap, and overspeed damping helps shed that speed through the 180.
+        if (isDrifting && throttleInput > 0f)
             maxMs *= 1f + (driftMaxSpeedMultiplier - 1f) * Mathf.Abs(steerInput);
 
         Vector3 fwd = transform.forward;
@@ -885,11 +895,13 @@ public class CarController : MonoBehaviour
     //  Drift state
     // -------------------------------------------------------
 
-    /// <summary>Drift = hold Throttle (RT) + Brake (X). Lowers grip, softens braking,
-    /// raises downforce and high-speed turn rate. Releasing either input exits.</summary>
+    /// <summary>Drift = hold Brake (X) with either trigger: Throttle (RT) drifts forward, Reverse
+    /// (LT) drifts backward — so a skilled player can chain the two through a quick 180 without
+    /// the slide ever breaking. Lowers grip, softens braking, raises downforce and high-speed turn
+    /// rate. Releasing X or the trigger exits.</summary>
     void UpdateDriftState()
     {
-        isDrifting = throttleInput > 0.05f && brakeInput > 0.05f;
+        isDrifting = Mathf.Abs(throttleInput) > 0.05f && brakeInput > 0.05f;
     }
 
     // -------------------------------------------------------

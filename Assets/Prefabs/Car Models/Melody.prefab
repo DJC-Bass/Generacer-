@@ -1101,8 +1101,8 @@ MonoBehaviour:
   orientationLerpSpeed: 5
   gripFactor: 0.9
   gripRecoverySpeed: 0.1
-  brakeStrength: 100
-  engineBraking: 20
+  brakeStrength: 150
+  engineBraking: 25
   centerOfMass: {fileID: 2349453435717303883}
   driftGripFactor: 0.01
   driftBrakeStrength: 0
