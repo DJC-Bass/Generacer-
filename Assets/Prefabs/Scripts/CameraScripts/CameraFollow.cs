@@ -35,6 +35,21 @@ public class CameraFollow : MonoBehaviour
     public float rotationSmoothTime = 0.1f;   // How fast the camera's aim eases onto the car
     public float lookAheadDistance = 5f;      // Looks toward where the car is heading
 
+    [Header("Boulder Hit Hold")]
+    [Tooltip("When a LavaBoulder hits the car while it's in the air, the camera stops following the " +
+             "car's rotation — YAW, PITCH and ROLL — so the violent tumble a high-speed hit causes " +
+             "doesn't whip the view around (it still moves with the car and keeps it framed). " +
+             "Following resumes after Boulder Hit Hold Duration, or sooner the moment the car is back " +
+             "on real ground, easing back onto the car at Position (yaw) / Pitch / Roll Smooth Time.")]
+    public bool holdOnAirborneBoulderHit = true;
+    [Tooltip("How long the camera ignores the car's rotation after an airborne boulder hit " +
+             "(seconds). Another hit in the air restarts it; landing on real ground ends it early.")]
+    public float boulderHitHoldDuration = 1f;
+    [Tooltip("Surfaces that don't count as ground for the hold: a car touching only these when a " +
+             "boulder hits counts as in the air, and landing on them doesn't end the hold early — " +
+             "only real ground, such as the track, does.")]
+    public LayerMask holdGroundIgnoreLayers = (1 << 12) | (1 << 13);   // Boulder, Fan
+
     [Header("Camera Swivel (right stick, grounded only)")]
     [Tooltip("Let the right stick orbit the camera around the car while it's on the ground, easing " +
              "back to neutral when the stick is released. Both axes work together, so a diagonal push " +
@@ -138,6 +153,16 @@ public class CameraFollow : MonoBehaviour
     // lagged rotation, so the camera orbits the car like a lazy Susan in each axis.
     private Quaternion smoothedRot = Quaternion.identity;
 
+    // Boulder-hit hold. While holdTimer > 0, neither smoothedRot nor aimAttitude (the car rotation the
+    // aim frames against) follows the car — both stay frozen. Afterwards aimAttitude eases back onto
+    // the car (aimRecovering); the rest of the time it simply IS the car's rotation, so normal
+    // framing is untouched.
+    private float holdTimer;
+    private Quaternion aimAttitude = Quaternion.identity;
+    private bool aimRecovering;
+    private const float AimRecoveredAngle = 0.5f;   // degrees from the car that counts as caught up
+    private CarController boundCar;         // the car whose BoulderHit this camera is subscribed to
+
     // Grounded look-around. Signed orbit angles in degrees — x = yaw around the car, y = pitch over/under
     // it — applied to BOTH the offset and the look-ahead point so the whole rig orbits rigidly and the
     // car stays framed. Smoothed as a pair (not per-axis) so a diagonal eases along a straight line.
@@ -187,7 +212,9 @@ public class CameraFollow : MonoBehaviour
             cachedTarget = target;
             targetRb = target.GetComponent<Rigidbody>();
             targetCar = target.GetComponent<CarController>();   // NEW
+            BindCar(targetCar);
             smoothedRot = target.rotation;   // start aligned so there's no initial swing
+            aimAttitude = target.rotation;
         }
 
         if (target != null)
@@ -210,7 +237,9 @@ public class CameraFollow : MonoBehaviour
         if (target == null) return;
         RefreshTargetCache();
 
+        UpdateBoulderHitHold();
         UpdateSmoothedRotation();
+        UpdateAimAttitude();
         UpdateSwivel();
         FollowPosition();
         FollowRotation();
@@ -229,13 +258,29 @@ public class CameraFollow : MonoBehaviour
         cachedTarget = target;
         targetRb = target.GetComponent<Rigidbody>();
         targetCar = target.GetComponent<CarController>();
+        BindCar(targetCar);
         smoothedRot = target.rotation;   // re-align so the swap doesn't swing the camera around
+        aimAttitude = target.rotation;
+        holdTimer = 0f;                  // the new car starts un-held, whatever the old one was doing
+        aimRecovering = false;
 
         swivel = Vector2.zero;           // and start the new car from a clean, unengaged neutral
         swivelVel = Vector2.zero;
         swivelEngaged = false;
         aimEase = 0f;
     }
+
+    /// <summary>Moves this camera's BoulderHit subscription onto <paramref name="car"/> (null = none).</summary>
+    void BindCar(CarController car)
+    {
+        // Reference checks, not Unity's ==: a destroyed car must still be unsubscribed from.
+        if (ReferenceEquals(car, boundCar)) return;
+        if (!ReferenceEquals(boundCar, null)) boundCar.BoulderHit -= OnTargetBoulderHit;
+        boundCar = car != null ? car : null;
+        if (!ReferenceEquals(boundCar, null)) boundCar.BoulderHit += OnTargetBoulderHit;
+    }
+
+    void OnDestroy() => BindCar(null);
 
     /// <summary>
     /// Grounded look-around: the right stick orbits the camera around the car, easing back to neutral
@@ -324,34 +369,99 @@ public class CameraFollow : MonoBehaviour
     }
 
     /// <summary>
+    /// The target car was struck by a boulder (raised during physics, straight from the collision or
+    /// the multiplayer shove). If it's in the air — not resting on real ground, i.e. anything outside
+    /// holdGroundIgnoreLayers — stop following its rotation (yaw, pitch and roll) for
+    /// boulderHitHoldDuration, freezing the camera's orientation where it is now. A hit on the ground
+    /// changes nothing; a further hit in the air restarts the clock.
+    /// </summary>
+    void OnTargetBoulderHit()
+    {
+        if (!holdOnAirborneBoulderHit || boulderHitHoldDuration <= 0f || targetCar == null) return;
+        if (targetCar.IsGroundedOnLayers(~holdGroundIgnoreLayers.value)) return;
+
+        holdTimer = boulderHitHoldDuration;
+    }
+
+    /// <summary>
+    /// Runs the boulder-hit hold down, ending it when the time is up or — even before that — the
+    /// moment the car is back on real ground. Perching on a boulder or fan doesn't count, so it can't
+    /// end the hold early. On release the aim starts easing back onto the car.
+    /// </summary>
+    void UpdateBoulderHitHold()
+    {
+        if (holdTimer <= 0f) return;
+
+        holdTimer -= Time.deltaTime;
+        bool landed = targetCar != null && targetCar.IsGroundedOnLayers(~holdGroundIgnoreLayers.value);
+        if (holdTimer <= 0f || landed || !holdOnAirborneBoulderHit)
+        {
+            holdTimer = 0f;
+            aimRecovering = true;
+        }
+    }
+
+    /// <summary>
     /// Eases the camera's reference rotation toward the car's, with an independent lag per
     /// axis: heading/yaw (positionSmoothTime), pitch (pitchSmoothTime) and roll (rollSmoothTime).
-    /// Each correction is applied around its own axis from a signed angle, which stays robust
-    /// through steep hills and loops — no Euler gimbal flips.
+    /// During a boulder-hit hold it doesn't follow at all — every axis stays put — then each eases
+    /// back at its own smooth time once the hold releases.
     /// </summary>
     void UpdateSmoothedRotation()
     {
-        Quaternion targetRot = target.rotation;
+        if (holdTimer > 0f) return;
 
-        // Yaw — ease heading around WORLD up. Skipped when the car's forward is near-vertical
-        // (e.g. a loop apex), where heading is undefined, so it holds steady there.
-        Vector3 smFwdH = Vector3.ProjectOnPlane(smoothedRot * Vector3.forward, Vector3.up);
-        Vector3 tgFwdH = Vector3.ProjectOnPlane(targetRot * Vector3.forward, Vector3.up);
-        if (smFwdH.sqrMagnitude > 1e-5f && tgFwdH.sqrMagnitude > 1e-5f)
+        smoothedRot = EasePerAxis(smoothedRot, target.rotation, positionSmoothTime, pitchSmoothTime, rollSmoothTime);
+    }
+
+    /// <summary>
+    /// Keeps aimAttitude — the car rotation FollowRotation frames against. Normally it simply IS the
+    /// car's rotation. During a boulder-hit hold it stays frozen where it was when the hit landed.
+    /// After the hold releases it eases back onto the car at the usual smooth times (yaw, pitch and
+    /// roll), then locks to it again.
+    /// </summary>
+    void UpdateAimAttitude()
+    {
+        if (holdTimer > 0f) return;
+
+        if (aimRecovering)
         {
-            float yawErr = Vector3.SignedAngle(smFwdH, tgFwdH, Vector3.up);
-            smoothedRot = Quaternion.AngleAxis(yawErr * Approach(positionSmoothTime), Vector3.up) * smoothedRot;
+            aimAttitude = EasePerAxis(aimAttitude, target.rotation, positionSmoothTime, pitchSmoothTime, rollSmoothTime);
+            if (Quaternion.Angle(aimAttitude, target.rotation) > AimRecoveredAngle) return;
+            aimRecovering = false;
         }
 
-        // Pitch — ease nose up/down around the camera frame's RIGHT axis.
-        Vector3 smRight = smoothedRot * Vector3.right;
-        float pitchErr = Vector3.SignedAngle(smoothedRot * Vector3.forward, targetRot * Vector3.forward, smRight);
-        smoothedRot = Quaternion.AngleAxis(pitchErr * Approach(pitchSmoothTime), smRight) * smoothedRot;
+        aimAttitude = target.rotation;
+    }
 
-        // Roll — ease bank around the camera frame's FORWARD axis.
-        Vector3 smFwd = smoothedRot * Vector3.forward;
-        float rollErr = Vector3.SignedAngle(smoothedRot * Vector3.up, targetRot * Vector3.up, smFwd);
-        smoothedRot = Quaternion.AngleAxis(rollErr * Approach(rollSmoothTime), smFwd) * smoothedRot;
+    /// <summary>
+    /// Eases `from` toward `to` with an independent lag per axis. Each correction is applied
+    /// around its own axis from a signed angle, which stays robust through steep hills and
+    /// loops — no Euler gimbal flips.
+    /// </summary>
+    Quaternion EasePerAxis(Quaternion from, Quaternion to, float yawSmooth, float pitchSmooth, float rollSmooth)
+    {
+        // Yaw — ease heading around WORLD up. Skipped when the car's forward is near-vertical
+        // (e.g. a loop apex), where heading is undefined, so it holds steady there.
+        Vector3 fromFwdH = Vector3.ProjectOnPlane(from * Vector3.forward, Vector3.up);
+        Vector3 toFwdH = Vector3.ProjectOnPlane(to * Vector3.forward, Vector3.up);
+        if (fromFwdH.sqrMagnitude > 1e-5f && toFwdH.sqrMagnitude > 1e-5f)
+        {
+            float yawErr = Vector3.SignedAngle(fromFwdH, toFwdH, Vector3.up);
+            from = Quaternion.AngleAxis(yawErr * Approach(yawSmooth), Vector3.up) * from;
+        }
+
+        // Pitch — ease nose up/down around the frame's RIGHT axis.
+        Vector3 right = from * Vector3.right;
+        float pitchErr = Vector3.SignedAngle(from * Vector3.forward, to * Vector3.forward, right);
+        from = Quaternion.AngleAxis(pitchErr * Approach(pitchSmooth), right) * from;
+
+        // Roll — ease bank around the frame's FORWARD axis.
+        Vector3 fwd = from * Vector3.forward;
+        float rollErr = Vector3.SignedAngle(from * Vector3.up, to * Vector3.up, fwd);
+        from = Quaternion.AngleAxis(rollErr * Approach(rollSmooth), fwd) * from;
+
+        return from;
     }
 
     // Exponential approach factor (0-1) for a smooth time. 0 = instant (snaps each frame).
@@ -360,8 +470,12 @@ public class CameraFollow : MonoBehaviour
 
     void FollowRotation()
     {
+        // The car's orientation as the camera treats it — its real rotation, except during the
+        // boulder-hit hold and the ease back afterwards (see UpdateAimAttitude).
+        Vector3 carUp = aimAttitude * Vector3.up;
+
         // How far is the car tilted from world-upright?
-        float tiltAngle = Vector3.Angle(target.up, Vector3.up);
+        float tiltAngle = Vector3.Angle(carUp, Vector3.up);
 
         // Blend factor: 0 = world-upright, 1 = full car roll. Smoothstep between
         // the two thresholds so the camera eases into rolling rather than snapping.
@@ -375,8 +489,8 @@ public class CameraFollow : MonoBehaviour
         }
 
         // Camera up: blend from world up toward the car's up.
-        Vector3 camUp = Vector3.Slerp(Vector3.up, target.up, blend);
-        if (camUp.sqrMagnitude < 1e-6f) camUp = target.up;   // guard near 180deg
+        Vector3 camUp = Vector3.Slerp(Vector3.up, carUp, blend);
+        if (camUp.sqrMagnitude < 1e-6f) camUp = carUp;   // guard near 180deg
 
         // Look slightly ahead of the car   or BEHIND it while rear view is active,
         // so the camera frames what's behind instead of what's ahead. Raise the
@@ -385,11 +499,11 @@ public class CameraFollow : MonoBehaviour
         float lookSign = rearView ? -1f : 1f;
 
         // Swing the look-ahead by the SAME orbit that moved the camera — expressed in the car's frame,
-        // which is exactly what `target.rotation * (swivel * forward)` is — so the rig orbits as one
+        // which is exactly what `aimAttitude * (swivel * forward)` is — so the rig orbits as one
         // piece and the car stays framed instead of sliding out of shot as the camera swings around.
         // The rear camera needs no special case: its offset and its look-ahead are both mirrored, so an
         // identical angle pans its view the same way on screen.
-        Vector3 lookForward = target.rotation * (SwivelRotation * Vector3.forward);
+        Vector3 lookForward = aimAttitude * (SwivelRotation * Vector3.forward);
 
         Vector3 focus = target.position + target.rotation * focusLocalOffset;
         Vector3 lookTarget = focus

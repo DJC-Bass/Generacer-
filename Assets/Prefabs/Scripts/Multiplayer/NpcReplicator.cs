@@ -204,6 +204,10 @@ public class NpcReplicator : MonoBehaviour
         var rb = car != null ? car.GetComponent<Rigidbody>() : null;
         if (rb == null) return;
         rb.AddForce(velocityChange, ForceMode.VelocityChange);
+
+        // Only boulders send shoves, so this IS a boulder hit — tell the car (its follow cameras ride
+        // out the tumble), exactly as the host's own car hears about it from its collision.
+        if (car.TryGetComponent(out CarController carController)) carController.NotifyBoulderHit();
     }
 
     /// <summary>Host: tell everyone a tracked NPC just took a hit, so their copy can flash — or, when

@@ -1269,7 +1269,7 @@ MonoBehaviour:
   meshRR: {fileID: 9117555695395384201}
   maxSpeedMph: 300
   acceleration: 100
-  reverseAcceleration: 50
+  reverseAcceleration: 100
   overspeedDamping: 1
   downhillThreshold: 0.01
   groundMask:
@@ -1303,13 +1303,12 @@ MonoBehaviour:
   airDriftSpeed: 75
   airDriftAcceleration: 50
   airAbilitiesGracePeriod: 0.4
-  manualPitchSpeed: 30
-  manualYawSpeed: 30
-  manualRollSpeed: 30
+  manualPitchSpeed: 50
+  manualYawSpeed: 50
+  manualRollSpeed: 50
   airBrakeGravityMultiplier: 6
   gravityMultiplier: 4
   airDrag: 0.05
-  airLevelingSpeed: 20
   turboMultiplier: 2
   turboDuration: 2
   turboCooldown: 0

@@ -299,6 +299,7 @@ public class CarController : MonoBehaviour
     // can be placed under the current hub without trailing behind at high speed.
     private readonly float[] groundDistance = new float[4];
     private readonly bool[] wheelGrounded = new bool[4];
+    private readonly Collider[] wheelGroundCollider = new Collider[4];   // what each wheel's ray hit (null = no hit)
     private float[] wheelSpinAngle = new float[4];
 
     private bool grounded;
@@ -342,6 +343,28 @@ public class CarController : MonoBehaviour
     /// up while fully airborne. Lets external effects (e.g. the speed-barrier kick) apply their own
     /// grounded grace window.</summary>
     public float AirborneTime => airborneTimer;
+
+    /// <summary>Fired the moment a boulder strikes the car — a collision with anything on the Boulder
+    /// layer, or (multiplayer client) the host's relayed boulder shove. The follow cameras use it to ride
+    /// out the tumble a high-speed hit can cause.</summary>
+    public event System.Action BoulderHit;
+
+    /// <summary>Raises <see cref="BoulderHit"/>. Public for NpcReplicator, whose relayed shove is how a
+    /// boulder reaches a client's car in multiplayer.</summary>
+    public void NotifyBoulderHit() => BoulderHit?.Invoke();
+
+    /// <summary>True if any wheel's suspension ray is currently resting on a collider whose layer is in
+    /// <paramref name="layers"/>. Lets the follow cameras tell real ground (the track) apart from things
+    /// the car can merely perch on, such as boulders and fans.</summary>
+    public bool IsGroundedOnLayers(LayerMask layers)
+    {
+        for (int i = 0; i < wheelGroundCollider.Length; i++)
+        {
+            Collider c = wheelGroundCollider[i];
+            if (c != null && (layers.value & (1 << c.gameObject.layer)) != 0) return true;
+        }
+        return false;
+    }
     /// <summary>Right-stick X/Y (the rebindable Yaw and Pitch axes) as the car read them this frame.
     /// Exposed so the follow cameras can drive their grounded swivel from the SAME reading the air
     /// rotation uses — one stick poll, one set of rebinds, no second InputActionAsset to keep in sync.</summary>
@@ -405,6 +428,17 @@ public class CarController : MonoBehaviour
 
         SetUpDriftAudio();
         SetUpTurboTrails();
+
+        boulderLayer = LayerMask.NameToLayer("Boulder");
+    }
+
+    private int boulderLayer = -1;   // resolved in Start; -1 = no Boulder layer, so no hits reported
+
+    void OnCollisionEnter(Collision collision)
+    {
+        if (boulderLayer >= 0 && collision.collider != null
+            && collision.collider.gameObject.layer == boulderLayer)
+            NotifyBoulderHit();
     }
 
     // -------------------------------------------------------
@@ -604,6 +638,7 @@ public class CarController : MonoBehaviour
         for (int i = 0; i < 4; i++)
         {
             wheelGrounded[i] = false;
+            wheelGroundCollider[i] = null;
             Transform a = anchorTransforms[i];
             if (a == null) continue;
 
@@ -612,6 +647,7 @@ public class CarController : MonoBehaviour
                                  QueryTriggerInteraction.Ignore))
             {
                 wheelGrounded[i] = true;
+                wheelGroundCollider[i] = hit.collider;
                 groundDistance[i] = hit.distance;   // vertical gap (the ray runs along -up)
                 normalSum += hit.normal;
                 hits++;
@@ -748,7 +784,7 @@ public class CarController : MonoBehaviour
         else if (throttleInput < -0.05f)
         {
             // Left Trigger: brake to a stop, then reverse.
-            float reverseRatio = Mathf.Clamp01(Mathf.Abs(Mathf.Min(fwdSpeed, 0f)) / Mathf.Max(maxMs * 0.4f, 0.01f));
+            float reverseRatio = Mathf.Clamp01(Mathf.Abs(Mathf.Min(fwdSpeed, 0f)) / Mathf.Max(maxMs, 0.01f));
             float accel = reverseAcceleration * (1f - reverseRatio) * -throttleInput;
             rb.AddForce(-fwd * accel, ForceMode.Acceleration);
         }
