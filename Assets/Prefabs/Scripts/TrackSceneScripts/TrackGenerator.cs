@@ -599,52 +599,24 @@ public class TrackGenerator : MonoBehaviour
     }
 
     /// <summary>
-    /// Builds a chain of 2–4 Bezier segments from leaf to finish.
-    /// Each control point along the chain is offset in a random direction
-    /// (lateral and vertical) producing genuinely different curve characters
-    /// per leaf. Tangent continuity at each midpoint guarantees smooth joins.
+    /// Builds the chain of Bezier segments from leaf to finish through control points laid out
+    /// by LayOutConvergencePath, so every path winds with its own mix of swings. Tangent
+    /// continuity at each control point guarantees smooth joins.
     /// </summary>
     void BuildLeafConvergence(TrackEdge leaf, Vector3 leafFinish,
                                Vector3 arrivalDir, float convergeLength)
     {
-        // Minimum of 3 winding segments so no branch is a near-straight short shot.
-        // Every branch gets enough intermediate control points to wind to the same
-        // length as its neighbours, so no path is a shortcut.
-        int numSegments = Random.Range(11, 12);   // 3 or 4
-
-        var controlPositions = new List<Vector3> { leaf.endPos };
+        // Every branch gets enough intermediate control points to wind to a similar length
+        // as its neighbours, so no path is a shortcut.
+        int numSegments = Random.Range(11, 12);   // always 11
 
         Vector3 axis = (leafFinish - leaf.endPos);
         if (axis.sqrMagnitude < 0.0001f) axis = Vector3.forward;
         Vector3 axisDir = axis.normalized;
-        Vector3 sideAxis = Vector3.Cross(Vector3.up, axisDir).normalized;
-        if (sideAxis.sqrMagnitude < 0.0001f) sideAxis = Vector3.right;
 
-        float styleSwing = Random.Range(.5f, 1.5f);
-        float styleVertical = Random.Range(.2f, .4f);
-        int windingPattern = Random.Range(0, 192);
-
-        float prevSide = 0f, prevVert = 0f;
-
-        for (int i = 1; i < numSegments; i++)
-        {
-            float t = i / (float)numSegments;
-            Vector3 straightPt = Vector3.Lerp(leaf.endPos, leafFinish, t);
-
-            float sideOffset = ChooseOffset(windingPattern, t, prevSide,
-                                             convergenceSwing * styleSwing);
-            int vertWinding = (windingPattern + 1) % 3;
-            float vertOffset = ChooseOffset(vertWinding, t, prevVert,
-                                              currentConvergenceAltitudeSwing * styleVertical);
-
-            Vector3 controlPos = straightPt + sideAxis * sideOffset + Vector3.up * vertOffset;
-            controlPos.y = Mathf.Max(controlPos.y, minAltitude);
-
-            controlPositions.Add(controlPos);
-            prevSide = sideOffset;
-            prevVert = vertOffset;
-        }
-        controlPositions.Add(leafFinish);
+        var controlPositions = new List<Vector3>(numSegments + 1);
+        var controlTensions = new List<float>(numSegments + 1);
+        LayOutConvergencePath(leaf.endPos, leafFinish, numSegments, controlPositions, controlTensions);
 
         var controlDirs = new List<Vector3>();
         controlDirs.Add(leaf.endDir);
@@ -704,10 +676,11 @@ public class TrackGenerator : MonoBehaviour
                 };
                 TuneHandlesForLength(seg, segmentLength);
 
+                // Each end's handle takes its control point's tension, so tight and lazy
+                // corners mix along the path instead of every corner sharing one shape.
                 float span = Vector3.Distance(seg.startPos, seg.endPos);
-                float minHandle = span * 0.45f;
-                seg.handleStart = Mathf.Max(seg.handleStart, minHandle);
-                seg.handleEnd = Mathf.Max(seg.handleEnd, minHandle);
+                seg.handleStart = Mathf.Max(seg.handleStart, span * controlTensions[i]);
+                seg.handleEnd = Mathf.Max(seg.handleEnd, span * controlTensions[i + 1]);
 
                 previousEdge.children.Add(seg);
                 allEdges.Add(seg);
@@ -715,6 +688,191 @@ public class TrackGenerator : MonoBehaviour
             }
         }
     }
+
+    // The swing styles a convergence path is strung together from, and their relative odds — the
+    // flowing shapes a little more common than the busy ones.
+    enum SwingStyle { Straight, Sweeper, Slalom, Hairpin, LaneShift }
+    static readonly float[] SwingStyleOdds = { 2f, 3f, 1.5f, 1.5f, 2f };
+
+    /// <summary>
+    /// Lays out one leaf's convergence control points from `from` to `to`: positions
+    /// [0..numSegments] (the two ends exactly `from` and `to`) plus a handle tension for each.
+    ///
+    /// The path is strung together from short sections, each a swing style picked at random — a
+    /// straight, a long sweeper, a quick slalom, a single hairpin, a lane shift — never the same
+    /// style twice in a row, with random lengths, sizes and sides. On top of that the whole path
+    /// gets its own bow (none, one long C, or a long S), so even the overall silhouette differs.
+    /// The control points are spaced unevenly along the way and their handle tension varies with
+    /// the style, so tight and lazy stretches mix. Altitude is laid out the same way,
+    /// independently. Every path gets its own character, and no single swing repeats all the way
+    /// to the finish.
+    /// </summary>
+    void LayOutConvergencePath(Vector3 from, Vector3 to, int numSegments,
+                               List<Vector3> positions, List<float> tensions)
+    {
+        Vector3 axis = to - from;
+        if (axis.sqrMagnitude < 0.0001f) axis = Vector3.forward;
+        Vector3 sideAxis = Vector3.Cross(Vector3.up, axis.normalized).normalized;
+        if (sideAxis.sqrMagnitude < 0.0001f) sideAxis = Vector3.right;
+
+        // Uneven spacing along the way — each gap 70-130% of the average — so even the rhythm
+        // of the swings changes from stretch to stretch.
+        var along = new float[numSegments + 1];
+        for (int i = 1; i <= numSegments; i++) along[i] = along[i - 1] + Random.Range(0.7f, 1.3f);
+        for (int i = 1; i <= numSegments; i++) along[i] /= along[numSegments];
+
+        // Per-path character: some paths swing wide and wild, others stay calmer.
+        float sideScale = convergenceSwing * Random.Range(0.6f, 1.3f);
+        float vertScale = currentConvergenceAltitudeSwing * Random.Range(0.15f, 0.45f);
+
+        var side = new float[numSegments + 1];
+        var vert = new float[numSegments + 1];
+        var tension = new float[numSegments + 1];
+        for (int i = 0; i <= numSegments; i++) tension[i] = 0.45f;   // the ends keep the old default
+        FillSwingProfile(side, sideScale, tension);
+        FillSwingProfile(vert, vertScale, null);
+        AddPathBow(side, along, sideScale);
+        AddPathBow(vert, along, vertScale);
+
+        // Soft limits rather than hard clamps, so stacked swings round off instead of flattening.
+        float sideLimit = convergenceSwing * 2f;
+        float vertLimit = currentConvergenceAltitudeSwing * 0.5f;
+
+        for (int i = 0; i <= numSegments; i++)
+        {
+            Vector3 p;
+            if (i == 0) p = from;
+            else if (i == numSegments) p = to;
+            else
+            {
+                p = Vector3.Lerp(from, to, along[i])
+                  + sideAxis * SoftLimit(side[i], sideLimit)
+                  + Vector3.up * SoftLimit(vert[i], vertLimit);
+                p.y = Mathf.Max(p.y, minAltitude);
+            }
+            positions.Add(p);
+            tensions.Add(tension[i]);
+        }
+    }
+
+    /// <summary>
+    /// Adds one whole-path bow to `offsets`: 30% of paths none, the rest a single long C or a long
+    /// S, peaking at a random point along the way. Zero at both ends, so the endpoints never move.
+    /// </summary>
+    static void AddPathBow(float[] offsets, float[] along, float scale)
+    {
+        if (Random.value < 0.3f) return;
+        float waves = Random.value < 0.5f ? 1f : 2f;                     // 1 = C, 2 = S
+        float amp = Random.Range(0.4f, 1f) * scale * (Random.value < 0.5f ? -1f : 1f);
+        float peak = Random.Range(0.35f, 0.65f);                          // where the bow leans
+
+        for (int i = 1; i < offsets.Length - 1; i++)
+        {
+            // Warp `along` so its midpoint lands on `peak`, skewing the bow forward or back.
+            float t = along[i];
+            float w = t < peak ? 0.5f * t / peak : 0.5f + 0.5f * (t - peak) / (1f - peak);
+            offsets[i] += amp * Mathf.Sin(Mathf.PI * waves * w);
+        }
+    }
+
+    /// <summary>Smoothly squashes `x` into (-limit, limit): near-linear for small values, rounding
+    /// off big ones instead of clipping them flat.</summary>
+    static float SoftLimit(float x, float limit) =>
+        limit <= 0f ? 0f : limit * (float)System.Math.Tanh(x / limit);
+
+    /// <summary>
+    /// Fills offsets[1..n-2] (the interior points — both ends stay on the axis at 0) with a run of
+    /// random swing sections and — when `tension` is given — the handle tension that suits each
+    /// section. Used for both the sideways and the vertical profile of a path.
+    /// </summary>
+    void FillSwingProfile(float[] offsets, float scale, float[] tension)
+    {
+        int last = offsets.Length - 2;   // final interior point
+        float lane = 0f;                 // the line the path is currently centred on
+        var previous = (SwingStyle)(-1);
+
+        for (int i = 1; i <= last; )
+        {
+            SwingStyle style = PickSwingStyle(previous);
+            previous = style;
+            float sign = Random.value < 0.5f ? -1f : 1f;
+            int len;
+
+            switch (style)
+            {
+                case SwingStyle.Straight:      // hold the current line — a breather between swings
+                    len = Random.Range(1, 3);
+                    for (int k = 0; k < len; k++)
+                        Put(i + k, lane + Random.Range(-0.1f, 0.1f) * scale, 0.4f, 0.5f);
+                    break;
+
+                case SwingStyle.Sweeper:       // one long, smooth arc out to a side and back
+                {
+                    len = Random.Range(2, 5);
+                    float amp = Random.Range(0.6f, 1.1f) * scale;
+                    for (int k = 0; k < len; k++)
+                        Put(i + k, lane + sign * amp * Mathf.Sin(Mathf.PI * (k + 1) / (len + 1)), 0.4f, 0.5f);
+                    break;
+                }
+
+                case SwingStyle.Slalom:        // a short burst of quick left-right flicks
+                    len = Random.Range(2, 4);
+                    for (int k = 0; k < len; k++, sign = -sign)
+                        Put(i + k, lane + sign * Random.Range(0.3f, 0.7f) * scale, 0.4f, 0.5f);
+                    break;
+
+                case SwingStyle.Hairpin:       // a single sharp jab out to one side
+                    len = 1;
+                    Put(i, lane + sign * Random.Range(0.8f, 1.1f) * scale, 0.4f, 0.5f);
+                    break;
+
+                default:                       // LaneShift — drift across to a new line and stay on it
+                {
+                    len = Random.Range(1, 3);
+                    float newLane = Mathf.Clamp(lane + sign * Random.Range(0.4f, 0.8f) * scale,
+                                                -0.6f * scale, 0.6f * scale);
+                    for (int k = 0; k < len; k++)
+                        Put(i + k, Mathf.Lerp(lane, newLane, (k + 1f) / len), 0.4f, 0.5f);
+                    lane = newLane;
+                    break;
+                }
+            }
+            i += len;
+        }
+
+        void Put(int index, float value, float minTension, float maxTension)
+        {
+            if (index > last) return;   // a section running past the end is simply cut short
+            offsets[index] = value;
+            if (tension != null) tension[index] = Random.Range(minTension, maxTension);
+        }
+    }
+
+    /// <summary>
+    /// Weighted random swing style. Never `previous`, so no style runs twice in a row — and a busy
+    /// section (slalom or hairpin) is always followed by a calm one, so busy flicks can't chain
+    /// into one long, coil-like zigzag.
+    /// </summary>
+    static SwingStyle PickSwingStyle(SwingStyle previous)
+    {
+        float total = 0f;
+        for (int s = 0; s < SwingStyleOdds.Length; s++)
+            if (CanFollow((SwingStyle)s, previous)) total += SwingStyleOdds[s];
+
+        float roll = Random.value * total;
+        for (int s = 0; s < SwingStyleOdds.Length; s++)
+        {
+            if (!CanFollow((SwingStyle)s, previous)) continue;
+            roll -= SwingStyleOdds[s];
+            if (roll <= 0f) return (SwingStyle)s;
+        }
+        return previous == SwingStyle.Sweeper ? SwingStyle.Straight : SwingStyle.Sweeper;   // float round-off
+    }
+
+    static bool IsBusySwing(SwingStyle s) => s == SwingStyle.Slalom || s == SwingStyle.Hairpin;
+
+    static bool CanFollow(SwingStyle next, SwingStyle previous) =>
+        next != previous && !(IsBusySwing(next) && IsBusySwing(previous));
 
     /// <summary>
     /// Builds the loop as a single flexible "wire": a circular arc in a tilted
@@ -1005,29 +1163,6 @@ public class TrackGenerator : MonoBehaviour
         }
 
         return pts;
-    }
-
-    /// <summary>
-    /// Returns a signed offset based on a winding pattern so different paths
-    /// have characteristically different shapes rather than all looking similar.
-    /// </summary>
-    float ChooseOffset(int pattern, float t, float prevOffset, float maxAmplitude)
-    {
-        float magnitude = Random.Range(0.5f, 1f) * maxAmplitude;
-
-        switch (pattern)
-        {
-            case 0:  // Zigzag — alternate sign each control point
-                return -Mathf.Sign(prevOffset == 0f ? Random.Range(-1f, 1f) : prevOffset)
-                      * magnitude;
-
-            case 1:  // Sweep — keep same sign, varying magnitude
-                float sweepSign = (prevOffset == 0f) ? Mathf.Sign(Random.Range(-1f, 1f)) : Mathf.Sign(prevOffset);
-                return sweepSign * magnitude * Mathf.Sin(t * Mathf.PI);
-
-            default: // Random — every control point picks an independent direction
-                return Random.Range(-1f, 1f) * magnitude;
-        }
     }
 
     /// <summary>
