@@ -642,7 +642,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: manualYawSpeed
-      value: 75
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: turboTrailTime
@@ -650,11 +650,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: manualRollSpeed
-      value: 75
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 272028573550546906, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: manualPitchSpeed
-      value: 75
+      value: 100
       objectReference: {fileID: 0}
     - target: {fileID: 8208272492180382925, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1407,6 +1407,10 @@ PrefabInstance:
       value: 4000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: branchLevels
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: lateralSweep
       value: 25000
       objectReference: {fileID: 0}
@@ -1440,7 +1444,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceSwing
-      value: 3500
+      value: 3000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: spawnVelocityMph
@@ -1504,7 +1508,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceAltitudeSwing
-      value: 3000
+      value: 2000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: sideLoopExitForwardOffset
