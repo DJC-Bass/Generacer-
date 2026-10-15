@@ -15,8 +15,22 @@ public class DroneCar : MonoBehaviour
     [Header("Correction")]
     [Tooltip("Normal correction strength — high so the drone stays locked to its path.")]
     public float correctionStrength = 10f;
+    [Tooltip("How quickly the drone turns toward the player in the hub chase. (On the track its " +
+             "orientation comes from its ground rays instead — see Orientation Lerp Speed.)")]
     public float rotationCorrection = 8f;
     public float maxOffPathDistance = 500f;
+
+    [Header("Ground Probe (raycast)")]
+    [Tooltip("Layers the drone's ground rays test against — the track. Like the player car, a ray is " +
+             "cast from each wheel straight down the CAR (its own -up, not world down), so the drone " +
+             "always knows which way the road surface faces — even upside down in a loop.")]
+    public LayerMask groundMask = 1 << 8;   // Track
+    [Tooltip("How far below each wheel anchor the rays look for the road (units).")]
+    public float groundRayLength = 3f;
+    [Tooltip("How quickly the drone's body settles flat onto the road and turns along its path. " +
+             "Higher = tighter to the surface; lower = smoother. Same default as the player car's " +
+             "Orientation Lerp Speed.")]
+    public float orientationLerpSpeed = 12f;
 
     [Header("Collision Response")]
     [Tooltip("Correction strength while the player is colliding with this drone. " +
@@ -29,9 +43,9 @@ public class DroneCar : MonoBehaviour
     public string playerTag = "Player";
 
     [Header("Vertical Offset")]
-    [Tooltip("Distance above the sampled path point to hover at. Compensates for " +
-             "the road centerline being on the underside of the mesh if road thickness " +
-             "is negative.")]
+    [Tooltip("Distance above the sampled path point to ride at, measured along the road's surface " +
+             "normal (so it stays 'above' the road even upside down in a loop). 0 = the car's pivot " +
+             "sits right on the road surface.")]
     public float verticalSpawnOffset = 5f;
 
     [Header("Shooting")]
@@ -89,6 +103,8 @@ public class DroneCar : MonoBehaviour
 
     private TrackPath path;
     private Rigidbody rb;
+    private Transform[] groundAnchors;          // ray origins: the (disabled) wheel colliders
+    private Vector3 surfaceNormal = Vector3.up; // the road's up under the car — kept from the last hit
     private float lastFireTime = -999f;
     private bool finished;
     // Burst-fire state machine
@@ -105,6 +121,17 @@ public class DroneCar : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         rb.useGravity = false;
+
+        // The wheel colliders double as ray anchors, exactly as on the player car — and are switched
+        // off, so their physics suspension stops pushing the body against the path-follow (one of the
+        // sources of the old shake on hills).
+        var wheels = GetComponentsInChildren<WheelCollider>(true);
+        groundAnchors = new Transform[wheels.Length];
+        for (int i = 0; i < wheels.Length; i++)
+        {
+            wheels[i].enabled = false;
+            groundAnchors[i] = wheels[i].transform;
+        }
     }
 
     public void Initialize(TrackPath assignedPath, float startDistance, float speed)
@@ -118,6 +145,17 @@ public class DroneCar : MonoBehaviour
             path.Sample(pathDistance, out Vector3 pos, out Vector3 tan);
             transform.SetPositionAndRotation(pos + Vector3.up * verticalSpawnOffset,
                                              Quaternion.LookRotation(tan, Vector3.up));
+
+            // Start flush with the road rather than easing onto it from world-upright.
+            if (ProbeSurface(out Vector3 n))
+            {
+                surfaceNormal = n;
+                Vector3 fwd = Vector3.ProjectOnPlane(tan, n);
+                if (fwd.sqrMagnitude > 1e-6f)
+                    transform.SetPositionAndRotation(pos + n * verticalSpawnOffset,
+                                                     Quaternion.LookRotation(fwd.normalized, n));
+            }
+
             // Placed here, not slid here from wherever the prefab was instantiated.
             MultiplayerWorld.ClearInterpolationHistory(rb != null ? rb : GetComponent<Rigidbody>());
         }
@@ -138,8 +176,14 @@ public class DroneCar : MonoBehaviour
 
         pathDistance += pathSpeed * Time.fixedDeltaTime;
 
-        path.Sample(pathDistance, out Vector3 targetPos, out Vector3 tangent);
-        targetPos += Vector3.up * verticalSpawnOffset;
+        path.Sample(pathDistance, out Vector3 pathPos, out Vector3 tangent);
+
+        // The road's up under the car, from its ground rays (held from the last hit if they briefly
+        // find nothing). The ride offset and orientation follow it instead of world up — which is what
+        // keeps the drone the right way up relative to the road all the way round a loop. A knocked
+        // drone stops reading the road and just falls.
+        if (!playerHit && ProbeSurface(out Vector3 n)) surfaceNormal = n;
+        Vector3 targetPos = pathPos + (playerHit ? Vector3.up : surfaceNormal) * verticalSpawnOffset;
 
         if (pathDistance >= path.TotalLength)
         {
@@ -168,7 +212,6 @@ public class DroneCar : MonoBehaviour
         // After a player hit, use the soft correction permanently (no recovery)
         // so the drone stays knock-able and downforce can carry it off-track.
         float activeCorrection = playerHit ? collisionCorrectionStrength : correctionStrength;
-        float activeRotation = playerHit ? collisionRotationCorrection : rotationCorrection;
 
         Vector3 toTarget = targetPos - worldPos;
         rb.AddForce(toTarget * activeCorrection, ForceMode.Acceleration);
@@ -177,15 +220,76 @@ public class DroneCar : MonoBehaviour
         rb.linearVelocity = Vector3.Lerp(rb.linearVelocity, desiredVel,
                                           activeCorrection * Time.fixedDeltaTime);
 
-        Quaternion targetRot = Quaternion.LookRotation(tangent, Vector3.up);
-        rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot,
-                                          activeRotation * Time.fixedDeltaTime));
-
-        // Steady downforce after a hit — mimics gravity so the drone sinks off the
-        // track and falls to the kill floor. Applied after the path Lerp so it wins
-        // on the vertical axis.
         if (playerHit)
+        {
+            Quaternion targetRot = Quaternion.LookRotation(tangent, Vector3.up);
+            rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot,
+                                              collisionRotationCorrection * Time.fixedDeltaTime));
+
+            // Steady downforce after a hit — mimics gravity so the drone sinks off the
+            // track and falls to the kill floor. Applied after the path Lerp so it wins
+            // on the vertical axis.
             rb.AddForce(Vector3.down * knockDownforce, ForceMode.Acceleration);
+        }
+        else
+        {
+            AlignToSurface(tangent);
+        }
+    }
+
+    /// <summary>
+    /// Casts a ray straight down the CAR (its own -up) from each wheel anchor, as the player car does,
+    /// and averages the road normals they find. Returns false when no ray touches the track. Because
+    /// the rays follow the car's own orientation, they keep finding the road under the wheels through
+    /// loops and over crests, so the normal is always the up of the surface the car is driving on.
+    /// </summary>
+    bool ProbeSurface(out Vector3 normal)
+    {
+        Vector3 down = -transform.up;
+        Vector3 sum = Vector3.zero;
+        int hits = 0;
+
+        if (groundAnchors != null && groundAnchors.Length > 0)
+        {
+            foreach (Transform anchor in groundAnchors)
+            {
+                if (anchor != null && Physics.Raycast(anchor.position, down, out RaycastHit hit,
+                                                      groundRayLength, groundMask, QueryTriggerInteraction.Ignore))
+                {
+                    sum += hit.normal;
+                    hits++;
+                }
+            }
+        }
+        else if (Physics.Raycast(transform.position + transform.up, down, out RaycastHit hit,
+                                 groundRayLength + 1f, groundMask, QueryTriggerInteraction.Ignore))
+        {
+            sum = hit.normal;   // no wheel colliders on this model: one ray from just above the pivot
+            hits = 1;
+        }
+
+        normal = hits > 0 ? (sum / hits).normalized : Vector3.zero;
+        return hits > 0;
+    }
+
+    /// <summary>
+    /// Settles the body flat onto the road — up = the surface normal from the ground rays — pointing
+    /// along the path, eased exactly like the player car's orientation so triangle-to-triangle normal
+    /// changes and path bends are smoothed rather than snapped. Leftover spin from bumps is damped so
+    /// it can't fight the alignment.
+    /// </summary>
+    void AlignToSurface(Vector3 tangent)
+    {
+        Vector3 fwd = Vector3.ProjectOnPlane(tangent, surfaceNormal);
+        if (fwd.sqrMagnitude < 1e-6f) fwd = Vector3.ProjectOnPlane(transform.forward, surfaceNormal);
+        if (fwd.sqrMagnitude < 1e-6f) return;
+
+        Quaternion target = Quaternion.LookRotation(fwd.normalized, surfaceNormal);
+        float t = 1f - Mathf.Exp(-orientationLerpSpeed * Time.fixedDeltaTime);
+        rb.MoveRotation(Quaternion.Slerp(rb.rotation, target, t));
+
+        rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, Vector3.zero,
+                                          orientationLerpSpeed * Time.fixedDeltaTime);
     }
 
     /// <summary>Switches this drone into hub Drone-ending chase mode: it chases a player along the

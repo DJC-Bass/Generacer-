@@ -46,11 +46,17 @@ public class TrackPath
 
                 Vector3 dir = d > 0.0001f ? delta / d : Vector3.forward;
                 tangents.Add(dir);
-                // Update previous tangent too — first point's tangent matches first segment
+                // Update previous tangent too ï¿½ first point's tangent matches first segment
                 if (i == 1) tangents[0] = dir;
             }
         }
     }
+
+    // Half-span (units) over which Sample measures the direction of travel. The sampled points can sit
+    // only centimetres apart (the TrackGenerator's Waypoint Spacing), and at track-scale coordinates
+    // float rounding makes each tiny segment's own direction wobble by degrees â€” which the drones used
+    // to chase every physics step. Measuring across a few units of path gives a steady heading.
+    const float TangentHalfSpan = 2f;
 
     public void Sample(float distance, out Vector3 position, out Vector3 tangent)
     {
@@ -62,7 +68,19 @@ public class TrackPath
         }
 
         distance = Mathf.Clamp(distance, 0f, totalLength);
+        position = PositionAt(distance, out int segment);
 
+        Vector3 ahead = PositionAt(Mathf.Min(distance + TangentHalfSpan, totalLength), out _);
+        Vector3 behind = PositionAt(Mathf.Max(distance - TangentHalfSpan, 0f), out _);
+        Vector3 span = ahead - behind;
+        tangent = span.sqrMagnitude > 1e-8f ? span.normalized
+                                            : tangents[Mathf.Min(segment, tangents.Count - 1)];
+    }
+
+    /// <summary>Point at `distance` along the path (already clamped), and the index of the segment
+    /// it lies on.</summary>
+    Vector3 PositionAt(float distance, out int segment)
+    {
         int lo = 0, hi = distances.Count - 1;
         while (lo < hi)
         {
@@ -77,7 +95,7 @@ public class TrackPath
         float segLen = distances[j] - distances[i];
         float t = segLen > 0.0001f ? (distance - distances[i]) / segLen : 0f;
 
-        position = Vector3.Lerp(points[i], points[j], t);
-        tangent = tangents[Mathf.Min(i, tangents.Count - 1)];
+        segment = i;
+        return Vector3.Lerp(points[i], points[j], t);
     }
 }
