@@ -50,6 +50,8 @@ public class MainMenuReturnTrigger : MonoBehaviour
     /// or escape from.</summary>
     void ReturnToMainMenu()
     {
+        GrappleHook.ReleaseForTravel();   // nothing stays tethered to the world being left
+
         // Multiplayer: this pad returns to the LOBBY ROOM, not the main menu, and stays in the session
         // (2026-08-27). It is the in-world way to say "I am done with this run", not "I am done with
         // these people" — leaving the session outright is what the lobby's own BACK button is for, and

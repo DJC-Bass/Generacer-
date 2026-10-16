@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// GRAPPLING HOOK. <b>RB</b> fires a hook out of the front of the car; it flies up to
@@ -141,6 +142,31 @@ public class GrappleHook : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(this); return; }
         Instance = this;
         RebuildBlockedMask();
+    }
+
+    void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
+    void OnDisable() => SceneManager.sceneLoaded -= OnSceneLoaded;
+
+    /// <summary>Safety net for every scene change that doesn't go through a portal (kill floor, LRA
+    /// abort, round timeout...): a full scene load means the car has left the world its anchor was in,
+    /// so the hook drops — silently, since the car is already somewhere else. Additive loads (the
+    /// multiplayer track streaming in beside the hub) don't move the car and are ignored.</summary>
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (Instance == this && mode == LoadSceneMode.Single) Release(playSound: false);
+    }
+
+    /// <summary>
+    /// Drops the local hook outright — in flight or attached — because the car is leaving through a
+    /// portal (or otherwise teleporting to another scene/area). A rope can't span two places: left
+    /// attached, its anchor stays a point in the world being left and the tether flings the car toward
+    /// it at absurd speed. The hook was spent when it launched, so it stays spent. In multiplayer this
+    /// also shrugs off anyone who has US hooked, whose rope would otherwise stretch across the jump.
+    /// </summary>
+    public static void ReleaseForTravel()
+    {
+        if (Instance != null) Instance.Release();
+        if (MultiplayerWorld.IsMultiplayerGame) GrappleReplicator.SendBreakFree();
     }
 
     void RebuildBlockedMask()
@@ -393,14 +419,14 @@ public class GrappleHook : MonoBehaviour
         Debug.Log($"[Grapple] Attached to '{hit.collider.name}' at {ropeLength:0.#} m.");
     }
 
-    public void Release()
+    public void Release(bool playSound = true)
     {
         if (CurrentState == State.Idle) return;
         CurrentState = State.Idle;
         CurrentAnchorKind = AnchorKind.None;
         anchorRb = null;
         anchorWasBody = false;
-        if (carGO != null)
+        if (playSound && carGO != null)
         {
             AudioManager.PlayGrappleRelease(carGO.transform.position);
             RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.GrappleRelease, carGO.transform.position);

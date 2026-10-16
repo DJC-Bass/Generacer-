@@ -66,6 +66,7 @@ public class PortalTrigger : MonoBehaviour
         {
             if (!portalActive || isLoading || !other.CompareTag("Player")) return;
             isLoading = true;
+            GrappleHook.ReleaseForTravel();   // no rope may follow the car out of this world
             StartCoroutine(LeaveAfterVictory());
             return;
         }
@@ -87,12 +88,16 @@ public class PortalTrigger : MonoBehaviour
                 if (MultiplayerWorld.Instance.CanEnterTrack)
                 {
                     isLoading = true;
+                    GrappleHook.ReleaseForTravel();   // now, not after the activation delay
                     StartCoroutine(TeleportIntoTrack());
                 }
                 return;
             }
 
             isLoading = true;
+            // Drop any grapple the moment the car enters — before the activation delay, so the rope
+            // can't drag it back out, and so nothing stays tethered to this scene after the load.
+            GrappleHook.ReleaseForTravel();
             StartCoroutine(LoadTrackScene());
         }
     }

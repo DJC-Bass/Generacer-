@@ -50,6 +50,10 @@ public class ReturnPortalTrigger : MonoBehaviour
 
     void ReturnToHub()
     {
+        // A grapple can't follow the car out of the track — still hooked to it, the rope would fling
+        // the car toward a point in a world it has left. Dropped here, spent as it was at launch.
+        GrappleHook.ReleaseForTravel();
+
         // Multiplayer: credits stay a LOCAL concern, but the SD award is the SERVER's call — report
         // the finish (with this client's own first-place verdict, until Phase 5 centralises the AI)
         // and let MultiplayerScoring claim the round for our team + validate the award. Then TELEPORT

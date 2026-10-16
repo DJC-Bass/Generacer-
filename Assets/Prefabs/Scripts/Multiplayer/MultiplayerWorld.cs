@@ -630,6 +630,9 @@ public class MultiplayerWorld : MonoBehaviour
 
     static void TeleportCar(Rigidbody rb, Transform car, Vector3 pos, Quaternion rot)
     {
+        // Every area jump (portal, kill floor, LRA abort, round end) drops any grapple first: a rope
+        // stretched across the ~35 km jump would fling the car — or whoever has it hooked.
+        GrappleHook.ReleaseForTravel();
         car.SetPositionAndRotation(pos, rot);
         Physics.SyncTransforms();
         ClearInterpolationHistory(rb);
