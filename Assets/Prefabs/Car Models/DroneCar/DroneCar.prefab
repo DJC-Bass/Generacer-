@@ -518,6 +518,11 @@ MonoBehaviour:
   correctionStrength: 250
   rotationCorrection: 50
   maxOffPathDistance: 500
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 256
+  groundRayLength: 3
+  orientationLerpSpeed: 12
   collisionCorrectionStrength: 0
   collisionRotationCorrection: 0
   playerTag: Player

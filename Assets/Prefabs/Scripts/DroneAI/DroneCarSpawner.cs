@@ -83,8 +83,9 @@ public class DroneCarSpawner : MonoBehaviour
 
     void SpawnGroup(float spawnFraction, int count)
     {
-        // Get a random path from start to finish for this group
-        var pathPoints = trackGenerator.SampleRandomPath();
+        // Get a path from start to finish for this group — spread across every path before any path
+        // takes a second group (the tally is shared with the other spawners on this track).
+        var pathPoints = trackGenerator.SampleLeastOccupiedPath();
         if (pathPoints == null || pathPoints.Count < 2) return;
 
         var path = new TrackPath();

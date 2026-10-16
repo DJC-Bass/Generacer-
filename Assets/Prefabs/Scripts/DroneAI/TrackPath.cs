@@ -18,7 +18,7 @@ public class TrackPath
 
     /// <summary>
     /// Build from a pre-sampled list of world-space points (from
-    /// TrackGenerator.SampleRandomPath).
+    /// TrackGenerator.SampleLeastOccupiedPath).
     /// </summary>
     public void BuildFromPoints(List<Vector3> sampledPoints)
     {

@@ -216,6 +216,9 @@ public class TrackGenerator : MonoBehaviour
     private TrackEdge rootEdge;
     private readonly List<TrackEdge> allEdges = new List<TrackEdge>();
     private readonly List<TrackEdge> leafEdges = new List<TrackEdge>();
+    // How many AI racer groups each start-to-finish path (one per leaf, in leafEdges order) has been
+    // given so far — see SampleLeastOccupiedPath.
+    private int[] pathGroupCounts = new int[0];
     private Vector3 trackStart;
     private Vector3 trackFinish;
 
@@ -307,6 +310,7 @@ public class TrackGenerator : MonoBehaviour
 
         // Phase 3 — connect each leaf to the finish with a length-tuned Bezier
         BuildConvergence(inwardLength);
+        pathGroupCounts = new int[leafEdges.Count];   // no racer groups on any path yet
 
         // Phase 4 — mesh every edge
         foreach (var edge in allEdges) BuildEdgeMesh(edge);
@@ -356,33 +360,57 @@ public class TrackGenerator : MonoBehaviour
     }
 
     /// <summary>
-    /// Walks from root to a finish point, picking randomly at each fork.
-    /// Returns a list of world-space centerline points along that single path.
+    /// Picks a start-to-finish path for a new group of AI racers and returns its world-space
+    /// centerline points. Groups are spread out: the path given the fewest groups so far wins (at
+    /// random among ties), so every path gets a group before any path gets a second, and so on.
+    /// Every spawner shares the one tally, so DroneCar and ChallengerCar groups balance out together.
     /// </summary>
-    public List<Vector3> SampleRandomPath()
+    public List<Vector3> SampleLeastOccupiedPath()
     {
-        var points = new List<Vector3>();
-        if (rootEdge == null) return points;
+        if (leafEdges.Count == 0) return new List<Vector3>();
+        if (pathGroupCounts.Length != leafEdges.Count) pathGroupCounts = new int[leafEdges.Count];
 
-        TrackEdge current = rootEdge;
-        while (current != null)
+        int fewest = int.MaxValue, ties = 0;
+        foreach (int count in pathGroupCounts)
         {
-            if (current.sampledPoints != null)
-            {
-                // Skip the first point of each edge after root to avoid duplicates
-                // (each edge's first point equals the previous edge's last point)
-                int startIdx = (points.Count == 0) ? 0 : 1;
-                for (int i = startIdx; i < current.sampledPoints.Count; i++)
-                    points.Add(current.sampledPoints[i]);
-            }
-
-            // Pick a random child if there are forks; null if we've reached a leaf
-            if (current.children.Count == 0)
-                current = null;
-            else
-                current = current.children[Random.Range(0, current.children.Count)];
+            if (count < fewest) { fewest = count; ties = 1; }
+            else if (count == fewest) ties++;
         }
 
+        int pick = Random.Range(0, ties);
+        for (int i = 0; i < pathGroupCounts.Length; i++)
+        {
+            if (pathGroupCounts[i] != fewest || pick-- > 0) continue;
+            pathGroupCounts[i]++;
+            return SamplePathThrough(leafEdges[i]);
+        }
+        return new List<Vector3>();   // unreachable
+    }
+
+    /// <summary>
+    /// Centerline points of the start-to-finish path through `leaf` (each leaf is one path): the
+    /// outward branches from the root down to it, then its convergence chain on to the finish.
+    /// </summary>
+    List<Vector3> SamplePathThrough(TrackEdge leaf)
+    {
+        var chain = new List<TrackEdge>();
+        for (TrackEdge e = leaf; e != null; e = e.parent) chain.Add(e);
+        chain.Reverse();
+        for (TrackEdge e = leaf; e.children.Count > 0; )
+        {
+            e = e.children[0];   // past the leaf the path never forks
+            chain.Add(e);
+        }
+
+        var points = new List<Vector3>();
+        foreach (TrackEdge edge in chain)
+        {
+            if (edge.sampledPoints == null) continue;
+            // Skip each later edge's first point — it repeats the previous edge's last one.
+            int startIdx = (points.Count == 0) ? 0 : 1;
+            for (int i = startIdx; i < edge.sampledPoints.Count; i++)
+                points.Add(edge.sampledPoints[i]);
+        }
         return points;
     }
 
