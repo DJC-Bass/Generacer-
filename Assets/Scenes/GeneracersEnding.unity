@@ -316,6 +316,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: roadWidth
+      value: 35
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: loopChance
       value: 0
       objectReference: {fileID: 0}
@@ -337,7 +341,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: convergenceSwing
-      value: 250
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: targetBranchLength
@@ -809,6 +813,11 @@ MonoBehaviour:
   rollSmoothTime: 0.25
   rotationSmoothTime: 0.1
   lookAheadDistance: 5
+  holdOnAirborneBoulderHit: 1
+  boulderHitHoldDuration: 1
+  holdGroundIgnoreLayers:
+    serializedVersion: 2
+    m_Bits: 12288
   enableSwivel: 1
   maxSwivelYawAngle: 90
   maxSwivelPitchUpAngle: 60

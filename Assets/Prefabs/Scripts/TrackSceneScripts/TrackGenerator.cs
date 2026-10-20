@@ -51,10 +51,13 @@ public class TrackGenerator : MonoBehaviour
     [Tooltip("Material applied to the shoulder strips. Use a URP/Lit material " +
              "with an emission color to make them glow.")]
     public Material shoulderMaterial;
-    [Tooltip("How far the shoulders rise above the road surface, forming a low curb rail " +
-             "that outlines the turns (units). Visual only — the car still drives on the flat " +
-             "shoulder underneath, so it can run off the track smoothly. 0 = flush shoulders.")]
+    [Tooltip("How far the shoulders rise above the road surface, forming a curb rail that " +
+             "outlines the turns (units). 0 = flush shoulders.")]
     [Min(0f)] public float shoulderRailHeight = 1f;
+    [Tooltip("On = the raised rail is solid and stops the car like a real barrier. Off = the rail " +
+             "is visual only; the car collides with the flat shoulder underneath and can run off " +
+             "the track.")]
+    public bool shoulderRailCollision = true;
 
     [Header("Altitude Layering")]
     [Tooltip("Vertical spacing between adjacent paths so they don't intersect on the way back.")]
@@ -630,13 +633,13 @@ public class TrackGenerator : MonoBehaviour
     /// Builds the chain of Bezier segments from leaf to finish through control points laid out
     /// by LayOutConvergencePath, so every path winds with its own mix of swings. Tangent
     /// continuity at each control point guarantees smooth joins.
-    /// </summary>
+    /// </summary>s
     void BuildLeafConvergence(TrackEdge leaf, Vector3 leafFinish,
                                Vector3 arrivalDir, float convergeLength)
     {
         // Every branch gets enough intermediate control points to wind to a similar length
         // as its neighbours, so no path is a shortcut.
-        int numSegments = Random.Range(11, 12);   // always 11
+        int numSegments = Random.Range(16, 17);   // always 11
 
         Vector3 axis = (leafFinish - leaf.endPos);
         if (axis.sqrMagnitude < 0.0001f) axis = Vector3.forward;
@@ -1401,8 +1404,7 @@ public class TrackGenerator : MonoBehaviour
         Mesh shoulderMesh = TrackMeshBuilder.BuildLoopShoulderMeshExplicit(
                     edge.sampledPoints, edge.loopNormals, roadWidth, shoulderWidth, roadThickness, rightSide, uvTilingFactor);
 
-        shoulderObj.AddComponent<MeshFilter>().sharedMesh = ShoulderVisualMesh(shoulderMesh);
-        shoulderObj.AddComponent<MeshCollider>().sharedMesh = shoulderMesh;
+        AttachShoulderMeshes(shoulderObj, shoulderMesh);
         var renderer = shoulderObj.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = GetShoulderMaterial();
     }
@@ -1422,22 +1424,31 @@ public class TrackGenerator : MonoBehaviour
             spline, roadWidth, shoulderWidth, resolution, roadThickness, rightSide, uvTilingFactor
         );
 
-        shoulderObj.AddComponent<MeshFilter>().sharedMesh = ShoulderVisualMesh(shoulderMesh);
-        shoulderObj.AddComponent<MeshCollider>().sharedMesh = shoulderMesh;
+        AttachShoulderMeshes(shoulderObj, shoulderMesh);
 
         var renderer = shoulderObj.AddComponent<MeshRenderer>();
         renderer.sharedMaterial = GetShoulderMaterial();
     }
 
     /// <summary>
-    /// The mesh a shoulder renders: its flat slab lifted into a curb rail by Shoulder Rail
-    /// Height, or the flat slab itself when that's 0. The flat slab stays the collider either
-    /// way, so the rail is visual only and the car can still run off the track smoothly.
+    /// Gives a shoulder its meshes. It renders its flat slab lifted into a curb rail by Shoulder
+    /// Rail Height (or the flat slab itself when that's 0). With Shoulder Rail Collision on, the
+    /// raised rail is the collider too, so it stops the car like a real barrier — the car bodies
+    /// ride ~0.4-0.55 above the road, under the rail's top, so they meet its wall rather than
+    /// riding over it. Off, the car collides with the flat slab and the rail is visual only.
     /// </summary>
-    Mesh ShoulderVisualMesh(Mesh flatShoulder)
+    void AttachShoulderMeshes(GameObject shoulderObj, Mesh flatShoulder)
     {
-        if (shoulderRailHeight <= 0f) return flatShoulder;
-        return TrackMeshBuilder.BuildRaisedShoulderMesh(flatShoulder.vertices, flatShoulder.uv, shoulderRailHeight);
+        Mesh visual = shoulderRailHeight > 0f
+            ? TrackMeshBuilder.BuildRaisedShoulderMesh(flatShoulder.vertices, flatShoulder.uv, shoulderRailHeight)
+            : flatShoulder;
+        Mesh collision = shoulderRailCollision ? visual : flatShoulder;
+
+        shoulderObj.AddComponent<MeshFilter>().sharedMesh = visual;
+        shoulderObj.AddComponent<MeshCollider>().sharedMesh = collision;
+
+        // Runtime meshes aren't garbage-collected; free the flat slab when nothing ended up using it.
+        if (visual != flatShoulder && collision != flatShoulder) Destroy(flatShoulder);
     }
 
     Material GetRoadMaterial()

@@ -218,7 +218,8 @@ public class CarController : MonoBehaviour
     [Header("Jump")]
     [Tooltip("Instantaneous velocity (m/s) added along the car's local up when A is pressed.")]
     public float jumpVelocity = 12f;
-    [Tooltip("If true, the car can only jump when grounded. Uncheck to allow midair jumps.")]
+    [Tooltip("If true, the car can only jump when grounded (always free). Uncheck to allow midair " +
+             "jumps, which each spend a Jet.")]
     public bool jumpRequiresGround = true;
     [Tooltip("Suspension ray length used briefly right after a jump (metres). Shorter than the " +
              "normal ray so the ground 'lets go' quickly and even a small Jump Velocity can lift " +
@@ -232,7 +233,8 @@ public class CarController : MonoBehaviour
     [Header("Ability Costs")]
     [Tooltip("Each turbo boost consumes 1 of this inventory item. Blank = free.")]
     public string turboItemName = "Turbo";
-    [Tooltip("Each jump consumes 1 of this inventory item. Blank = free.")]
+    [Tooltip("Each MIDAIR jump consumes 1 of this inventory item; jumping off the ground is always " +
+             "free. Blank = midair jumps are free too.")]
     public string jetItemName = "Jet";
 
     [Header("Loop Assist")]
@@ -956,8 +958,13 @@ public class CarController : MonoBehaviour
 
     void TryJump()
     {
-        if (jumpRequiresGround && !grounded) return;
-        if (!TrySpend(jetItemName)) return;
+        // A jump OFF THE GROUND is free; only a MIDAIR jump spends a Jet. With no Jets left the car
+        // can still hop off the ground — it just can't jump again until it lands.
+        if (!grounded)
+        {
+            if (jumpRequiresGround) return;
+            if (!TrySpend(jetItemName)) return;
+        }
 
         Vector3 vel = rb.linearVelocity;
         float upComponent = Vector3.Dot(vel, transform.up);
