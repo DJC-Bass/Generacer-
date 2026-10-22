@@ -104,7 +104,17 @@ public class CameraFollow : MonoBehaviour
     public float turboFOVDuration = 1f;
 
     [Header("Roll Blend")]
-    [Tooltip("Below this tilt (deg) from upright, the camera stays world-upright.")]
+    [Tooltip("While the car is on the road, the camera rolls all the way with it, so it sits square behind " +
+             "the car on banked and twisting road just as it does on flat road (easing in over Roll Smooth " +
+             "Time). In the air it eases back to Roll Blend Start / Full. Off = Roll Blend Start / Full " +
+             "everywhere.")]
+    public bool rollWithRoad = true;
+    [Tooltip("Once the car leaves the road, how slowly the camera eases from rolling with it back to Roll " +
+             "Blend Start / Full (seconds) — slow enough that a jump off banked road doesn't swing the view " +
+             "level and back again before landing.")]
+    public float airRollReturnTime = 1f;
+    [Tooltip("Below this tilt (deg) from upright, the camera stays world-upright (in the air, or everywhere " +
+             "with Roll With Road off).")]
     public float rollBlendStart = 25f;
     [Tooltip("At/above this tilt (deg), the camera fully rolls with the car.")]
     public float rollBlendFull = 80f;
@@ -180,6 +190,8 @@ public class CameraFollow : MonoBehaviour
 
     private Transform cachedTarget;         // what targetRb/targetCar were resolved from
     private CarController targetCar;        // NEW   to read turbo state
+    private RemoteCarPuppet targetPuppet;   // a remote player's car (spectator TVs): says when it's airborne
+    private float roadRoll;                 // 0-1: how far the camera is rolling with the road (see rollWithRoad)
     private float turboFOVTimer = 0f;       // NEW   counts down the kick
     private bool prevTurboState = false;   // NEW   detects the activation moment
     private bool speedBarrierActive = false;   // hysteresis: on at speedBarrierMph, off below speedBarrierReleaseMph
@@ -212,9 +224,11 @@ public class CameraFollow : MonoBehaviour
             cachedTarget = target;
             targetRb = target.GetComponent<Rigidbody>();
             targetCar = target.GetComponent<CarController>();   // NEW
+            targetPuppet = target.GetComponent<RemoteCarPuppet>();
             BindCar(targetCar);
             smoothedRot = target.rotation;   // start aligned so there's no initial swing
             aimAttitude = target.rotation;
+            roadRoll = rollWithRoad && TargetOnRoad ? 1f : 0f;
         }
 
         if (target != null)
@@ -258,9 +272,11 @@ public class CameraFollow : MonoBehaviour
         cachedTarget = target;
         targetRb = target.GetComponent<Rigidbody>();
         targetCar = target.GetComponent<CarController>();
+        targetPuppet = target.GetComponent<RemoteCarPuppet>();
         BindCar(targetCar);
         smoothedRot = target.rotation;   // re-align so the swap doesn't swing the camera around
         aimAttitude = target.rotation;
+        roadRoll = rollWithRoad && TargetOnRoad ? 1f : 0f;
         holdTimer = 0f;                  // the new car starts un-held, whatever the old one was doing
         aimRecovering = false;
 
@@ -468,6 +484,12 @@ public class CameraFollow : MonoBehaviour
     float Approach(float smoothTime) =>
         smoothTime <= 0f ? 1f : 1f - Mathf.Exp(-Time.deltaTime / smoothTime);
 
+    /// <summary>Whether the target is driving on the road rather than flying — the player's car (on the
+    /// ground, or off it only through CarController's brief air grace), or a remote player's puppet by
+    /// its replicated airborne flag. A target that's neither never counts.</summary>
+    bool TargetOnRoad =>
+        targetCar != null ? !targetCar.IsAirborne : targetPuppet != null && !targetPuppet.Airborne;
+
     void FollowRotation()
     {
         // The car's orientation as the camera treats it — its real rotation, except during the
@@ -487,6 +509,12 @@ public class CameraFollow : MonoBehaviour
             float x = (tiltAngle - rollBlendStart) / (rollBlendFull - rollBlendStart);
             blend = x * x * (3f - 2f * x);
         }
+
+        // On the road the camera rolls all the way with the car — square behind it on banked road
+        // as on flat — easing in at Roll Smooth Time, and back out slowly once it's in the air.
+        bool onRoad = rollWithRoad && TargetOnRoad;
+        roadRoll = Mathf.Lerp(roadRoll, onRoad ? 1f : 0f, Approach(onRoad ? rollSmoothTime : airRollReturnTime));
+        blend = Mathf.Lerp(blend, 1f, roadRoll);
 
         // Camera up: blend from world up toward the car's up.
         Vector3 camUp = Vector3.Slerp(Vector3.up, carUp, blend);

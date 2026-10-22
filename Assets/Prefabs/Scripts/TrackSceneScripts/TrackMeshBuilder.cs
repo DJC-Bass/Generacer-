@@ -3,12 +3,15 @@ using UnityEngine;
 
 public static class TrackMeshBuilder
 {
+    /// <param name="rollAt">Optional: how far the road is rolled (banked) about its direction of
+    /// travel at each t along the spline, in degrees. Null = flat across, as always.</param>
     public static Mesh BuildRoadMesh(
         TrackSpline spline,
         float width,
         int resolution,
         float thickness = 2f,
-        float uvTilingFactor = 0.05f)
+        float uvTilingFactor = 0.05f,
+        System.Func<float, float> rollAt = null)
     {
         int sections = resolution + 1;
 
@@ -48,6 +51,7 @@ public static class TrackMeshBuilder
             // of the sign of `thickness`, so the car always rests on the top
             // surface (fixes phasing through with positive thickness).
             Vector3 down = Vector3.down * Mathf.Abs(thickness);
+            Roll(rollAt, t, tangent, ref right, ref down);
 
             if (i > 0) uvV += Vector3.Distance(prevCenter, center) * uvTilingFactor;
             prevCenter = center;
@@ -107,6 +111,18 @@ public static class TrackMeshBuilder
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
         return mesh;
+    }
+
+    /// <summary>Turns a cross-section's width and thickness directions about the direction of
+    /// travel by the roll at t (see BuildRoadMesh's rollAt).</summary>
+    static void Roll(System.Func<float, float> rollAt, float t, Vector3 tangent, ref Vector3 right, ref Vector3 down)
+    {
+        if (rollAt == null) return;
+        float degrees = rollAt(t);
+        if (degrees == 0f || tangent.sqrMagnitude < 1e-8f) return;
+        Quaternion turn = Quaternion.AngleAxis(degrees, tangent);
+        right = turn * right;
+        down = turn * down;
     }
 
     /// <summary>
@@ -302,7 +318,8 @@ public static class TrackMeshBuilder
         int resolution,
         float thickness,
         bool rightSide,
-        float uvTilingFactor = 0.05f)
+        float uvTilingFactor = 0.05f,
+        System.Func<float, float> rollAt = null)
     {
         int sections = resolution + 1;
 
@@ -339,6 +356,9 @@ public static class TrackMeshBuilder
             if (i > 0) uvV += Vector3.Distance(prevCenter, center) * uvTilingFactor;
             prevCenter = center;
 
+            Vector3 down = Vector3.down * Mathf.Abs(thickness);
+            Roll(rollAt, t, tangent, ref right, ref down);
+
             // Inner edge sits at the road's outer edge; outer edge extends shoulderWidth further
             Vector3 innerTop, outerTop;
             if (rightSide)
@@ -352,8 +372,8 @@ public static class TrackMeshBuilder
                 outerTop = center - right * (roadWidth * 0.5f + shoulderWidth);
             }
 
-            Vector3 innerBot = innerTop + Vector3.down * Mathf.Abs(thickness);
-            Vector3 outerBot = outerTop + Vector3.down * Mathf.Abs(thickness);
+            Vector3 innerBot = innerTop + down;
+            Vector3 outerBot = outerTop + down;
 
             int vi = i * 4;
             verts[vi] = innerTop;

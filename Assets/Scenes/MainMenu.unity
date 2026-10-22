@@ -608,6 +608,14 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: maxPaths
+      value: 32
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: minPaths
+      value: 16
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: roadMaterial
       value: 
       objectReference: {fileID: 2100000, guid: bc7690c75e844554c9bfbd7387a4843f, type: 2}
@@ -622,6 +630,10 @@ PrefabInstance:
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: waypointSpacing
       value: 200
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: segmentsPerRoute
+      value: 25
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: meshSamplesPerUnit
