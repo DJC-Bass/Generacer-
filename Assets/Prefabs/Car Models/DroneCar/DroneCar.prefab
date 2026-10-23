@@ -539,7 +539,8 @@ MonoBehaviour:
   fireWindowDuration: 0.5
   fireCooldownDuration: 0.5
   knockDownforce: 40
-  creditReward: 100
+  creditReward: 50
+  knockoutDespawnDelay: 5
   chaseMode: 0
   chaseAcceleration: 100
   chaseMaxSpeed: 150

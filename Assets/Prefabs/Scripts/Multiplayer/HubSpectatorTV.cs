@@ -437,8 +437,7 @@ public class HubSpectatorTV : MonoBehaviour
         follow.rollSmoothTime = src.rollSmoothTime;
         follow.rotationSmoothTime = src.rotationSmoothTime;
         follow.lookAheadDistance = src.lookAheadDistance;
-        follow.rollWithRoad = src.rollWithRoad;
-        follow.airRollReturnTime = src.airRollReturnTime;
+        follow.rollWithCar = src.rollWithCar;
         follow.rollBlendStart = src.rollBlendStart;
         follow.rollBlendFull = src.rollBlendFull;
         // FOV is intentionally NOT copied — `fieldOfView` is the manual zoom knob, applied live in Update.

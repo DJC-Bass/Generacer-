@@ -84,9 +84,13 @@ public class DroneCar : MonoBehaviour
     public float knockDownforce = 20f;
 
     [Header("Reward")]
-    [Tooltip("Credits awarded to the player if they knock this car off the track and " +
-             "into the kill floor. DroneCar = 100, ChallengerCar = 200.")]
+    [Tooltip("Credits awarded to the player who knocks this car out, paid as it despawns (see Knockout " +
+             "Despawn Delay) — or as it falls into the kill floor, if that comes first. " +
+             "DroneCar = 100, ChallengerCar = 200.")]
     public int creditReward = 100;
+    [Tooltip("Seconds after a player first knocks this car (or the Support Ship downs it) before it " +
+             "despawns and pays its Credit Reward to whoever hit it last. 0 = only the kill floor despawns it.")]
+    [Min(0f)] public float knockoutDespawnDelay = 5f;
 
     [Header("Chase Mode (hub Drone ending)")]
     [Tooltip("When true, the drone ignores its path and chases the player along the ground, firing " +
@@ -168,6 +172,15 @@ public class DroneCar : MonoBehaviour
         if (MultiplayerWorld.TrackFrozen) return;
 
         if (finished) return;
+
+        // Knocked out by a player: gone a few seconds later, paying out its bounty as it goes.
+        if (knockedOutAt >= 0f && knockoutDespawnDelay > 0f && Time.time - knockedOutAt >= knockoutDespawnDelay)
+        {
+            finished = true;
+            AwardKnockoffBounty();
+            Destroy(gameObject);
+            return;
+        }
 
         // Hub Drone-ending swarm: ignore the path and home in on the player.
         if (chaseMode) { ChasePlayer(); return; }
@@ -597,6 +610,18 @@ public class DroneCar : MonoBehaviour
     // values permanently (no recovery) and downforce pulls the drone off-track.
     private bool playerHit = false;
 
+    // When that first happened (Time.time), counting down to its despawn — see knockoutDespawnDelay.
+    // -1 = not knocked out (or a hub chase drone, which never despawns this way).
+    private float knockedOutAt = -1f;
+
+    /// <summary>Puts this drone in the knocked-out state (soft correction, downforce, off the track) and,
+    /// the first time, starts its despawn countdown. Hub chase drones only take the knock.</summary>
+    void KnockOut()
+    {
+        if (!playerHit && !chaseMode) knockedOutAt = Time.time;
+        playerHit = true;
+    }
+
     // Who last shoved this drone (multiplayer bounty attribution): the local (host) player, or a
     // remote player's clientId. Remote puppets are solid + tagged RemotePlayer, so on the host sim
     // ANY player can physically knock a drone off — the bounty goes to whoever actually did it.
@@ -608,9 +633,10 @@ public class DroneCar : MonoBehaviour
     private bool bountyClaimed = false;
 
     /// <summary>
-    /// Called by the kill floor as this car is destroyed there. If a player knocked it off the track
-    /// (playerHit), awards its credit bounty to THAT player — the local inventory for the local
-    /// (host) player, or a bounty message to the remote player's machine.
+    /// Called as this car is destroyed — when its knockout despawn delay runs out, or by the kill floor
+    /// if it falls in first. If a player knocked it out (playerHit), awards its credit bounty to THAT
+    /// player — the local inventory for the local (host) player, or a bounty message to the remote
+    /// player's machine.
     /// </summary>
     public void AwardKnockoffBounty()
     {
@@ -630,8 +656,7 @@ public class DroneCar : MonoBehaviour
         if (PlayerInventory.Instance == null) return;
         PlayerInventory.Instance.AddCredits(creditReward);
         AudioManager.PlayKnockoffBounty();   // 2D reward stinger
-        Debug.Log($"[DroneCar] Player knocked this car into the kill floor — " +
-                  $"awarded {creditReward} credits");
+        Debug.Log($"[DroneCar] Player knocked this car out — awarded {creditReward} credits");
     }
 
     // Support Ship laser damage. Unlike a player ramming it, one bolt isn't enough — it takes
@@ -641,7 +666,7 @@ public class DroneCar : MonoBehaviour
 
     /// <summary>A Support Ship laser round landed. Once enough have, the drone enters exactly the same
     /// downed state a player ram produces — soft correction, downforce, off the track — and the PILOT is
-    /// recorded as the last one to hit it, so the kill-floor bounty follows them.
+    /// recorded as the last one to hit it, so the bounty follows them.
     ///
     /// Attribution reuses the existing "last toucher wins" fields rather than adding a parallel system,
     /// which is what makes the user's rule fall out for free: a player who shoulder-checks the drone
@@ -651,7 +676,7 @@ public class DroneCar : MonoBehaviour
     {
         if (++laserHits < Mathf.Max(1, hitsToDown)) return;
 
-        playerHit = true;
+        KnockOut();
         lastHitByRemote = !pilotIsLocal;
         lastHitClientId = pilotClientId;
     }
@@ -666,13 +691,13 @@ public class DroneCar : MonoBehaviour
         {
             if (t.CompareTag(playerTag))
             {
-                playerHit = true;
+                KnockOut();
                 lastHitByRemote = false;
                 return;
             }
             if (t.CompareTag("RemotePlayer"))
             {
-                playerHit = true;
+                KnockOut();
                 if (MultiplayerWorld.TryGetCarOwner(t, out ulong clientId, out bool isLocal) && !isLocal)
                 {
                     lastHitByRemote = true;

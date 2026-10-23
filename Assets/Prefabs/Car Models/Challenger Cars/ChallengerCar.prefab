@@ -537,6 +537,11 @@ MonoBehaviour:
   correctionStrength: 300
   rotationCorrection: 100
   maxOffPathDistance: 500
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 256
+  groundRayLength: 3
+  orientationLerpSpeed: 12
   collisionCorrectionStrength: 0
   collisionRotationCorrection: 0
   playerTag: Player
@@ -553,7 +558,8 @@ MonoBehaviour:
   fireWindowDuration: 1
   fireCooldownDuration: 1
   knockDownforce: 40
-  creditReward: 200
+  creditReward: 100
+  knockoutDespawnDelay: 5
   chaseMode: 0
   chaseAcceleration: 35
   chaseMaxSpeed: 70
