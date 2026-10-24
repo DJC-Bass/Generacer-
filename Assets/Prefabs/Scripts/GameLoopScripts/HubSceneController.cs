@@ -106,13 +106,21 @@ public class HubSceneController : MonoBehaviour
     void SpawnPortalAndGate()
     {
         if (spawnedBoostGate == null && boostGatePrefab != null && boostGateSpawnPoint != null)
-            spawnedBoostGate = Instantiate(boostGatePrefab, boostGateSpawnPoint.position,
+            spawnedBoostGate = Instantiate(boostGatePrefab, SpawnPosition(boostGateSpawnPoint),
                                             boostGateSpawnPoint.rotation);
 
         if (spawnedPortal == null && hubPortalPrefab != null && portalSpawnPoint != null)
-            spawnedPortal = Instantiate(hubPortalPrefab, portalSpawnPoint.position,
+            spawnedPortal = Instantiate(hubPortalPrefab, SpawnPosition(portalSpawnPoint),
                                          portalSpawnPoint.rotation);
     }
+
+    /// <summary>Where a spawn point is in the world. The gate's and portal's spawn points are the
+    /// prefab ASSETS' own transforms (each spawns where it was authored), and an asset doesn't move
+    /// with the hub — in multiplayer the hub scene is shifted 30 km down (MultiplayerWorld.HubAreaOffset)
+    /// so the track can sit at the origin, and without the shift here both spawned 30 km above it. A
+    /// spawn point that is a real object in the hub scene has already moved, so it is used as-is.</summary>
+    static Vector3 SpawnPosition(Transform point) =>
+        point.gameObject.scene.IsValid() ? point.position : MultiplayerWorld.HubPosition(point.position);
 
     void DespawnPortalAndGate()
     {
@@ -162,7 +170,7 @@ public class HubSceneController : MonoBehaviour
             }
             return spawnedPortal.transform.position;
         }
-        return portalSpawnPoint != null ? portalSpawnPoint.position : Vector3.zero;
+        return portalSpawnPoint != null ? SpawnPosition(portalSpawnPoint) : MultiplayerWorld.HubPosition(Vector3.zero);
     }
 
     IEnumerator SpawnDroneSwarm()

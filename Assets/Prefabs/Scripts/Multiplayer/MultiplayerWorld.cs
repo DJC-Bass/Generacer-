@@ -57,7 +57,7 @@ public class MultiplayerWorld : MonoBehaviour
 
     /// <summary>Show the TRACK's world to a player whose CAR is still in the hub.
     ///
-    /// Exists for the Support Ship pilot, who stands on a hub pad flying a ship ~100 km away: their
+    /// Exists for the Support Ship pilot, who stands on a hub pad flying a ship ~30 km away: their
     /// camera is out there, so they should get the track's lighting and music rather than the hub's
     /// they are physically standing in. Their car really is still in the hub, so this cannot be done
     /// by moving them — it is a PRESENTATION lie, and deliberately a narrow one.
@@ -85,10 +85,31 @@ public class MultiplayerWorld : MonoBehaviour
     public static bool AnyPlayerInTrackServer =>
         IsMultiplayerGame && Instance.inTrackNow.Count > 0;
 
-    /// <summary>Where the track area lives relative to the hub. -35 km keeps the whole generated
-    /// track (which spans up to ~28 km forward from its origin) clear of the hub while staying inside
-    /// the float-precision envelope the single-player tracks already occupy (~30 km ⇒ mm-scale).</summary>
-    public static readonly Vector3 TrackAreaOffset = new Vector3(0f, 0f, -100000f);
+    /// <summary>Where the track area lives: at the world origin, exactly where single-player builds it.
+    ///
+    /// ⚠️ Keep the TRACK near the origin. Floats lose precision with distance from it, and the race is
+    /// where that shows: the track used to sit 100 km out, where positions only resolve to ~8 mm, and
+    /// the shadow maths (whose bias is a few mm) flickered black bands across the road and cars — worst
+    /// on hills and dips, where the light grazes the surface — while the car's hover read the road
+    /// through the same coarse numbers. At the origin a multiplayer race gets the same ~2 mm precision
+    /// as single-player. The hub, a small, slow area, is the one moved out of the way: see
+    /// <see cref="HubAreaOffset"/>.</summary>
+    public static readonly Vector3 TrackAreaOffset = Vector3.zero;
+
+    /// <summary>Where the hub lives in a multiplayer game: 30 km straight down. The track never dips
+    /// below altitude 0 (its kill floor sits at -500), so the two areas are always more than 29 km
+    /// apart — beyond every camera's far clip (≤ 26 km), so neither can see the other — while the hub
+    /// itself stays within ~2 mm float precision. Applied to the hub scene's roots as it loads (see
+    /// <see cref="ShiftHubScene"/>); single-player keeps the hub at the origin.</summary>
+    public static readonly Vector3 HubAreaOffset = new Vector3(0f, -30000f, 0f);
+
+    /// <summary>Where a point authored in hub coordinates really is right now: moved by
+    /// <see cref="HubAreaOffset"/> in a multiplayer game, unchanged in single-player.
+    ///
+    /// ⚠️ Only for positions that did NOT move with the hub scene — a prefab ASSET's own stored
+    /// transform, a hard-coded point. Anything in the loaded hub scene has already been moved, and
+    /// adding the offset again would put it 60 km down.</summary>
+    public static Vector3 HubPosition(Vector3 authored) => IsMultiplayerGame ? authored + HubAreaOffset : authored;
 
     /// <summary>The server-rolled seed for the current round (0 between rounds). Every per-round
     /// random decision on every client must derive from this (see <see cref="DeriveRandom"/>).</summary>
@@ -431,6 +452,7 @@ public class MultiplayerWorld : MonoBehaviour
             hubScene = scene;
             hubCaptured = false;
             inTrackLocally = false;
+            ShiftHubScene(scene);                   // runs before the scene's Start()s
             StartCoroutine(CaptureHubScene(scene));
         }
         else if (scene.name == trackName && mode == LoadSceneMode.Additive)
@@ -439,6 +461,22 @@ public class MultiplayerWorld : MonoBehaviour
             PrepareTrackScene(scene);                 // runs before the scene's Start()s
             StartCoroutine(CaptureTrackScene(scene)); // runs after them
         }
+    }
+
+    /// <summary>Immediately after the hub loads, BEFORE its scripts' Start(): move the whole scene to
+    /// <see cref="HubAreaOffset"/>, clearing the origin for the track. Every hub script positions things
+    /// from its scene objects (spawn points, pads, portals), so they all follow. A car PlayerCarSwapper
+    /// has already instantiated lands at the scene root too, so it moves with the rest whichever
+    /// sceneLoaded handler ran first.</summary>
+    void ShiftHubScene(Scene scene)
+    {
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            root.transform.position += HubAreaOffset;
+            foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
+                ClearInterpolationHistory(rb);   // placed, not driven, 30 km down
+        }
+        Physics.SyncTransforms();
     }
 
     /// <summary>Waits for PlayerCarSwapper to place the chosen car, then records the hub spawn pose
@@ -460,7 +498,7 @@ public class MultiplayerWorld : MonoBehaviour
         }
         else
         {
-            hubSpawnPos = Vector3.up * 2f;
+            hubSpawnPos = HubAreaOffset + Vector3.up * 2f;
             hubSpawnRot = Quaternion.identity;
             Debug.LogWarning("[MultiplayerWorld] No Player car found in the hub — return teleports use a fallback pose.");
         }
@@ -601,7 +639,7 @@ public class MultiplayerWorld : MonoBehaviour
         if (notifyServer) SendAreaToServer(false);
     }
 
-    /// <summary>Teleports the local car cleanly across the ~35 km area jump. `SyncTransforms` pushes the
+    /// <summary>Teleports the local car cleanly across the ~30 km area jump. `SyncTransforms` pushes the
     /// new pose into the physics engine immediately, so THIS frame's suspension raycasts and camera reads
     /// sample the destination rather than the old spot. The interpolation toggle is a safety net: IF a car
     /// rigidbody is ever set to Interpolate, a plain transform set leaves interpolation's pose-history
@@ -614,7 +652,7 @@ public class MultiplayerWorld : MonoBehaviour
     /// Interpolation renders a body BETWEEN its last two physics poses. A plain transform write leaves
     /// the older of those back at the departure point, so for a frame or two the mesh render-slides
     /// across the gap — the object appears to streak to its new home rather than appear there. Over the
-    /// 100 km area jump that is a hyperspeed smear across the map; over a drone's few-metre path
+    /// 30 km area jump that is a hyperspeed smear across the map; over a drone's few-metre path
     /// recovery it is a flicker. Toggling interpolation off and straight back on discards the history.
     ///
     /// Lives here because this is where the trick was first needed (the area teleport), but it is not
@@ -631,7 +669,7 @@ public class MultiplayerWorld : MonoBehaviour
     static void TeleportCar(Rigidbody rb, Transform car, Vector3 pos, Quaternion rot)
     {
         // Every area jump (portal, kill floor, LRA abort, round end) drops any grapple first: a rope
-        // stretched across the ~35 km jump would fling the car — or whoever has it hooked.
+        // stretched across the ~30 km jump would fling the car — or whoever has it hooked.
         GrappleHook.ReleaseForTravel();
         car.SetPositionAndRotation(pos, rot);
         Physics.SyncTransforms();
@@ -659,7 +697,7 @@ public class MultiplayerWorld : MonoBehaviour
 
     /// <summary>Everything cosmetic that follows the LOCAL player's area: active scene (RenderSettings
     /// skybox/fog + scene-keyed music), per-area directional lights, the track speed HUD, and a camera
-    /// snap so the follow rigs don't swoosh 35 km across the world.</summary>
+    /// snap so the follow rigs don't swoosh 30 km across the world.</summary>
     void ApplyAreaPresentation()
     {
         // Keyed on the CAR, never on the pilot override: the active scene decides where newly

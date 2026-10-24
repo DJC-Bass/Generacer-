@@ -22,7 +22,7 @@ using UnityEngine;
 ///  • ROSTER (host → all, on every hello AND on a disconnect): full {clientId, name, carName, team}
 ///    list. Receivers diff it: create puppets for new remotes, destroy for departed.
 ///  • CAR    (owner → host → other clients, 30 Hz, Unreliable): {clientId, seq, pos, rot, linVel,
-///    angVel}. The host applies + relays; puppets consume via RemoteCarPuppet.ApplyState.
+///    angVel, accel, …}. The host applies + relays; puppets consume via RemoteCarPuppet.ApplyState.
 /// Puppets are NOT tagged "Player" and have no colliders — they can't be grabbed by
 /// PlayerRegistry.LocalCar, can't fire portals/kill floors, and can't physically shove anyone
 /// (deliberate: 600 mph contact through 100 ms of latency is not a fight worth having in v1).
@@ -48,6 +48,16 @@ public class RemoteCarManager : MonoBehaviour
     private GameObject cachedEffectCar;
     private CarController cachedCarController;
     private JetFlames[] cachedJetFlames;
+
+    // Our own car's recent sent states, for the turn rate and acceleration the stream carries (see
+    // MeasureMotion). Covers about the last tenth of a second.
+    private readonly Queue<(float time, Vector3 pos, Quaternion rot, Vector3 vel)> motionHistory =
+        new Queue<(float, Vector3, Quaternion, Vector3)>();
+    private GameObject motionCar;
+    const float MotionWindow = 0.1f;
+    /// <summary>Caps the replicated acceleration (m/s², ~15 g). A loop at 600 mph needs ~120; anything
+    /// beyond is a landing or a hit — over in a frame, and not worth projecting a puppet along.</summary>
+    const float MaxReplicatedAcceleration = 150f;
 
     // Host bookkeeping: the authoritative roster it rebroadcasts.
     private readonly Dictionary<ulong, (string name, string car, int team)> hostRoster =
@@ -198,16 +208,19 @@ public class RemoteCarManager : MonoBehaviour
 
         var rb = car.GetComponent<Rigidbody>();
         Vector3 linVel = rb != null ? rb.linearVelocity : Vector3.zero;
-        Vector3 angVel = rb != null ? rb.angularVelocity : Vector3.zero;
+        Vector3 pos = car.transform.position;
+        Quaternion rot = car.transform.rotation;
+        MeasureMotion(car, pos, rot, linVel, out Vector3 angVel, out Vector3 accel);
         sendSequence++;
 
-        using var writer = new FastBufferWriter(80, Allocator.Temp);
+        using var writer = new FastBufferWriter(96, Allocator.Temp);
         writer.WriteValueSafe(LocalClientId);
         writer.WriteValueSafe(sendSequence);
-        writer.WriteValueSafe(car.transform.position);
-        writer.WriteValueSafe(car.transform.rotation);
+        writer.WriteValueSafe(pos);
+        writer.WriteValueSafe(rot);
         writer.WriteValueSafe(linVel);
         writer.WriteValueSafe(angVel);
+        writer.WriteValueSafe(accel);
         writer.WriteValueSafe(ComputeEffectFlags(car));   // turbo trails / jet flare / active SD
         // The drift screech is a LOOP, so it cannot ride the one-shot GNRC_CAR_SFX channel - it has to
         // start, follow the car, and stop. Two quantised drives ride the state stream instead, for the
@@ -218,6 +231,48 @@ public class RemoteCarManager : MonoBehaviour
 
         if (IsServer) SendToRemoteClients(MsgCar, writer, NetworkDelivery.Unreliable);
         else msg.SendNamedMessage(MsgCar, NetworkManager.ServerClientId, writer, NetworkDelivery.Unreliable);
+    }
+
+    /// <summary>How fast our car is turning and accelerating, measured from what it actually did over
+    /// the last ~0.1 s, so puppets can follow its CURVE between updates instead of sailing off along a
+    /// straight line.
+    ///
+    /// The turn rate has to be measured rather than read off the Rigidbody: CarController steers and
+    /// follows the road with MoveRotation and damps angularVelocity to zero, so on the ground it reads
+    /// ~0 however hard the car is turning — every puppet held its last rotation until the next packet,
+    /// lagging 1–2° behind and then stepping through loops, dips and drifts. Likewise, without the
+    /// acceleration a puppet could only project in a straight line, so at speed it drifted off the curve
+    /// of a loop or dip between packets (~20 cm off the road at 600 mph, worse in tight bends).
+    ///
+    /// Zero after a teleport (portal, return to hub) or a car swap: the jump isn't motion.</summary>
+    void MeasureMotion(GameObject car, Vector3 pos, Quaternion rot, Vector3 vel,
+                       out Vector3 angVel, out Vector3 accel)
+    {
+        angVel = Vector3.zero;
+        accel = Vector3.zero;
+        float now = Time.time;
+
+        if (car != motionCar) { motionCar = car; motionHistory.Clear(); }
+        while (motionHistory.Count > 1 && now - motionHistory.Peek().time > MotionWindow)
+            motionHistory.Dequeue();
+
+        if (motionHistory.Count > 0)
+        {
+            var then = motionHistory.Peek();
+            float dt = now - then.time;
+            bool teleported = (pos - then.pos - 0.5f * (vel + then.vel) * dt).sqrMagnitude > 20f * 20f;
+            if (teleported)
+                motionHistory.Clear();
+            else if (dt > 0.01f)
+            {
+                (rot * Quaternion.Inverse(then.rot)).ToAngleAxis(out float degrees, out Vector3 axis);
+                if (degrees > 180f) degrees -= 360f;
+                if (!float.IsNaN(axis.x) && axis.sqrMagnitude > 0.5f)
+                    angVel = axis * (degrees * Mathf.Deg2Rad / dt);
+                accel = Vector3.ClampMagnitude((vel - then.vel) / dt, MaxReplicatedAcceleration);
+            }
+        }
+        motionHistory.Enqueue((now, pos, rot, vel));
     }
 
     /// <summary>A 0..1 drive to one byte, and back. 1/255 steps are far finer than the ear can pick out
@@ -322,19 +377,20 @@ public class RemoteCarManager : MonoBehaviour
     }
 
     void HandleCarState(ulong senderId, ushort sequence, Vector3 pos, Quaternion rot,
-                        Vector3 linVel, Vector3 angVel, byte effectFlags,
+                        Vector3 linVel, Vector3 angVel, Vector3 accel, byte effectFlags,
                         byte driftLevel, byte driftSteer)
     {
         // Host: relay every client's stream to the other clients (senderId travels in the payload).
         if (IsServer && senderId != LocalClientId)
         {
-            using var writer = new FastBufferWriter(80, Allocator.Temp);
+            using var writer = new FastBufferWriter(96, Allocator.Temp);
             writer.WriteValueSafe(senderId);
             writer.WriteValueSafe(sequence);
             writer.WriteValueSafe(pos);
             writer.WriteValueSafe(rot);
             writer.WriteValueSafe(linVel);
             writer.WriteValueSafe(angVel);
+            writer.WriteValueSafe(accel);
             writer.WriteValueSafe(effectFlags);
             writer.WriteValueSafe(driftLevel);
             writer.WriteValueSafe(driftSteer);
@@ -350,7 +406,7 @@ public class RemoteCarManager : MonoBehaviour
         var puppet = remote.Car.GetComponent<RemoteCarPuppet>();
         if (puppet != null)
             puppet.ApplyState(sequence, pos, rot, linVel, angVel, effectFlags,
-                              Dequantize01(driftLevel), Dequantize01(driftSteer));
+                              Dequantize01(driftLevel), Dequantize01(driftSteer), acceleration: accel);
     }
 
     // -------------------------------------------------------
@@ -635,10 +691,11 @@ public class RemoteCarManager : MonoBehaviour
             reader.ReadValueSafe(out Quaternion rot);
             reader.ReadValueSafe(out Vector3 linVel);
             reader.ReadValueSafe(out Vector3 angVel);
+            reader.ReadValueSafe(out Vector3 accel);
             reader.ReadValueSafe(out byte effectFlags);
             reader.ReadValueSafe(out byte driftLevel);
             reader.ReadValueSafe(out byte driftSteer);
-            HandleCarState(id, sequence, pos, rot, linVel, angVel, effectFlags, driftLevel, driftSteer);
+            HandleCarState(id, sequence, pos, rot, linVel, angVel, accel, effectFlags, driftLevel, driftSteer);
         });
     }
 

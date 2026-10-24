@@ -141,7 +141,7 @@ public class SupportShip : MonoBehaviour
              "must not cost them their ship.")]
     public LayerMask crashIgnoreMask;
     [Tooltip("A single frame's car movement beyond this (units) is read as a TELEPORT rather than " +
-             "travel, and the ship re-snaps instead of banking. Hub↔track travel moves the car ~100 km " +
+             "travel, and the ship re-snaps instead of banking. Hub↔track travel moves the car ~30 km " +
              "in one frame, so anything comfortably above a real frame of driving works.")]
     public float teleportDistance = 500f;
 
@@ -427,7 +427,7 @@ public class SupportShip : MonoBehaviour
         // during preload every player is still in the hub driving around normally — so honouring the
         // freeze pinned the ship in mid-air while its car drove off, then snapped it back at GO.
 
-        // Moving between the hub and the track is a ~100 km TELEPORT of the car, not travel. Treated as
+        // Moving between the hub and the track is a ~30 km TELEPORT of the car, not travel. Treated as
         // movement the rotation lag would unwind over the following second; treated as a teleport it
         // simply re-snaps, which is what the camera does too.
         if (posInitialised && (Car.position - lastCarPosition).sqrMagnitude > teleportDistance * teleportDistance)
@@ -491,7 +491,7 @@ public class SupportShip : MonoBehaviour
     /// movement. Runs AFTER the pose is final, so it sees everything: the car's travel, the pilot
     /// sliding the ship inside its box, and the swing from the car turning.
     ///
-    /// A snap frame reports ZERO rather than a measurement. Summoning the ship and the ~100 km hub
+    /// A snap frame reports ZERO rather than a measurement. Summoning the ship and the ~30 km hub
     /// to track teleport both move it an arbitrary distance in one frame, and dividing that by
     /// deltaTime would hand the next round a muzzle velocity in the millions.</summary>
     void TrackWorldVelocity(bool snapped)

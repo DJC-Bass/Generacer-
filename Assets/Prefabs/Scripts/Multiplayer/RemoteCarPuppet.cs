@@ -16,8 +16,10 @@ using UnityEngine;
 ///    that steady-state lag to first order.
 ///  • Extrapolation age is CAPPED: past ~half a second of silence the car holds (a stalled sender
 ///    shouldn't sail a ghost car kilometres off the track).
-///  • A snap threshold (100 m) handles discontinuities — portal teleports move a car 35 km between
+///  • A snap threshold (100 m) handles discontinuities — portal teleports move a car 30 km between
 ///    two updates; blending across that would be a hyperspeed streak across the map.
+///  • Player cars also send their measured acceleration and turn rate (see RemoteCarManager's
+///    MeasureMotion), so the projection follows the curve of a loop, hill or drift.
 ///  • Sequence numbers drop stale packets (the state stream is sent UNRELIABLE + unordered).
 ///
 /// The puppet GameObject is a stripped visual clone (no CarController, colliders, Rigidbody or
@@ -56,6 +58,12 @@ public class RemoteCarPuppet : MonoBehaviour
     private Quaternion baseRot = Quaternion.identity;
     private Vector3 linearVelocity;
     private Vector3 angularVelocity;   // rad/s, axis-scaled (Rigidbody.angularVelocity convention)
+    private Vector3 stateAcceleration; // the sender's measured acceleration (player cars), on top of projectAcceleration
+
+    /// <summary>Longest the sender's measured acceleration is projected forward (s). It describes the
+    /// curve the car is on right now; projected for half a second of silence it would bend a stalled
+    /// ghost far off that curve, so past this the projection carries on in a straight line.</summary>
+    const float MaxAccelerationLead = 0.3f;
     private float stateTime;           // local Time.time when the state landed
     private ushort lastSequence;
     private bool hasState;
@@ -83,11 +91,13 @@ public class RemoteCarPuppet : MonoBehaviour
     public bool Airborne { get; private set; }
 
     /// <summary>Feeds a freshly received owner state. Out-of-order packets are dropped. The two drift
-    /// drives default to zero because NPC puppets share this method and no drone or boulder has tires -
-    /// only the CAR stream carries them.</summary>
+    /// drives and the acceleration default to zero because NPC puppets share this method and no drone or
+    /// boulder sends them - only the CAR stream carries them (the acceleration is how a remote car follows
+    /// a loop or a dip between packets instead of cutting straight across it).</summary>
     public void ApplyState(ushort sequence, Vector3 position, Quaternion rotation,
                            Vector3 linVel, Vector3 angVel, byte effectFlags,
-                           float driftLevel = 0f, float driftSteer = 0f, bool weightless = false)
+                           float driftLevel = 0f, float driftSteer = 0f, bool weightless = false,
+                           Vector3 acceleration = default)
     {
         if (hasState && !IsNewer(sequence, lastSequence)) return;   // stale/out-of-order packet
 
@@ -98,6 +108,7 @@ public class RemoteCarPuppet : MonoBehaviour
         baseRot = NormalizeSafe(rotation);
         linearVelocity = linVel;
         angularVelocity = angVel;
+        stateAcceleration = acceleration;
         stateTime = Time.time;
 
         var fx = Effects;
@@ -168,6 +179,13 @@ public class RemoteCarPuppet : MonoBehaviour
         Vector3 targetPos = basePos + linearVelocity * lead;
         Vector3 accel = ProjectionAcceleration;
         if (accel.sqrMagnitude > 0.0001f) targetPos += 0.5f * lead * lead * accel;
+        // The sender's curve: ½at² up to the cap, then straight on. Less ½aτ², because the exponential
+        // chase below AVERAGES the target's recent path, and the average of points along a curve sits
+        // inside it by exactly that much; aiming outward by the same amount puts the visible car on the
+        // curve. (A straight-line projection happened to err outward by about as much — which is why the
+        // old version looked roughly right on gentle bends but sank into loops at speed.)
+        float bendLead = Mathf.Min(lead, MaxAccelerationLead);
+        targetPos += stateAcceleration * (bendLead * (lead - 0.5f * bendLead) - 0.5f * positionTau * positionTau);
         Quaternion targetRot = IntegrateRotation(baseRot, angularVelocity, age + rotationTau);
 
         if (Vector3.Distance(CurrentPosition, targetPos) > snapDistance)
@@ -205,7 +223,7 @@ public class RemoteCarPuppet : MonoBehaviour
     /// It is opt-in (<see cref="moveByPhysics"/>) because it is not free: MovePosition takes effect at
     /// the next physics step rather than immediately, so it is only worth it for puppets that must hit
     /// something. A genuine discontinuity (spawn, portal) still writes the transform directly — you
-    /// cannot SWEEP across 35 km, and asking the solver to try would be a hyperspeed streak through
+    /// cannot SWEEP across 30 km, and asking the solver to try would be a hyperspeed streak through
     /// every collider in between.</summary>
     void WritePose(Vector3 position, Quaternion rotation, bool snap)
     {

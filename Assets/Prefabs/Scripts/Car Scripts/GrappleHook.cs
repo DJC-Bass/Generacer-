@@ -311,7 +311,7 @@ public class GrappleHook : MonoBehaviour
 
             // SECONDARY TEST — the sphere, purely to widen the catch onto edges the thin ray slipped
             // past. Start-overlaps are still discarded here (their point is Vector3.zero, which once
-            // anchored the hook to the world origin 100 km away), but that no longer costs us the
+            // anchored the hook to the world origin, far from the car), but that no longer costs us the
             // track, because the ray above owns the real detection.
             if (hookRadius > 0f &&
                 TryPickHit(Physics.SphereCastAll(from, hookRadius, dir, stepLen, ~blockedMask,

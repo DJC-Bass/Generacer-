@@ -31,8 +31,9 @@ using UnityEngine.Rendering.Universal;
 /// The way through is that the two cameras do not render at the same INSTANT, only in the same frame.
 /// URP raises beginCameraRendering / endCameraRendering around each camera, so this swaps the world to
 /// the track's lighting for the length of our feed's render and hands it straight back — the hub
-/// camera's own render gets its own pair with everything normal. Ambient rides along as a cached
-/// probe (see CacheTrackAmbient), because deriving it per frame would be far too expensive.
+/// camera's own render gets its own pair with everything normal. Ambient rides along as a probe
+/// measured once per go-live (see CacheTrackAmbient) — never by rebuilding the world's environment,
+/// which is what once tinted the whole hub purple.
 ///
 /// That is what makes a BLACKOUT round read as one on screen: SetAreaLights restores each light's
 /// RECORDED state, so a track whose Directional Light this round's seed switched off stays off in the
@@ -490,35 +491,23 @@ public class HubSpectatorTV : MonoBehaviour
     ///
     /// Both scenes use Ambient Mode = SKYBOX, so ambient is generated from RenderSettings.skybox — a
     /// global that follows the ACTIVE scene, which for everyone watching a TV is the hub. Without this
-    /// the feed shows a night track lit by the hub's bright default sky, exactly as the Support Ship
-    /// pilot's view did before ApplyTrackAmbient fixed it there.
+    /// the feed shows the track lit by the hub's environment instead of its own sky.
     ///
-    /// Computed ONCE and cached as a probe, deliberately. Deriving ambient means assigning the sky and
-    /// calling DynamicGI.UpdateEnvironment(), which is far too heavy to do twice a frame per TV; but
-    /// RenderSettings.ambientProbe is directly assignable, so paying that cost once per go-live buys a
-    /// per-frame swap that is a struct copy. The world's own sky is restored immediately either way.
+    /// ⚠️ Measured privately (see SkyboxHueRandomizer.TryMeasureAmbient), never by pointing the world at
+    /// the track's sky and calling DynamicGI.UpdateEnvironment(). That used to be how this worked, and
+    /// handing the hub "its own sky back" afterwards rebuilt the hub's ambient and reflections from its
+    /// purple space HDRI — which the hub is never otherwise lit by — so every TV going live tinted the
+    /// whole hub purple.
     ///
-    /// Once per go-live is enough: a TV only goes live when its team has someone racing, and it goes
-    /// back to standby at round end — so a new round always re-enters through here with the new sky.</summary>
+    /// Computed ONCE per go-live and cached as a probe: the per-frame swap is then a struct copy. Once
+    /// is enough, because a TV only goes live when its team has someone racing and drops to standby at
+    /// round end — so a new round always re-enters through here with the new sky. The track's lights are
+    /// on while it measures, so a procedural sky's sun sits where the racers see it.</summary>
     void CacheTrackAmbient(Material sky)
     {
-        Material previous = RenderSettings.skybox;
-        if (previous == sky)
-        {
-            // Already the world's sky (a Support Ship pilot on this machine has swapped it, or we are
-            // somehow in the track) — the probe standing in RenderSettings is the one we want.
-            trackAmbient = RenderSettings.ambientProbe;
-            hasTrackAmbient = true;
-            return;
-        }
-
-        RenderSettings.skybox = sky;
-        DynamicGI.UpdateEnvironment();
-        trackAmbient = RenderSettings.ambientProbe;
-        hasTrackAmbient = true;
-
-        RenderSettings.skybox = previous;
-        DynamicGI.UpdateEnvironment();   // hand the hub its own sky (and ambient) straight back
+        MultiplayerWorld.PushTrackLighting();
+        hasTrackAmbient = SkyboxHueRandomizer.TryMeasureAmbient(sky, out trackAmbient);
+        MultiplayerWorld.PopTrackLighting();
     }
 
     void OnDestroy()

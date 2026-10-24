@@ -7,12 +7,15 @@ using UnityEngine.Serialization;
 /// whose suspension oscillated and shook the car on steep hills and loops at high
 /// speed. Instead of physical wheel springs, this:
 ///
-///   • Casts a ray down from each wheel anchor to find the ground.
+///   • Casts a ray down from each wheel anchor to find the ground, and reads each hit as
+///     the smooth curve the track's flat mesh panels stand in for (see SmoothSurface), so
+///     the creases between panels never reach the car.
 ///   • Holds ride height with a single damped hover force at the centre of mass
-///     (no per-wheel spring torque, so nothing oscillates).
-///   • Drives orientation EXPLICITLY — aligns the car's up to the averaged ground
-///     normal and turns its heading directly — which is what keeps hills and loops
-///     perfectly smooth at 300 mph.
+///     (no per-wheel spring torque, so nothing oscillates), square to the road, plus
+///     exactly the push needed to follow the road's bend — so the height stays level
+///     over hills, through dips and round loops at any speed.
+///   • Drives orientation EXPLICITLY — turns the car with the road as it bends, aligns
+///     its up to the ground normal and turns its heading directly.
 ///   • Uses a simple grip model (cancel sideways velocity) for cornering, softened
 ///     at the rear while drifting.
 ///
@@ -62,8 +65,10 @@ public class CarController : MonoBehaviour
              "Must comfortably exceed Ride Height so the car still detects the surface " +
              "through suspension travel and over crests.")]
     public float suspensionRayLength = 1.6f;
-    [Tooltip("Target gap from each wheel anchor down to the ground (metres). The hover " +
-             "force keeps the car floating at this height.")]
+    [Tooltip("Target height of the wheel anchors above the road, measured square to it (metres). " +
+             "The hover force keeps the car floating at this height. Leave the body some room: on " +
+             "rolled road the flat mesh panels fold along their diagonals and can sit up to ~20 cm " +
+             "above the smooth surface the car rides.")]
     public float rideHeight = 0.5f;
 
     [Header("Suspension (hover)")]
@@ -85,9 +90,10 @@ public class CarController : MonoBehaviour
     public float turnRateHighSpeed = 48f;
     [Tooltip("How quickly steering input ramps in/out. Higher = snappier.")]
     public float steerLerpSpeed = 6f;
-    [Tooltip("How quickly the car's body re-aligns to the ground normal / new heading. " +
-             "Higher = tighter to the surface, lower = floatier. This smoothing is what " +
-             "removes the old WheelCollider shake on hills and loops.")]
+    [Tooltip("How quickly the car's body settles flat onto the road (after a landing or a knock) " +
+             "and swings round to its new heading when steering. Following the road's hills, dips, " +
+             "loops and twists doesn't depend on this: the car turns with the road as it bends. " +
+             "Higher = snappier, lower = floatier.")]
     public float orientationLerpSpeed = 12f;
 
     [Header("Grip")]
@@ -307,7 +313,13 @@ public class CarController : MonoBehaviour
 
     private bool grounded;
     private Vector3 groundNormal = Vector3.up;
+    private float groundHeight;            // the grounded wheel anchors' average height above the smooth road
+    private Vector3 groundTurn;            // how fast the road's normal is turning under the moving car (per second)
     private Collider groundCollider;
+
+    /// <summary>Tightest bend (1 / radius in metres) the road can report. Guards against a sliver
+    /// triangle's huge normal gradient; real track bends are hundreds of metres across.</summary>
+    private const float MaxRoadCurvature = 0.1f;
 
     private GeneracerControls controls;
     private AudioSource driftSource;   // looping tire-screech while drifting
@@ -625,12 +637,15 @@ public class CarController : MonoBehaviour
 
     /// <summary>
     /// Casts a ray straight down (in car space) from each wheel anchor, recording
-    /// contacts and building the averaged ground normal used for orientation.
+    /// contacts and averaging the smooth road under them (see SmoothSurface): its normal,
+    /// the anchors' height above it, and how fast it turns as the car moves.
     /// </summary>
     void ProbeGround()
     {
         Vector3 down = -transform.up;
-        Vector3 normalSum = Vector3.zero;
+        Vector3 velocity = rb.linearVelocity;
+        Vector3 normalSum = Vector3.zero, turnSum = Vector3.zero;
+        float heightSum = 0f;
         int hits = 0;
         groundCollider = null;
 
@@ -651,8 +666,20 @@ public class CarController : MonoBehaviour
             {
                 wheelGrounded[i] = true;
                 wheelGroundCollider[i] = hit.collider;
-                groundDistance[i] = hit.distance;   // vertical gap (the ray runs along -up)
-                normalSum += hit.normal;
+                groundDistance[i] = hit.distance;   // gap to the visible panel, for the wheel meshes and trails
+
+                // The hover and orientation follow the smooth road rather than the flat panel the ray
+                // landed on. Anything that isn't a track-style mesh just uses the hit as-is.
+                Vector3 n = hit.normal, contact = hit.point, turn = Vector3.zero;
+                if (SmoothSurface.TryGet(hit, out SmoothSurface.Sample road))
+                {
+                    n = road.normal;
+                    contact = road.point;
+                    turn = Vector3.ClampMagnitude(road.Turn(velocity), MaxRoadCurvature * velocity.magnitude);
+                }
+                normalSum += n;
+                turnSum += turn;
+                heightSum += Vector3.Dot(a.position - contact, n);
                 hits++;
                 if (groundCollider == null) groundCollider = hit.collider;
             }
@@ -665,30 +692,35 @@ public class CarController : MonoBehaviour
 
         grounded = hits > 0;
         groundNormal = grounded ? (normalSum / hits).normalized : Vector3.up;
+        groundHeight = grounded ? heightSum / hits : 0f;
+        groundTurn = grounded ? Vector3.ProjectOnPlane(turnSum / hits, groundNormal) : Vector3.zero;
     }
 
     /// <summary>
     /// Single damped hover force at the centre of mass that keeps the car floating at
-    /// ride height above the averaged ground. Applied at the COM (no torque) so it can
+    /// ride height above the smooth road. Applied at the COM (no torque) so it can
     /// never induce the rotational oscillation the WheelColliders suffered from.
+    ///
+    /// Everything is measured square to the road, not along the car's own up, which
+    /// lags the road slightly through any bend: at 300 mph even a small lag made the
+    /// damper read the car's forward speed as climbing off the road and push it down.
     /// </summary>
     void ApplyHover()
     {
-        // Average how far the wheels currently sit above the ground.
-        float gapSum = 0f; int n = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            if (!wheelGrounded[i]) continue;
-            gapSum += groundDistance[i]; n++;
-        }
-        if (n == 0) return;
+        // The road bends under the car: to hold its height through a dip, over a crest or round
+        // a loop it needs a push along the normal of -v·(dn/dt). Supplying that directly keeps
+        // the ride level at any speed, so the spring only settles small errors instead of
+        // absorbing every change of slope.
+        float bend = -Vector3.Dot(rb.linearVelocity, groundTurn);
 
-        float gap2 = gapSum / n;
-        float offset = rideHeight - gap2;                       // + = too low, push up
-        float upVel = Vector3.Dot(rb.linearVelocity, transform.up);
-        float force = offset * springStrength - upVel * springDamper;
+        // Speed off the road at the middle of the coming physics step, so the bend push itself
+        // isn't mistaken for the car moving away from the surface and damped back out.
+        float normalSpeed = Vector3.Dot(rb.linearVelocity, groundNormal) + 0.5f * bend * Time.fixedDeltaTime;
 
-        rb.AddForce(transform.up * force, ForceMode.Acceleration);
+        float offset = rideHeight - groundHeight;               // + = too low, push up
+        float accel = offset * springStrength - normalSpeed * springDamper + bend;
+
+        rb.AddForce(groundNormal * accel, ForceMode.Acceleration);
     }
 
     // -------------------------------------------------------
@@ -696,9 +728,10 @@ public class CarController : MonoBehaviour
     // -------------------------------------------------------
 
     /// <summary>
-    /// Turns the car's heading by the speed-scaled steer rate and aligns its up to the
-    /// ground normal, in a single smoothed MoveRotation. Driving orientation directly
-    /// (rather than via wheel springs) is what keeps hills and loops shake-free.
+    /// Turns the car with the road as it bends, then turns its heading by the speed-scaled
+    /// steer rate and aligns its up to the ground normal, in a single smoothed MoveRotation.
+    /// Driving orientation directly (rather than via wheel springs) is what keeps hills and
+    /// loops shake-free.
     /// </summary>
     void ApplyOrientation()
     {
@@ -725,15 +758,23 @@ public class CarController : MonoBehaviour
 
         float yawDelta = smoothedSteer * turnRate * moveScale * Time.fixedDeltaTime;
 
+        // Turn the car with the road over this step: by the time the step lands the car is
+        // further along, where the road's normal has turned on by groundTurn * dt. Carrying the
+        // car round with it (and aiming at that normal) means it never trails behind the surface
+        // through a dip, over a crest or round a loop. The lerp below only has to settle real
+        // misalignment, such as a landing.
+        Vector3 normalAhead = (groundNormal + groundTurn * Time.fixedDeltaTime).normalized;
+        Quaternion rot = Quaternion.FromToRotation(groundNormal, normalAhead) * rb.rotation;
+
         // Rotate the current forward around the ground normal, then re-seat it on the
         // plane so the heading rides the surface.
-        Vector3 fwd = Quaternion.AngleAxis(yawDelta, groundNormal) * transform.forward;
-        fwd = Vector3.ProjectOnPlane(fwd, groundNormal);
-        if (fwd.sqrMagnitude < 1e-5f) fwd = transform.forward;
+        Vector3 fwd = Quaternion.AngleAxis(yawDelta, normalAhead) * (rot * Vector3.forward);
+        fwd = Vector3.ProjectOnPlane(fwd, normalAhead);
+        if (fwd.sqrMagnitude < 1e-5f) fwd = rot * Vector3.forward;
 
-        Quaternion target = Quaternion.LookRotation(fwd.normalized, groundNormal);
+        Quaternion target = Quaternion.LookRotation(fwd.normalized, normalAhead);
         float t = 1f - Mathf.Exp(-orientationLerpSpeed * Time.fixedDeltaTime);
-        rb.MoveRotation(Quaternion.Slerp(rb.rotation, target, t));
+        rb.MoveRotation(Quaternion.Slerp(rot, target, t));
 
         // Damp residual spin so collisions/bumps don't fight the explicit orientation.
         rb.angularVelocity = Vector3.Lerp(rb.angularVelocity, Vector3.zero,

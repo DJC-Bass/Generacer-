@@ -22,7 +22,7 @@ using UnityEngine.InputSystem;
 /// of their ship is a faithful live view. Only the resulting offset and aim angles go on the wire; see
 /// <see cref="SupportShipReplicator"/>.
 ///
-/// The ship being flown belongs to someone in the TrackScene, ~100 km from the hub. Nothing special is
+/// The ship being flown belongs to someone in the TrackScene, ~30 km from the hub. Nothing special is
 /// needed for the DISTANCE: the camera simply follows an object that far away, and the AudioListener
 /// rides with it. What does need saying is that the pad only offers ships whose owner is ACTUALLY
 /// RACING — a ship summoned in the hub is listed as IN HUB and cannot be taken, and a pilot already
@@ -121,7 +121,7 @@ public class PilotControlCenter : MonoBehaviour
     private AudioListener pilotListener;
     private Skybox camSkybox;                  // per-camera sky override (the TRACK's, not the hub's)
     private Material ownedSky;                 // our own recoloured copy, when we had to build one
-    private Material suppressedSky;            // the hub's sky, parked while the track's lights the world
+    private UnityEngine.Rendering.SphericalHarmonicsL2 suppressedAmbient;   // the hub's own ambient, parked while flying
     private bool skySwapped;
     private SupportShipCamAnchor camAnchor;    // carries the ship's POSITION and its aim-free frame
     private Camera suppressedCam;              // the hub camera we switched off
@@ -629,19 +629,25 @@ public class PilotControlCenter : MonoBehaviour
 
     Material ResolveTrackSky() => SkyboxHueRandomizer.ResolveRoundSky(trackSkybox, ref ownedSky);
 
-    /// <summary>Lights the track for the pilot, by pointing the GLOBAL environment at the track's sky.
+    /// <summary>Lights the track for the pilot, by giving the GLOBAL ambient the light the track's sky
+    /// gives off.
     ///
     /// ⚠️ The per-camera Skybox component above does NOT do this, and that is the whole bug it took a
-    /// side-by-side screenshot to see. Both scenes are set to Ambient Mode = SKYBOX, so all ambient
-    /// light is generated from <c>RenderSettings.skybox</c> — a GLOBAL property that follows the ACTIVE
-    /// scene. A hub-bound pilot's active scene is the hub, whose sky is Unity's built-in bright daylight
-    /// Default-Skybox, so they were lighting a night track with a blue afternoon: the ground came out
-    /// flat and pale while the racer saw it dark and contrasty. The camera showed the right sky the
-    /// whole time; only the LIGHT coming off it was wrong.
+    /// side-by-side screenshot to see. Both scenes are set to Ambient Mode = SKYBOX, so ambient light is
+    /// a GLOBAL that follows the ACTIVE scene — for a hub-bound pilot, the hub's. They were lighting a
+    /// night track with the hub's environment: the ground came out flat and pale while the racer saw it
+    /// dark and contrasty. The camera showed the right sky the whole time; only the LIGHT was wrong.
     ///
     /// Safe despite being global. This machine renders nothing else while piloting — the hub camera is
     /// disabled and the pilot's car is off-screen — and RenderSettings is per-machine, so no other
     /// player is affected. It is restored the instant the controls go back.
+    ///
+    /// ⚠️ The track's ambient is MEASURED (SkyboxHueRandomizer.TryMeasureAmbient), and the hub's own is
+    /// parked and put back exactly as it was. This used to swap RenderSettings.skybox and call
+    /// DynamicGI.UpdateEnvironment() both ways — and "giving the hub its sky back" rebuilt the hub's
+    /// ambient and reflections from its purple space HDRI, which the hub is never otherwise lit by, so
+    /// the hub came back tinted purple after every flight. Measured under the track's lights, so a
+    /// procedural sky's sun sits where the racers see it.
     ///
     /// (For the record: post-processing is NOT involved in the difference. There is not a single Volume
     /// component in the project, so nothing is graded, and `renderPostProcessing` changes nothing
@@ -650,22 +656,22 @@ public class PilotControlCenter : MonoBehaviour
     {
         if (skySwapped || sky == null) return;
 
-        suppressedSky = RenderSettings.skybox;
+        MultiplayerWorld.PushTrackLighting();
+        bool measured = SkyboxHueRandomizer.TryMeasureAmbient(sky, out var trackAmbient);
+        MultiplayerWorld.PopTrackLighting();
+        if (!measured) return;
+
+        suppressedAmbient = RenderSettings.ambientProbe;
         skySwapped = true;
-        RenderSettings.skybox = sky;
-        DynamicGI.UpdateEnvironment();   // ambient + reflections are recomputed from the new sky
+        RenderSettings.ambientProbe = trackAmbient;
     }
 
-    /// <summary>Hands the environment back to the hub. Guarded on the stored material still existing:
-    /// leaving the TRACK's sky lighting the hub would be a worse bug than the one this fixes.</summary>
+    /// <summary>Hands the hub back exactly the ambient it had before the flight.</summary>
     void RestoreAmbient()
     {
         if (!skySwapped) return;
         skySwapped = false;
-
-        if (suppressedSky != null) RenderSettings.skybox = suppressedSky;
-        suppressedSky = null;
-        DynamicGI.UpdateEnvironment();
+        RenderSettings.ambientProbe = suppressedAmbient;
     }
 
     /// <summary>Cuts to the ship: our camera on, the hub camera (and its listener) off. Exactly one

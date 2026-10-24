@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 /// <summary>
@@ -229,6 +231,118 @@ public class SkyboxHueRandomizer : MonoBehaviour
             ShiftHue(instance, NightTintProp, hNight, maxSaturation: nightTintMaxSaturation);
 
         return instance;
+    }
+
+    // -------------------------------------------------------
+    //  A sky's ambient light, measured without touching the world
+    // -------------------------------------------------------
+
+    const int AmbientFaceSize = 16;
+
+    static readonly Quaternion[] CubeFaces =
+    {
+        Quaternion.LookRotation(Vector3.right, Vector3.up),
+        Quaternion.LookRotation(Vector3.left, Vector3.up),
+        Quaternion.LookRotation(Vector3.forward, Vector3.up),
+        Quaternion.LookRotation(Vector3.back, Vector3.up),
+        Quaternion.LookRotation(Vector3.up, Vector3.back),
+        Quaternion.LookRotation(Vector3.down, Vector3.forward),
+    };
+
+    /// <summary>The AMBIENT light <paramref name="sky"/> gives off, worked out without touching the
+    /// world's lighting. For the cameras that show the track from the hub (the Spectator TVs, the Support
+    /// Ship pilot): they swap the result into RenderSettings.ambientProbe for their own view only.
+    ///
+    /// ⚠️ Do NOT get it by setting RenderSettings.skybox and calling DynamicGI.UpdateEnvironment(). That
+    /// REBUILDS the world's ambient and reflections from whatever sky is assigned, and putting the hub's
+    /// sky back afterwards rebuilds the hub's from ITS sky — the purple-blue space HDRI — which the hub is
+    /// never otherwise lit by (it runs on Unity's default, neutral environment). That is how a TV going
+    /// live, or a pilot handing back the controls, tinted the whole hub purple.
+    ///
+    /// Instead a private camera draws the sky alone into the six faces of a small cube, and every texel
+    /// is added to a spherical harmonic as light arriving from its direction, weighted by the solid angle
+    /// it covers, then scaled so a plain white sky comes out at exactly 1 — Unity's own convention for
+    /// the ambient probe. A procedural sky takes its sun from the lights enabled while this runs, so a
+    /// caller wanting the track's sky lights the track first.</summary>
+    public static bool TryMeasureAmbient(Material sky, out SphericalHarmonicsL2 probe)
+    {
+        probe = default;
+        if (sky == null) return false;
+
+        const int n = AmbientFaceSize;
+        var go = new GameObject("SkyAmbientProbe") { hideFlags = HideFlags.HideAndDontSave };
+        RenderTexture target = null;
+        Texture2D readback = null;
+        RenderTexture previousActive = RenderTexture.active;
+        try
+        {
+            var cam = go.AddComponent<Camera>();
+            cam.enabled = false;
+            cam.cullingMask = 0;                       // the sky and nothing else
+            cam.clearFlags = CameraClearFlags.Skybox;
+            cam.fieldOfView = 90f;
+            cam.aspect = 1f;
+            cam.nearClipPlane = 0.1f;
+            cam.farClipPlane = 10f;
+            cam.allowHDR = true;
+            cam.allowMSAA = false;
+            go.AddComponent<Skybox>().material = sky;
+            var urp = cam.GetUniversalAdditionalCameraData();
+            if (urp != null)
+            {
+                urp.renderPostProcessing = false;      // the sky's raw light, not a graded picture of it
+                urp.antialiasing = AntialiasingMode.None;
+                urp.renderShadows = false;
+            }
+
+            target = RenderTexture.GetTemporary(n, n, 16, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear);
+            readback = new Texture2D(n, n, TextureFormat.RGBAHalf, false, true);
+            var request = new RenderPipeline.StandardRequest { destination = target };
+            bool viaRequest = RenderPipeline.SupportsRenderRequest(cam, request);
+            if (!viaRequest) cam.targetTexture = target;
+
+            var light = new SphericalHarmonicsL2();
+            var white = new SphericalHarmonicsL2();
+            foreach (Quaternion face in CubeFaces)
+            {
+                go.transform.rotation = face;
+                if (viaRequest) RenderPipeline.SubmitRenderRequest(cam, request);
+                else cam.Render();
+
+                RenderTexture.active = target;
+                readback.ReadPixels(new Rect(0, 0, n, n), 0, 0, false);
+                Color[] pixels = readback.GetPixels();
+
+                for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float u = (x + 0.5f) / n * 2f - 1f, v = (y + 0.5f) / n * 2f - 1f;
+                    float r2 = 1f + u * u + v * v;
+                    float solidAngle = 4f / (n * n * r2 * Mathf.Sqrt(r2));
+                    Vector3 dir = face * new Vector3(u, v, 1f).normalized;
+                    light.AddDirectionalLight(dir, pixels[y * n + x], solidAngle);
+                    white.AddDirectionalLight(dir, Color.white, solidAngle);
+                }
+            }
+
+            var unit = new Color[1];
+            white.Evaluate(new[] { Vector3.up }, unit);
+            if (unit[0].r <= 1e-6f) return false;
+            probe = light * (1f / unit[0].r);
+            return true;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[SkyboxHueRandomizer] Couldn't measure the ambient light of '{sky.name}': {e.Message}");
+            return false;
+        }
+        finally
+        {
+            RenderTexture.active = previousActive;
+            if (target != null) RenderTexture.ReleaseTemporary(target);
+            if (readback != null) Destroy(readback);
+            Destroy(go);
+        }
     }
 
     /// <summary>
