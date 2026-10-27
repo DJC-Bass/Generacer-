@@ -1209,6 +1209,14 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1116922108}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: rollSmoothTime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: pitchSmoothTime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: swivelSmoothTime
       value: 1
       objectReference: {fileID: 0}
@@ -1223,6 +1231,10 @@ PrefabInstance:
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: swivelAimEaseTime
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
+      propertyPath: positionSmoothTime
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 5953704192272548533, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: rotationSmoothTime
@@ -1270,7 +1282,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6248677030961518842, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: far clip plane
-      value: 20000
+      value: 25000
       objectReference: {fileID: 0}
     - target: {fileID: 6678529128030201846, guid: 99c4a2d4a17a674439ae3d8970f4d15e, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1637,7 +1649,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 762074699419970283, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: far clip plane
-      value: 20000
+      value: 25000
       objectReference: {fileID: 0}
     - target: {fileID: 1719848288373882537, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: m_Name
@@ -1696,6 +1708,14 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1116922108}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: rollSmoothTime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: pitchSmoothTime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: swivelSmoothTime
       value: 1
       objectReference: {fileID: 0}
@@ -1706,6 +1726,10 @@ PrefabInstance:
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: swivelAimEaseTime
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
+      propertyPath: positionSmoothTime
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 8087268242017299121, guid: 0afb197742d1bcd4d8a27d1f17664a55, type: 3}
       propertyPath: speedBarrierMuffle

@@ -242,11 +242,15 @@ public class MultiplayerWorld : MonoBehaviour
     // ---- Named messages (server → clients unless noted) ----
     const string MsgReady = "GNRC_READY";            // client → server: hub loaded, ready for rounds
     const string MsgRoundStart = "GNRC_ROUND_START"; // PRELOAD: {round, seed, live, remaining} — load + freeze
+    const string MsgRoundCount = "GNRC_ROUND_COUNT"; // {seconds} — GO is this far off (the hub's start lights)
     const string MsgRoundGo = "GNRC_ROUND_GO";       // GO: {remaining} — portal spawns, track unfreezes, timers start
     const string MsgRoundEnd = "GNRC_ROUND_END";     // {reason: 0 timeout, 1 all racers left}
     const string MsgArea = "GNRC_AREA";              // client → server: {inTrack}
     const string MsgRacerFin = "GNRC_RACER_FIN";     // an AI racer crossed the finish — first place forfeit
     const string MsgToLobby = "GNRC_TO_LOBBY";       // server → all: the HOST left the world, so the run is over
+
+    /// <summary>How long before GO the server announces it — the hub start lights' 3-2-1.</summary>
+    const float GoCountdownLead = 3f;
 
     const string MainMenuSceneName = "MainMenu";
 
@@ -279,6 +283,11 @@ public class MultiplayerWorld : MonoBehaviour
     private GameObject trackSpeedometerRoot;   // TrackScene's own speed HUD — shown only while in the track area
     private readonly List<(Light light, bool wasEnabled)> hubLights = new List<(Light, bool)>();
     private readonly List<(Light light, bool wasEnabled)> trackLights = new List<(Light, bool)>();
+    // The player's view cameras (the hub scene's forward and rear-view rigs, which follow the car into
+    // the track area) with the far clip the HUB authors for each, and the far clips the TrackScene's
+    // own (stripped) cameras author — 0 until a track has loaded. See ApplyViewFarClip.
+    private readonly List<(Camera cam, bool rearView, float hubFarClip)> viewCameras = new List<(Camera, bool, float)>();
+    private float trackFarClip, trackRearFarClip;
 
     // ---- Server state ----
     private readonly HashSet<ulong> readyClients = new HashSet<ulong>();
@@ -453,6 +462,7 @@ public class MultiplayerWorld : MonoBehaviour
             hubCaptured = false;
             inTrackLocally = false;
             ShiftHubScene(scene);                   // runs before the scene's Start()s
+            CaptureViewCameras(scene);
             StartCoroutine(CaptureHubScene(scene));
         }
         else if (scene.name == trackName && mode == LoadSceneMode.Additive)
@@ -477,6 +487,18 @@ public class MultiplayerWorld : MonoBehaviour
                 ClearInterpolationHistory(rb);   // placed, not driven, 30 km down
         }
         Physics.SyncTransforms();
+    }
+
+    /// <summary>Records the hub's own player view cameras (forward + rear view) and the far clip the hub
+    /// authors for each, before anything changes it. The spectator TVs' cameras are untagged and the
+    /// pilot's lives outside the scene, so neither is picked up.</summary>
+    void CaptureViewCameras(Scene scene)
+    {
+        viewCameras.Clear();
+        foreach (var root in scene.GetRootGameObjects())
+            foreach (var follow in root.GetComponentsInChildren<CameraFollow>(true))
+                if (follow.CompareTag("MainCamera") && follow.TryGetComponent(out Camera cam))
+                    viewCameras.Add((cam, follow.rearView, cam.farClipPlane));
     }
 
     /// <summary>Waits for PlayerCarSwapper to place the chosen car, then records the hub spawn pose
@@ -517,11 +539,21 @@ public class MultiplayerWorld : MonoBehaviour
 
     /// <summary>Immediately after the additive track load, BEFORE its scripts' Start(): shove the
     /// whole scene to the track area offset, and strip the pieces the shared world replaces — the
-    /// scene's own cameras/listeners (the hub rig follows the car everywhere), its authored test car
-    /// (the real car teleports in through the portal), and area-gate its speed HUD.</summary>
+    /// scene's own cameras/listeners (the hub rig follows the car everywhere, taking on their far clips
+    /// while it's in the track — see ApplyViewFarClip), its authored test car (the real car teleports
+    /// in through the portal), and area-gate its speed HUD.</summary>
     void PrepareTrackScene(Scene scene)
     {
         trackSpeedometerRoot = null;
+        trackFarClip = trackRearFarClip = 0f;
+        foreach (var root in scene.GetRootGameObjects())
+            foreach (var follow in root.GetComponentsInChildren<CameraFollow>(true))
+                if (follow.CompareTag("MainCamera") && follow.TryGetComponent(out Camera cam))
+                {
+                    if (follow.rearView) trackRearFarClip = cam.farClipPlane;
+                    else trackFarClip = cam.farClipPlane;
+                }
+
         foreach (var root in scene.GetRootGameObjects())
         {
             root.transform.position += TrackAreaOffset;
@@ -696,8 +728,8 @@ public class MultiplayerWorld : MonoBehaviour
     }
 
     /// <summary>Everything cosmetic that follows the LOCAL player's area: active scene (RenderSettings
-    /// skybox/fog + scene-keyed music), per-area directional lights, the track speed HUD, and a camera
-    /// snap so the follow rigs don't swoosh 30 km across the world.</summary>
+    /// skybox/fog + scene-keyed music), per-area directional lights, the view cameras' far clip, the
+    /// track speed HUD, and a camera snap so the follow rigs don't swoosh 30 km across the world.</summary>
     void ApplyAreaPresentation()
     {
         // Keyed on the CAR, never on the pilot override: the active scene decides where newly
@@ -707,6 +739,7 @@ public class MultiplayerWorld : MonoBehaviour
             SceneManager.SetActiveScene(scene);   // fires activeSceneChanged → SkyboxHueRandomizer recolors
 
         ApplyAreaLights();
+        ApplyViewFarClip();
 
         // The speedometer is deliberately keyed on the CAR, not on the pilot override: it reads the
         // pilot's own parked car, so showing it would just report a stationary 0 mph over someone
@@ -725,6 +758,23 @@ public class MultiplayerWorld : MonoBehaviour
         bool showTrack = inTrackLocally || pilotPresentation;
         SetAreaLights(hubLights, !showTrack);
         SetAreaLights(trackLights, showTrack);
+    }
+
+    /// <summary>Gives the player's view cameras the far clip of the area their car is in, as each scene
+    /// authors it. The cameras are the HUB's (the track scene's own are stripped on load), so without
+    /// this a short hub far clip would follow the car onto the track and cut the course off. Falls back
+    /// to the track's other camera if it authors only one, and leaves the hub value if no track has
+    /// loaded.</summary>
+    void ApplyViewFarClip()
+    {
+        float trackForward = trackFarClip > 0f ? trackFarClip : trackRearFarClip;
+        float trackRear = trackRearFarClip > 0f ? trackRearFarClip : trackFarClip;
+        foreach (var (cam, rearView, hubFarClip) in viewCameras)
+        {
+            if (cam == null) continue;
+            float track = rearView ? trackRear : trackForward;
+            cam.farClipPlane = inTrackLocally && track > 0f ? track : hubFarClip;
+        }
     }
 
     /// <summary>Light the TRACK for the duration of ONE camera's render, then <see cref="PopTrackLighting"/>.
@@ -831,6 +881,16 @@ public class MultiplayerWorld : MonoBehaviour
             pendingGoRemaining = -1f;
             ApplyRoundGo(remaining);
         }
+    }
+
+    /// <summary>The server's warning that GO is <paramref name="seconds"/> away: the hub's start lights
+    /// count it down from here. Both messages are reliable and in order, so the lights' last second
+    /// simply holds until GO lands if the network delays it.</summary>
+    void ApplyGoCountdown(float seconds)
+    {
+        if (!begun || !roundLoaded || roundActive) return;
+        var glm = GameLoopManager.Instance;
+        if (glm != null) glm.RemoteGoCountdown(seconds);
     }
 
     /// <summary>GO: the hub countdown ended — the portal/boost gate spawn (no load hitch: the track
@@ -1039,7 +1099,11 @@ public class MultiplayerWorld : MonoBehaviour
             float countdown = glm != null
                 ? UnityEngine.Random.Range(glm.minPortalCountdown, glm.maxPortalCountdown)
                 : UnityEngine.Random.Range(10f, 20f);
-            yield return new WaitForSeconds(countdown);
+            // Warn everyone just before GO, so every hub's start lights run 3-2-1 together.
+            float lead = Mathf.Min(GoCountdownLead, countdown);
+            yield return new WaitForSeconds(countdown - lead);
+            BroadcastGoCountdown(lead);
+            yield return new WaitForSeconds(lead);
 
             BroadcastRoundGo();
 
@@ -1157,6 +1221,11 @@ public class MultiplayerWorld : MonoBehaviour
             reader.ReadValueSafe(out float remaining);
             ApplyRoundPreload(round, seed, live, remaining);
         });
+        msg.RegisterNamedMessageHandler(MsgRoundCount, (sender, reader) =>
+        {
+            reader.ReadValueSafe(out float seconds);
+            ApplyGoCountdown(seconds);
+        });
         msg.RegisterNamedMessageHandler(MsgRoundGo, (sender, reader) =>
         {
             reader.ReadValueSafe(out float remaining);
@@ -1198,6 +1267,7 @@ public class MultiplayerWorld : MonoBehaviour
         var msg = Msg;
         if (msg == null) return;
         msg.UnregisterNamedMessageHandler(MsgRoundStart);
+        msg.UnregisterNamedMessageHandler(MsgRoundCount);
         msg.UnregisterNamedMessageHandler(MsgRoundGo);
         msg.UnregisterNamedMessageHandler(MsgRoundEnd);
         msg.UnregisterNamedMessageHandler(MsgReady);
@@ -1226,6 +1296,16 @@ public class MultiplayerWorld : MonoBehaviour
             SendToRemoteClients(MsgRoundStart, writer);
         }
         ApplyRoundPreload(round, seed, live: false, remaining: 0f);   // host applies directly
+    }
+
+    void BroadcastGoCountdown(float seconds)
+    {
+        using (var writer = new FastBufferWriter(sizeof(float), Allocator.Temp))
+        {
+            writer.WriteValueSafe(seconds);
+            SendToRemoteClients(MsgRoundCount, writer);
+        }
+        ApplyGoCountdown(seconds);
     }
 
     void BroadcastRoundGo()

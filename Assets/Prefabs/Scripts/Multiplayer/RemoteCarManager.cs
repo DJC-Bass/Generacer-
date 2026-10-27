@@ -472,8 +472,8 @@ public class RemoteCarManager : MonoBehaviour
         return go;
     }
 
-    /// <summary>Re-labels every remote car for THIS viewer: "RIVAL" on the one opposing player the
-    /// rival system assigned to us, "TEAMMATE" on our own team's cars, nothing on the rest. Called
+    /// <summary>Re-labels every remote car for THIS viewer: "R" (rival) on the one opposing player the
+    /// rival system assigned to us, "T" (teammate) on our own team's cars, nothing on the rest. Called
     /// on roster changes and whenever the rival map updates — rival markers are inherently private
     /// because each machine only ever labels its own rival.</summary>
     public void RefreshMarkers()
@@ -488,9 +488,9 @@ public class RemoteCarManager : MonoBehaviour
             if (marker == null) continue;
 
             if (hasRival && remote.ClientId == rivalId)
-                marker.Show("RIVAL", new Color(1f, 0.35f, 0.25f));
+                marker.Show("R", new Color(1f, 0.35f, 0.25f));
             else if (localTeam != 0 && remote.Team == localTeam)
-                marker.Show("TEAMMATE", new Color(0.35f, 0.9f, 1f));
+                marker.Show("T", new Color(0.35f, 0.9f, 1f));
             else
                 marker.Hide();
         }

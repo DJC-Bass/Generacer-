@@ -481,6 +481,13 @@ public class AudioManager : MonoBehaviour
     public static void PlayBoostGateSpawn(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.boostGateSpawn : null, position, settings);
     public static void PlayBoostGateBoost(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.boostGateBoost : null, position, settings);
 
+    // Hub start lights (3D, at the lights), both tuned by AudioLibrary.startLightAudio3D: a beep as each
+    // light turns red in the 3-2-1, and one shot as they all turn green at GO.
+    public static void PlayStartLightBeep(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.startLightBeep : null, position, Lib != null ? Lib.startLightAudio3D : null);
+    public static void PlayStartLightGo(Vector3 position) =>
+        PlayLibrarySfxAt(Lib != null ? Lib.startLightGo : null, position, Lib != null ? Lib.startLightAudio3D : null);
+
     // Windows trigger one-shots (3D, at the volume). Optional Spatial3DSettings tweak the 3D falloff.
     public static void PlayWindowsEnter(Vector3 position, Spatial3DSettings settings = null) => PlayLibrarySfxAt(Lib != null ? Lib.windowsEnter : null, position, settings);
     public static void PlayWindowsExit(Vector3 position, Spatial3DSettings settings = null)  => PlayLibrarySfxAt(Lib != null ? Lib.windowsExit  : null, position, settings);

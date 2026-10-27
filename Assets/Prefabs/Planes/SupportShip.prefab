@@ -76,9 +76,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SupportShip
   defaultOffset: {x: 0, y: 5, z: -7}
-  positionSmoothTime: 0.5
-  pitchSmoothTime: 0.25
-  rollSmoothTime: 0.25
+  positionSmoothTime: 1
+  pitchSmoothTime: 1
+  rollSmoothTime: 1
   maxHorizontalOffset: 15
   maxVerticalOffset: 10
   maxForwardOffset: 20
@@ -95,6 +95,7 @@ MonoBehaviour:
   velocitySmoothTime: 0.05
   laserLayerName: SupportShipLaser
   maxHits: 10
+  repairHitPoints: 5
   projectileHitCooldown: 2
   collisionHitCooldown: 2
   projectileLayerName: Projectile

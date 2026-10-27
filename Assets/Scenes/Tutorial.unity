@@ -988,11 +988,16 @@ MonoBehaviour:
   rearView: 0
   offset: {x: 0, y: 2.5, z: -7}
   focusLocalOffset: {x: 0, y: 0, z: 0}
-  positionSmoothTime: 0.5
-  pitchSmoothTime: 0.25
-  rollSmoothTime: 0.25
-  rotationSmoothTime: 0.1
+  positionSmoothTime: 0.75
+  pitchSmoothTime: 0.75
+  rollSmoothTime: 0.75
+  rotationSmoothTime: 0.5
   lookAheadDistance: 5
+  holdOnAirborneBoulderHit: 1
+  boulderHitHoldDuration: 1
+  holdGroundIgnoreLayers:
+    serializedVersion: 2
+    m_Bits: 12288
   enableSwivel: 1
   maxSwivelYawAngle: 90
   maxSwivelPitchUpAngle: 60
@@ -1009,6 +1014,7 @@ MonoBehaviour:
   fovSmoothTime: 0.3
   turboFOVBoost: 30
   turboFOVDuration: 1
+  rollWithCar: 1
   rollBlendStart: 25
   rollBlendFull: 80
   loopFOVBoost: 30

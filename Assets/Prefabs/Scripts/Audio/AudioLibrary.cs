@@ -234,6 +234,18 @@ public class AudioLibrary : ScriptableObject
     [Tooltip("Played (3D, at the gate) when the player car drives through the gate and receives the boost.")]
     public AudioClip boostGateBoost;
 
+    [Header("Hub Start Lights SFX (3D, at the lights)")]
+    [Tooltip("One-shot each time a start light turns RED in the 3-2-1 before the portal opens — three " +
+             "times per countdown, each at the light that just lit. Keep it short: they land a second apart.")]
+    public AudioClip startLightBeep;
+    [Tooltip("One-shot when all three start lights turn GREEN — the GO, the moment the portal opens. " +
+             "Plays at the middle of the row.")]
+    public AudioClip startLightGo;
+    [Tooltip("3D playback tuning shared by BOTH start-light sounds above — spatial blend, volume, min/max " +
+             "distance, rolloff, doppler. The lights hang high over the hub, so the distances start " +
+             "generous enough to carry across it.")]
+    public Spatial3DSettings startLightAudio3D = new Spatial3DSettings { minDistance = 30f, maxDistance = 400f };
+
     [Header("Windows SFX")]
     [Tooltip("One-shot (3D) when the player car ENTERS the Windows trigger volume.")]
     public AudioClip windowsEnter;

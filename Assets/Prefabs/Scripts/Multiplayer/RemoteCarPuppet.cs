@@ -84,6 +84,9 @@ public class RemoteCarPuppet : MonoBehaviour
     /// <summary>The last replicated linear velocity — RemoteCarAudio drives the engine rev off it.</summary>
     public Vector3 CurrentVelocity => linearVelocity;
 
+    /// <summary>Has any state landed yet? Until then the puppet sits parked out of sight.</summary>
+    public bool HasState => hasState;
+
     /// <summary>Whether this remote player is off the ground, from bit 6 of the state byte. The stand-in
     /// for <c>CarController.IsAirborne</c>, which the puppet strip destroyed - see
     /// <see cref="MultiplayerWorld.IsPlayerAirborne"/>, which every hunter should ask instead of

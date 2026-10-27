@@ -170,6 +170,8 @@ MonoBehaviour:
     prefab: {fileID: 9203637246216865349, guid: 3bd974cffb6814c499d6115f2c6fc5e7, type: 3}
   - name: MELODY
     prefab: {fileID: 8532916333885019441, guid: be8664261047f1240b9714a842a2f2c6, type: 3}
+  - name: VERT
+    prefab: {fileID: 3332729277567378799, guid: ececf248041d28448a9ced045521f829, type: 3}
   backgroundSprite: {fileID: 0}
   backgroundColor: {r: 0.1027946, g: 0.11229325, b: 0.13207549, a: 1}
   previewBackdropColor: {r: 0.18503028, g: 0.19323331, b: 0.20754719, a: 1}

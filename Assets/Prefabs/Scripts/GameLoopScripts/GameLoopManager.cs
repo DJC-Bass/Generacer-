@@ -59,6 +59,12 @@ public class GameLoopManager : MonoBehaviour
     public float TimeRemainingInPhase { get; private set; }
     public float RoundTimeRemaining { get; private set; }
 
+    /// <summary>Seconds until the portal opens (GO) while the hub countdown is running, else -1. The
+    /// whole countdown in single-player; in multiplayer the server announces only the final seconds
+    /// (<see cref="RemoteGoCountdown"/>), so it reads -1 until then. The hub's start lights run off this.</summary>
+    public float SecondsToPortal =>
+        CurrentPhase == Phase.HubCountdown && TimeRemainingInPhase >= 0f ? TimeRemainingInPhase : -1f;
+
     /// <summary>Which game-loop round we're on, counting up from 1. Incremented each time
     /// the portal spawns (one per loop cycle, whether or not the player enters the track).
     /// Drives how many obstacle spawners are active that round.</summary>
@@ -143,12 +149,14 @@ public class GameLoopManager : MonoBehaviour
     {
         if (GameEnded) return;   // an ending has taken over — stop the normal round loop
 
-        // Remote-driven (multiplayer): the server owns all transitions. Tick the round timer down
-        // purely for display; the real round end arrives as a network message.
+        // Remote-driven (multiplayer): the server owns all transitions. Tick the round timer and the
+        // announced GO countdown down purely for display; the real GO and round end arrive as messages.
         if (RemoteDriven)
         {
             if (CurrentPhase == Phase.HubPortalActive || CurrentPhase == Phase.InTrack)
                 RoundTimeRemaining = Mathf.Max(0f, RoundTimeRemaining - Time.deltaTime);
+            else if (CurrentPhase == Phase.HubCountdown && TimeRemainingInPhase > 0f)
+                TimeRemainingInPhase = Mathf.Max(0f, TimeRemainingInPhase - Time.deltaTime);
             return;
         }
 
@@ -181,11 +189,21 @@ public class GameLoopManager : MonoBehaviour
         if (!RemoteDriven) return;
         RoundNumber = roundNumber;
         CurrentPhase = Phase.HubCountdown;          // frozen: the puppet timer only ticks in HubPortalActive
+        TimeRemainingInPhase = -1f;                 // GO's final seconds are announced separately
         RoundTimeRemaining = roundDuration;         // elapsed reads as 0 until the round goes live
         playerFirstPlaceThisRound = false;
         roundOutcomeCounted = false;
         AnyRacerFinishedAhead = false;
         Debug.Log($"[GameLoop] (remote) Round {roundNumber} preloading — track generating, timers held");
+    }
+
+    /// <summary>Server said GO is <paramref name="seconds"/> away: count it down locally (see
+    /// <see cref="SecondsToPortal"/>). The phase doesn't change — GO itself still arrives as its own
+    /// message, so a late one simply holds the countdown at zero until it lands.</summary>
+    public void RemoteGoCountdown(float seconds)
+    {
+        if (!RemoteDriven || CurrentPhase != Phase.HubCountdown) return;
+        TimeRemainingInPhase = Mathf.Max(0f, seconds);
     }
 
     /// <summary>Server said the round is LIVE: spawn the portal everywhere and start the timer.</summary>
@@ -207,7 +225,7 @@ public class GameLoopManager : MonoBehaviour
         Debug.Log("[GameLoop] (remote) Round ended — despawning portal");
         OnPortalShouldDespawn?.Invoke();
         CurrentPhase = Phase.HubCountdown;
-        TimeRemainingInPhase = 0f;
+        TimeRemainingInPhase = -1f;   // no GO scheduled until the server announces one
         RoundTimeRemaining = 0f;
     }
 
@@ -261,6 +279,7 @@ public class GameLoopManager : MonoBehaviour
     void StartHubCountdown()
     {
         CurrentPhase = Phase.HubCountdown;
+        if (RemoteDriven) { TimeRemainingInPhase = -1f; return; }   // the server schedules GO
         TimeRemainingInPhase = UnityEngine.Random.Range(minPortalCountdown, maxPortalCountdown);
         Debug.Log($"[GameLoop] Hub countdown started � {TimeRemainingInPhase:F1}s until portal spawns");
     }

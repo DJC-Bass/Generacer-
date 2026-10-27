@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
 public class DroneCar : MonoBehaviour
@@ -92,18 +93,33 @@ public class DroneCar : MonoBehaviour
              "despawns and pays its Credit Reward to whoever hit it last. 0 = only the kill floor despawns it.")]
     [Min(0f)] public float knockoutDespawnDelay = 5f;
 
-    [Header("Chase Mode (hub Drone ending)")]
+    [Header("Chase Mode (hub Drone ending, ClipperEnding)")]
     [Tooltip("When true, the drone ignores its path and chases the player along the ground, firing " +
-             "as it closes — used by the game-over Drone ending swarm in the hub. Enable via BeginChase().")]
+             "as it closes — the game-over Drone ending swarm in the hub (via BeginChase()), or tick it " +
+             "on a car placed in a scene, like the ClipperEnding garage's.")]
     public bool chaseMode;
-    [Tooltip("Horizontal acceleration toward the player while chasing (units/s²).")]
+    [Tooltip("How quickly the car speeds up, brakes and turns while chasing (units/s²).")]
     public float chaseAcceleration = 35f;
     [Tooltip("Maximum horizontal chase speed (units/s).")]
     public float chaseMaxSpeed = 70f;
     [Tooltip("Downward acceleration applied while chasing, imitating gravity so the drone settles " +
              "onto and drives along the ground instead of flying up at the player (units/s²).")]
     public float chaseDownforce = 30f;
+    [Tooltip("Route around walls, through doorways and up ramps to the player, on a map of the scene " +
+             "built at runtime (see ChaseNavigation). Off = drive straight at them.")]
+    public bool chaseNavigate = true;
     private Transform chaseTarget;
+
+    // The chase's route to its target: refreshed every RouteRefreshInterval, steering at corner
+    // routeIndex (-1 = no route, straight at the target).
+    private readonly List<Vector3> route = new List<Vector3>();
+    private int routeIndex = -1;
+    private float nextRouteTime;
+    private bool chaseReady;
+    const float RouteRefreshInterval = 0.5f;
+    /// <summary>How close (units) a corner has to come before steering moves on to the next one.</summary>
+    const float CornerReach = 4f;
+    static PhysicsMaterial frictionless;
 
     private TrackPath path;
     private Rigidbody rb;
@@ -316,9 +332,15 @@ public class DroneCar : MonoBehaviour
         chaseTarget = MultiplayerWorld.PickStickyTarget(anyArea: true);
     }
 
-    /// <summary>Drives along the ground toward the player (horizontal seek + downforce) and fires.
-    /// Chasing on the ground plane — not flying up to the player's height — sells the "driving"
-    /// look; the downforce keeps it pressed onto the floor. The relentless hub-swarm behaviour.</summary>
+    /// <summary>Drives along the ground toward the player and fires. Chasing on the ground plane — not
+    /// flying up to the player's height — sells the "driving" look; the downforce keeps it pressed onto
+    /// the floor. The relentless hub-swarm behaviour, and the ClipperEnding garage's.
+    ///
+    /// It steers its own horizontal VELOCITY at the next corner of a route to the player, changing it by
+    /// at most chaseAcceleration per second — so it accelerates, brakes and turns like a car. It used to
+    /// push with a force instead, which floor friction on a body held down by the downforce could match:
+    /// at the ClipperEnding's 25 (and even the default 35) the cars never moved at all. Its colliders go
+    /// frictionless for the chase (PrepareChase), so nothing drags at the steering.</summary>
     void ChasePlayer()
     {
         // Sticky targeting: keep the picked player until they cease to exist (disconnect destroys
@@ -329,25 +351,26 @@ public class DroneCar : MonoBehaviour
             chaseTarget = MultiplayerWorld.PickStickyTarget(anyArea: true);
             if (chaseTarget == null) return;
         }
+        if (!chaseReady) PrepareChase();
 
-        // Seek the player along the ground plane only (ignore the height difference).
-        Vector3 toPlayer = chaseTarget.position - transform.position;
-        Vector3 toPlayerFlat = new Vector3(toPlayer.x, 0f, toPlayer.z);
+        Vector3 aim = ChaseAim(rb.position, chaseTarget.position, out float speed);
+        Vector3 toAim = aim - rb.position;
+        toAim.y = 0f;   // the ground plane only (ignore the height difference)
 
-        if (toPlayerFlat.sqrMagnitude > 0.0001f)
+        Vector3 vel = rb.linearVelocity;
+        Vector3 horizontal = new Vector3(vel.x, 0f, vel.z);
+        if (toAim.sqrMagnitude > 0.0001f)
         {
-            rb.AddForce(toPlayerFlat.normalized * chaseAcceleration, ForceMode.Acceleration);
+            // Vertical is left to the downforce and the ground (ramps lift it).
+            horizontal = Vector3.MoveTowards(horizontal, toAim.normalized * speed, chaseAcceleration * Time.fixedDeltaTime);
+            rb.linearVelocity = new Vector3(horizontal.x, vel.y, horizontal.z);
+        }
 
-            // Cap only the horizontal speed; leave the vertical axis to gravity / landing.
-            Vector3 vel = rb.linearVelocity;
-            Vector3 horizontal = new Vector3(vel.x, 0f, vel.z);
-            if (horizontal.magnitude > chaseMaxSpeed)
-            {
-                horizontal = horizontal.normalized * chaseMaxSpeed;
-                rb.linearVelocity = new Vector3(horizontal.x, vel.y, horizontal.z);
-            }
-
-            Quaternion targetRot = Quaternion.LookRotation(toPlayerFlat.normalized, Vector3.up);
+        // Face the way it's moving (or, from a standstill, the way it's about to).
+        Vector3 facing = horizontal.sqrMagnitude > 1f ? horizontal : toAim;
+        if (facing.sqrMagnitude > 0.0001f)
+        {
+            Quaternion targetRot = Quaternion.LookRotation(facing.normalized, Vector3.up);
             rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot, rotationCorrection * Time.fixedDeltaTime));
         }
 
@@ -355,6 +378,54 @@ public class DroneCar : MonoBehaviour
         rb.AddForce(Vector3.down * chaseDownforce, ForceMode.Acceleration);
 
         TryShoot();
+    }
+
+    /// <summary>Where to drive right now, and how fast: the next corner of the route to the target,
+    /// easing off ahead of a sharp turn — or straight at the target when there's no route, no need of
+    /// one, or only the last leg left (the live target, not where it was at the last refresh).</summary>
+    Vector3 ChaseAim(Vector3 pos, Vector3 target, out float speed)
+    {
+        speed = chaseMaxSpeed;
+        if (!chaseNavigate) return target;
+
+        if (Time.time >= nextRouteTime)
+        {
+            nextRouteTime = Time.time + RouteRefreshInterval;
+            routeIndex = ChaseNavigation.TryRoute(pos, target, route) ? 1 : -1;   // corner 0 is where we stand
+        }
+        if (routeIndex < 0) return target;
+
+        float reach = Mathf.Max(CornerReach, new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z).magnitude * 0.2f);
+        while (routeIndex < route.Count - 1 && FlatDistance(pos, route[routeIndex]) < reach) routeIndex++;
+        if (routeIndex >= route.Count - 1) return target;
+
+        // Slow enough at the corner for the turn it makes (down to 30% for a right angle or worse),
+        // braking no harder than the car can.
+        Vector3 corner = route[routeIndex];
+        float turn = Vector3.Angle(Flat(corner - pos), Flat(route[routeIndex + 1] - corner));
+        float cornerSpeed = Mathf.Lerp(chaseMaxSpeed, 0.3f * chaseMaxSpeed, turn / 90f);
+        speed = Mathf.Min(chaseMaxSpeed,
+            Mathf.Sqrt(cornerSpeed * cornerSpeed + 2f * chaseAcceleration * FlatDistance(pos, corner)));
+        return corner;
+    }
+
+    static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
+    static float FlatDistance(Vector3 a, Vector3 b) => Flat(a - b).magnitude;
+
+    /// <summary>Takes the friction off this car's colliders for the chase: it drives by steering its
+    /// velocity, and friction would only drag at that — enough, under the downforce, to pin it.</summary>
+    void PrepareChase()
+    {
+        chaseReady = true;
+        if (frictionless == null)
+            frictionless = new PhysicsMaterial("ChaseFrictionless")
+            {
+                dynamicFriction = 0f,
+                staticFriction = 0f,
+                frictionCombine = PhysicsMaterialCombine.Minimum,
+            };
+        foreach (var col in GetComponentsInChildren<Collider>())
+            if (!col.isTrigger && !(col is WheelCollider)) col.sharedMaterial = frictionless;
     }
 
     /// <summary>
