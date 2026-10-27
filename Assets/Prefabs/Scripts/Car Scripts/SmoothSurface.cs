@@ -15,6 +15,12 @@ using UnityEngine;
 /// sharply away, such as the slab's sides). The hit point is lifted onto the matching curved surface, and
 /// the same blend tells how fast that normal turns as the car moves. The car can then follow the curve
 /// the panels were cut from.
+///
+/// Only for the generated track's meshes, which TrackGenerator registers (<see cref="Register"/>).
+/// Everything else is driven exactly as modelled: a level's own creases are real, not a curve cut into
+/// panels, and an imported model is often scaled unevenly — which these normals, worked out in the
+/// mesh's own space, don't survive. (The ClipperEnding building, stretched ~50× across but 1× tall,
+/// read its 5° ramp as a 75° wall, and the car tried to stand on it.)
 /// </summary>
 public static class SmoothSurface
 {
@@ -83,15 +89,28 @@ public static class SmoothSurface
     static readonly Dictionary<Mesh, Vector3[]> cornerNormals = new Dictionary<Mesh, Vector3[]>();
     static readonly Dictionary<Mesh, (Vector3[] verts, int[] tris)> geometry = new Dictionary<Mesh, (Vector3[], int[])>();
 
-    /// <summary>The smooth surface at <paramref name="hit"/>, or false when it isn't a readable,
-    /// non-convex MeshCollider (use the hit's own normal then).</summary>
+    /// <summary>The meshes to read as smooth: the generated track's.</summary>
+    static readonly HashSet<Mesh> trackMeshes = new HashSet<Mesh>();
+
+    /// <summary>Marks a generated track mesh to be read as the smooth surface its panels stand in for.
+    /// It must be readable and sit under an evenly scaled transform (track meshes are built in place).</summary>
+    public static void Register(Mesh mesh)
+    {
+        if (mesh == null) return;
+        if (trackMeshes.Count >= 512) trackMeshes.RemoveWhere(m => m == null);   // earlier tracks' meshes
+        trackMeshes.Add(mesh);
+    }
+
+    /// <summary>The smooth surface at <paramref name="hit"/>, or false when it isn't a registered track
+    /// mesh's non-convex MeshCollider (use the hit's own normal then).</summary>
     public static bool TryGet(in RaycastHit hit, out Sample s)
     {
         s = default;
         var mc = hit.collider as MeshCollider;
         if (mc == null || mc.convex) return false;
         Mesh mesh = mc.sharedMesh;
-        if (mesh == null || !mesh.isReadable) return false;
+        if (mesh == null || !trackMeshes.Contains(mesh) || !mesh.isReadable) return false;
+        if (!EvenlyScaled(mc.transform.lossyScale)) return false;   // mesh-space normals would tilt
 
         if (!geometry.TryGetValue(mesh, out var g))
         {
@@ -111,6 +130,9 @@ public static class SmoothSurface
             tr.TransformDirection(corners[t]), tr.TransformDirection(corners[t + 1]), tr.TransformDirection(corners[t + 2]),
             hit.barycentricCoordinate, hit.point, out s);
     }
+
+    static bool EvenlyScaled(Vector3 s) =>
+        Mathf.Abs(s.x - s.y) <= 1e-4f * Mathf.Abs(s.x) && Mathf.Abs(s.y - s.z) <= 1e-4f * Mathf.Abs(s.y);
 
     /// <summary>Forgets meshes that have since been destroyed (each new track builds new ones).</summary>
     static void Prune()

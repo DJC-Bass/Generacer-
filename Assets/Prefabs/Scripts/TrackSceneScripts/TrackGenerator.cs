@@ -2327,6 +2327,7 @@ public class TrackGenerator : MonoBehaviour
         obj.AddComponent<MeshFilter>().sharedMesh = roadMesh;
         obj.AddComponent<MeshCollider>().sharedMesh = roadMesh;
         obj.AddComponent<MeshRenderer>().sharedMaterial = GetRoadMaterial();
+        SmoothSurface.Register(roadMesh);   // the car rides the curve these panels stand in for
 
         // Shoulder strips on both sides
         if (shoulderWidth > 0f)
@@ -2357,6 +2358,7 @@ public class TrackGenerator : MonoBehaviour
         obj.AddComponent<MeshFilter>().sharedMesh = loopMesh;
         obj.AddComponent<MeshCollider>().sharedMesh = loopMesh;
         obj.AddComponent<MeshRenderer>().sharedMaterial = GetRoadMaterial();
+        SmoothSurface.Register(loopMesh);
 
         if (!edge.isSideLoop) obj.tag = "Loop";
 
@@ -2423,6 +2425,7 @@ public class TrackGenerator : MonoBehaviour
 
         shoulderObj.AddComponent<MeshFilter>().sharedMesh = visual;
         shoulderObj.AddComponent<MeshCollider>().sharedMesh = collision;
+        SmoothSurface.Register(collision);
 
         // Runtime meshes aren't garbage-collected; free the flat slab when nothing ended up using it.
         if (visual != flatShoulder && collision != flatShoulder) Destroy(flatShoulder);

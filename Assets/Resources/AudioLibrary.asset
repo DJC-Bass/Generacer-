@@ -144,7 +144,7 @@ MonoBehaviour:
   boostGateSpawn: {fileID: 8300000, guid: 59fa3e66e270fea4cbf8accca5c2758d, type: 3}
   boostGateBoost: {fileID: 8300000, guid: 9fa9f75a79a0ad749ba77be1f9a10056, type: 3}
   startLightBeep: {fileID: 8300000, guid: d99e19679ce344f4c854ca307d783a98, type: 3}
-  startLightGo: {fileID: 8300000, guid: 14f8eada87bc38b42b54a3d54b15c94e, type: 3}
+  startLightGo: {fileID: 8300000, guid: 6bf91d7178ea1bd4a8cc702dfc8787f1, type: 3}
   startLightAudio3D:
     spatialBlend: 1
     volume: 0.9

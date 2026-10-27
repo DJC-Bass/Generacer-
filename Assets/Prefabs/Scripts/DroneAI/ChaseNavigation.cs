@@ -16,8 +16,11 @@ using UnityEngine.SceneManagement;
 /// One mesh per scene, grown in the background whenever a chase strays outside it, and replaced when
 /// the active scene changes.
 ///
-/// ⚠️ Outside the editor a MeshCollider only contributes if its mesh is READABLE (the model's import
-/// settings: Read/Write). A wall that isn't simply isn't on the map, and cars will try to drive through it.
+/// ⚠️ Only READABLE meshes are on the map (a model's import settings: Read/Write). A built game can't read
+/// the rest, so they're left off in the editor too — what you test is what ships, and Unity doesn't log an
+/// error per mesh per bake reading them editor-only. Where an unreadable floor leaves a gap, a car steers
+/// straight; an unreadable wall isn't on the map, so it'll drive into it. The ClipperEnding building is
+/// readable; the hub's models aren't, so the hub swarm simply chases straight, as it always did.
 /// </summary>
 public static class ChaseNavigation
 {
@@ -36,6 +39,15 @@ public static class ChaseNavigation
     /// player mid-jump is above it.</summary>
     const float SnapDistance = 8f;
 
+    /// <summary>How far above or below a car its spot on the map may be (units). Any further and it's
+    /// the top of something nearby, over a gap in the map — no route then, rather than one over a roof.</summary>
+    const float MaxStandHeight = 3f;
+
+    /// <summary>Chases further apart than this (units, across) aren't routed: no ground needs a map that
+    /// big, and it keeps a stray target — another area of a multiplayer world, 30 km off — from
+    /// asking for one.</summary>
+    const float MaxRouteSpan = 1000f;
+
     static NavMeshBuildSettings settings;
     static bool haveSettings;
     static NavMeshData data;
@@ -47,6 +59,8 @@ public static class ChaseNavigation
     static readonly Vector3[] cornerBuffer = new Vector3[64];
     static readonly List<NavMeshBuildSource> sources = new List<NavMeshBuildSource>();
     static readonly List<NavMeshBuildMarkup> noMarkups = new List<NavMeshBuildMarkup>();
+    static readonly SortedSet<string> unreadable = new SortedSet<string>();
+    static Scene reportedScene;
 
     /// <summary>Fills <paramref name="corners"/> with a ground route from <paramref name="from"/> toward
     /// <paramref name="to"/>, starting with the point on the map under <paramref name="from"/>. A target
@@ -54,11 +68,15 @@ public static class ChaseNavigation
     /// straight instead.</summary>
     public static bool TryRoute(Vector3 from, Vector3 to, List<Vector3> corners)
     {
+        Vector3 span = to - from;
+        if (Mathf.Abs(span.y) > VerticalMargin || new Vector2(span.x, span.z).magnitude > MaxRouteSpan) return false;
         if (!Covers(from, to)) return false;
 
         var filter = new NavMeshQueryFilter { agentTypeID = settings.agentTypeID, areaMask = NavMesh.AllAreas };
-        if (!NavMesh.SamplePosition(from, out var start, SnapDistance, filter)) return false;
-        if (!NavMesh.SamplePosition(to, out var end, SnapDistance, filter)) return false;
+        if (!NavMesh.SamplePosition(from, out var start, SnapDistance, filter)
+            || Mathf.Abs(start.position.y - from.y) > MaxStandHeight) return false;
+        if (!NavMesh.SamplePosition(to, out var end, SnapDistance, filter)
+            || end.position.y > to.y + MaxStandHeight) return false;   // under the player, never above them
 
         if (path == null) path = new NavMeshPath();
         if (!NavMesh.CalculatePath(start.position, end.position, filter, path)
@@ -110,7 +128,25 @@ public static class ChaseNavigation
 
         sources.Clear();
         NavMeshBuilder.CollectSources(bounds, ~0, NavMeshCollectGeometry.PhysicsColliders, 0, noMarkups, sources);
-        sources.RemoveAll(s => s.component is Collider c && (c.isTrigger || c.attachedRigidbody != null));
+        unreadable.Clear();
+        sources.RemoveAll(s =>
+        {
+            if (s.component is Collider c && (c.isTrigger || c.attachedRigidbody != null)) return true;
+            if (s.shape == NavMeshBuildSourceShape.Mesh && s.sourceObject is Mesh m && !m.isReadable)
+            {
+                unreadable.Add(m.name);
+                return true;
+            }
+            return false;
+        });
+        if (unreadable.Count > 0 && reportedScene != scene)
+        {
+            reportedScene = scene;   // once per scene, not per bake
+            Debug.Log($"[ChaseNavigation] {scene.name}: the chase map leaves out {unreadable.Count} mesh(es) without " +
+                      $"Read/Write ({string.Join(", ", unreadable)}). Chasing cars drive straight across gaps they " +
+                      "leave. Not an error — tick Read/Write on a model's import settings only if chasers need to " +
+                      "route around it.");
+        }
 
         if (data == null)
         {
