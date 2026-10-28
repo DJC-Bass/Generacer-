@@ -267,43 +267,114 @@ public class SkyboxHueRandomizer : MonoBehaviour
     public static bool TryMeasureAmbient(Material sky, out SphericalHarmonicsL2 probe)
     {
         probe = default;
+        const int n = AmbientFaceSize;
+        var light = new SphericalHarmonicsL2();
+        var white = new SphericalHarmonicsL2();
+        bool drawn = RenderSkyFaces(sky, CubeFaces, n, (face, pixels) =>
+        {
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float u = (x + 0.5f) / n * 2f - 1f, v = (y + 0.5f) / n * 2f - 1f;
+                float r2 = 1f + u * u + v * v;
+                float solidAngle = 4f / (n * n * r2 * Mathf.Sqrt(r2));
+                Vector3 dir = face * new Vector3(u, v, 1f).normalized;
+                light.AddDirectionalLight(dir, pixels[y * n + x], solidAngle);
+                white.AddDirectionalLight(dir, Color.white, solidAngle);
+            }
+        });
+        if (!drawn) return false;
+
+        var unit = new Color[1];
+        white.Evaluate(new[] { Vector3.up }, unit);
+        if (unit[0].r <= 1e-6f) return false;
+        probe = light * (1f / unit[0].r);
+        return true;
+    }
+
+    /// <summary>Draws <paramref name="sky"/> into <paramref name="cube"/>, a cube RenderTexture: the sky in
+    /// every direction, linear HDR, exactly as the sky shader draws it before post-processing. TrackFog
+    /// fades distant scenery into it, each pixel into the sky in its own direction — the track's sky is
+    /// green below the horizon, a white band at it and paler above, and no single fog colour matches all
+    /// of that. Like <see cref="TryMeasureAmbient"/>, a procedural sky takes its sun from the lights
+    /// enabled while this runs.</summary>
+    public static bool TryRenderSkyCube(Material sky, RenderTexture cube)
+    {
+        if (sky == null || cube == null) return false;
+        var go = CreateSkyProbe(sky, out Camera cam);
+        try
+        {
+            return cam.RenderToCubemap(cube);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[SkyboxHueRandomizer] Couldn't draw the sky '{sky.name}' into a cube: {e.Message}");
+            return false;
+        }
+        finally
+        {
+            Destroy(go);
+        }
+    }
+
+    /// <summary>Where the sky is measured from: 50 km up, above both play areas, so a camera that sees ten
+    /// metres has nothing to see but the sky.</summary>
+    static readonly Vector3 SkyProbePosition = new Vector3(0f, 50000f, 0f);
+
+    /// <summary>The private camera the sky is measured with: hidden, switched off (it only renders when
+    /// asked), 90° square, HDR and ungraded — the sky's raw light, not a picture of it.
+    ///
+    /// ⚠️ It must SEE the scene's lights. The track's sky decides day or night from URP's main light — no
+    /// main light, night — and a camera culls lights by layer just as it culls renderers. This camera used
+    /// to have an empty culling mask to show "the sky alone", so it measured the track's sky as night, at
+    /// about 1% of its real brightness — the hub TVs' and the pilot's ambient light with it. It sees every
+    /// layer now, and is kept clear of the scenery by distance instead.</summary>
+    static GameObject CreateSkyProbe(Material sky, out Camera cam)
+    {
+        var go = new GameObject("SkyAmbientProbe") { hideFlags = HideFlags.HideAndDontSave };
+        go.transform.position = SkyProbePosition;
+        cam = go.AddComponent<Camera>();
+        cam.enabled = false;
+        cam.cullingMask = ~0;                      // every layer, for the lights (see above)
+        cam.clearFlags = CameraClearFlags.Skybox;
+        cam.fieldOfView = 90f;
+        cam.aspect = 1f;
+        cam.nearClipPlane = 0.1f;
+        cam.farClipPlane = 10f;
+        cam.allowHDR = true;
+        cam.allowMSAA = false;
+        go.AddComponent<Skybox>().material = sky;
+        var urp = cam.GetUniversalAdditionalCameraData();
+        if (urp != null)
+        {
+            urp.renderPostProcessing = false;
+            urp.antialiasing = AntialiasingMode.None;
+            urp.renderShadows = false;
+        }
+        return go;
+    }
+
+    /// <summary>Draws <paramref name="sky"/> alone, from the private probe camera, into a small square for
+    /// each of <paramref name="faces"/> (90° views, <paramref name="n"/> pixels square), and hands
+    /// <paramref name="perFace"/> each one's pixels — linear HDR, bottom row first. Nothing in the world is
+    /// touched.</summary>
+    static bool RenderSkyFaces(Material sky, Quaternion[] faces, int n, System.Action<Quaternion, Color[]> perFace)
+    {
         if (sky == null) return false;
 
-        const int n = AmbientFaceSize;
-        var go = new GameObject("SkyAmbientProbe") { hideFlags = HideFlags.HideAndDontSave };
+        var go = CreateSkyProbe(sky, out Camera cam);
         RenderTexture target = null;
         Texture2D readback = null;
         RenderTexture previousActive = RenderTexture.active;
         try
         {
-            var cam = go.AddComponent<Camera>();
-            cam.enabled = false;
-            cam.cullingMask = 0;                       // the sky and nothing else
-            cam.clearFlags = CameraClearFlags.Skybox;
-            cam.fieldOfView = 90f;
-            cam.aspect = 1f;
-            cam.nearClipPlane = 0.1f;
-            cam.farClipPlane = 10f;
-            cam.allowHDR = true;
-            cam.allowMSAA = false;
-            go.AddComponent<Skybox>().material = sky;
-            var urp = cam.GetUniversalAdditionalCameraData();
-            if (urp != null)
-            {
-                urp.renderPostProcessing = false;      // the sky's raw light, not a graded picture of it
-                urp.antialiasing = AntialiasingMode.None;
-                urp.renderShadows = false;
-            }
-
             target = RenderTexture.GetTemporary(n, n, 16, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear);
             readback = new Texture2D(n, n, TextureFormat.RGBAHalf, false, true);
             var request = new RenderPipeline.StandardRequest { destination = target };
             bool viaRequest = RenderPipeline.SupportsRenderRequest(cam, request);
             if (!viaRequest) cam.targetTexture = target;
 
-            var light = new SphericalHarmonicsL2();
-            var white = new SphericalHarmonicsL2();
-            foreach (Quaternion face in CubeFaces)
+            foreach (Quaternion face in faces)
             {
                 go.transform.rotation = face;
                 if (viaRequest) RenderPipeline.SubmitRenderRequest(cam, request);
@@ -311,29 +382,13 @@ public class SkyboxHueRandomizer : MonoBehaviour
 
                 RenderTexture.active = target;
                 readback.ReadPixels(new Rect(0, 0, n, n), 0, 0, false);
-                Color[] pixels = readback.GetPixels();
-
-                for (int y = 0; y < n; y++)
-                for (int x = 0; x < n; x++)
-                {
-                    float u = (x + 0.5f) / n * 2f - 1f, v = (y + 0.5f) / n * 2f - 1f;
-                    float r2 = 1f + u * u + v * v;
-                    float solidAngle = 4f / (n * n * r2 * Mathf.Sqrt(r2));
-                    Vector3 dir = face * new Vector3(u, v, 1f).normalized;
-                    light.AddDirectionalLight(dir, pixels[y * n + x], solidAngle);
-                    white.AddDirectionalLight(dir, Color.white, solidAngle);
-                }
+                perFace(face, readback.GetPixels());
             }
-
-            var unit = new Color[1];
-            white.Evaluate(new[] { Vector3.up }, unit);
-            if (unit[0].r <= 1e-6f) return false;
-            probe = light * (1f / unit[0].r);
             return true;
         }
         catch (System.Exception e)
         {
-            Debug.LogWarning($"[SkyboxHueRandomizer] Couldn't measure the ambient light of '{sky.name}': {e.Message}");
+            Debug.LogWarning($"[SkyboxHueRandomizer] Couldn't measure the sky '{sky.name}': {e.Message}");
             return false;
         }
         finally
