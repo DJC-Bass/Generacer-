@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 40f0f736663e4acb83dcbcd751d4bc9b, type: 3}
+  m_Name: TrackTerrainSettings
+  m_EditorClassIdentifier: 
+  enableTerrain: 1
+  terrainChance: 0.75
+  floorAltitude: 0
+  hillHeight: 10000
+  hillSize: 5000
+  mountainHeight: 10000
+  mountainSize: 5000
+  mountainCoverage: 0.25
+  trackClearance: 50
+  valleySlope: 1
+  valleySoftness: 400
+  margin: 15000
+  resolution: 1025
+  pixelError: 2
+  groundColor: {r: 0.3, g: 0.22, b: 0.4, a: 1}
+  slopeColor: {r: 0.22, g: 0.17, b: 0.29, a: 1}
+  slopeStart: 30
+  slopeEnd: 45
+  groundContact: 1
+  terrainMaterial: {fileID: 2100000, guid: 63b517f885b8467b8273e9669a01a269, type: 2}
+  trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}

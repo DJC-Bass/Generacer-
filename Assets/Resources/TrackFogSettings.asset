@@ -13,9 +13,9 @@ MonoBehaviour:
   m_Name: TrackFogSettings
   m_EditorClassIdentifier: 
   enableFog: 1
-  fogChance: 0.33
-  fullFogDistance: 400
-  referenceAltitude: 4000
+  fogChance: 1
+  fullFogDistance: 3000
+  referenceAltitude: 0
   halfHeight: 2000
   startDistance: 200
   maxOpacity: 1

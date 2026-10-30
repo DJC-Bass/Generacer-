@@ -257,6 +257,10 @@ public class TrackGenerator : MonoBehaviour
     /// teleport portal-entering players onto the track it generated.</summary>
     public static TrackGenerator Current { get; private set; }
 
+    /// <summary>Raised the moment a track is fully laid out (every road, loop, shoulder and the finish
+    /// portal built), before the car is placed on it. TrackTerrain shapes the round's mountains around it.</summary>
+    public static event System.Action<TrackGenerator> Generated;
+
     /// <summary>Where a car entering this track should be placed (the same pose the single-player
     /// spawn uses).</summary>
     public Vector3 CarSpawnPosition =>
@@ -349,6 +353,7 @@ public class TrackGenerator : MonoBehaviour
             portal.transform.SetParent(transform, true);
         }
 
+        Generated?.Invoke(this);
         StartCoroutine(SpawnCarDelayed());
     }
     /// <summary>

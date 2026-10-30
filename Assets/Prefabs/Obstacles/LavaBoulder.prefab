@@ -189,13 +189,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   killHeight: -500
-  maxLifetime: 5000
+  maxLifetime: 20
   gravityMultiplier: 124
   playerTag: Player
   homingDuration: 1
   airborneHomingDuration: 4
   homingStrength: 10000
   maxHomingSpeed: 6000
+  maxShoveSpeed: 150
 --- !u!114 &1618033988749894848
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -216,6 +217,7 @@ MonoBehaviour:
     rolloffMode: 1
     dopplerLevel: 0
   impactArmDelay: 0.1
+  impactsFromNetwork: 0
 --- !u!1 &8185159337952819718
 GameObject:
   m_ObjectHideFlags: 0

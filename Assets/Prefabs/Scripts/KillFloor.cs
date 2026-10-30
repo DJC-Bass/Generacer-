@@ -31,7 +31,13 @@ public class KillFloor : MonoBehaviour
         if (col != null) col.isTrigger = true;
     }
 
-    void OnTriggerEnter(Collider other)
+    void OnTriggerEnter(Collider other) => Touched(other);
+
+    // Solid ground can be a kill floor too: the TrackScene's mountains (TrackTerrain) have to stop a
+    // falling car on the mountainside instead of letting it sink through, so they report a collision.
+    void OnCollisionEnter(Collision collision) => Touched(collision.collider);
+
+    void Touched(Collider other)
     {
         // Drone? Despawn just that drone � independent of the player guard so a
         // falling drone never blocks the player's own kill-floor trigger.

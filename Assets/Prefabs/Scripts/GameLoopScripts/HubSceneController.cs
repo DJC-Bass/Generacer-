@@ -39,7 +39,7 @@ public class HubSceneController : MonoBehaviour
 
     [Header("Player Victory (game over — you win)")]
     [Tooltip("Banner text shown centre-screen when the player wins by collecting enough SDs.")]
-    public string victoryBannerText = "BOTS DEFEATED";
+    public string victoryBannerText = "UNIVERSE SAVED";
     [Tooltip("Seconds after the victory sequence starts before the banner begins to fade in.")]
     public float victoryBannerDelaySeconds = 0.5f;
     [Tooltip("Seconds the banner stays fully visible before it begins to fade. The hold only " +
