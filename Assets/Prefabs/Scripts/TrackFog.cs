@@ -12,6 +12,7 @@ using UnityEngine.SceneManagement;
 /// Not every round: each TrackScene load rolls Fog Chance for a FOG ROUND, the way
 /// RoundDirectionalLightToggle rolls a blackout round — from the server's round seed in multiplayer, so
 /// every player, Spectator TV and pilot agrees. The two are independent, so a fog round can be at night.
+/// A fog round rolls its thickness the same way, between Min and Max Full Fog Distance.
 ///
 /// Distant scenery fades into the SKY IN ITS OWN DIRECTION, not into one fog colour. Unity's built-in fog
 /// (the first version of this) can only fade to a single colour, and the track's sky is green below the
@@ -39,6 +40,7 @@ public class TrackFog : MonoBehaviour
     Material material;
     HeightFogPass pass;
     bool fogRound = true;   // this round rolled fog — and always, outside a game-loop run
+    float thicknessRoll;    // where this round landed between Min (0) and Max (1) Full Fog Distance
     static readonly System.Random rng = new System.Random();   // single-player rolls; leaves Unity's Random alone
 
     // This round's sky in every direction, and which sky (and round) it was drawn from.
@@ -90,18 +92,24 @@ public class TrackFog : MonoBehaviour
         if (settings != null && scene.name == TrackSceneName()) RollFogRound();
     }
 
-    /// <summary>Is this a fog round? Like the blackout roll, only during a game-loop run: with no
-    /// GameLoopManager (the TrackScene opened on its own) the fog stays on.</summary>
+    /// <summary>Is this a fog round, and how thick? Like the blackout roll, the chance only applies during a
+    /// game-loop run: with no GameLoopManager (the TrackScene opened on its own) the fog stays on. The
+    /// thickness is rolled either way.</summary>
     void RollFogRound()
     {
         var glm = GameLoopManager.Instance;
-        if (glm == null) { fogRound = true; return; }
+        fogRound = glm == null || Roll("fog") < settings.fogChance;
+        if (fogRound) thicknessRoll = (float)Roll("fogdistance");
 
-        fogRound = (MultiplayerWorld.IsMultiplayerGame
-            ? MultiplayerWorld.DeriveRandom("fog").NextDouble()
-            : rng.NextDouble()) < settings.fogChance;
-        Debug.Log($"[TrackFog] Round {glm.RoundNumber}: fog {(fogRound ? "ON (fog round)" : "off")}.");
+        string round = glm != null ? $"Round {glm.RoundNumber}" : "No game loop";
+        Debug.Log($"[TrackFog] {round}: fog {(fogRound ? $"ON (fog round), full fog at {FullFogDistance():F0}" : "off")}.");
     }
+
+    static double Roll(string stream) => MultiplayerWorld.IsMultiplayerGame
+        ? MultiplayerWorld.DeriveRandom(stream).NextDouble()
+        : rng.NextDouble();
+
+    float FullFogDistance() => Mathf.Lerp(settings.minFullFogDistance, settings.maxFullFogDistance, thicknessRoll);
 
     void OnDestroy()
     {
@@ -142,9 +150,9 @@ public class TrackFog : MonoBehaviour
             DrawSky(ownedSky != null ? ownedSky : settings.trackSkybox, seed);
         }
 
-        // Density at the reference altitude for 95% at Full Fog Distance on a level ray there, and the
-        // falloff that halves it every Half Height.
-        float reach = Mathf.Max(1f, settings.fullFogDistance - settings.startDistance);
+        // Density at the reference altitude for 95% at this round's Full Fog Distance on a level ray there,
+        // and the falloff that halves it every Half Height.
+        float reach = Mathf.Max(1f, FullFogDistance() - settings.startDistance);
         material.SetVector(DensityId, new Vector4(-Mathf.Log(0.05f) / reach, Mathf.Log(2f) / settings.halfHeight,
                                                   settings.referenceAltitude, settings.maxOpacity));
         material.SetFloat(StartId, settings.startDistance);

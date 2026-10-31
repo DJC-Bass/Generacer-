@@ -14,10 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enableFog: 1
   fogChance: 1
-  fullFogDistance: 3000
+  minFullFogDistance: 500
+  maxFullFogDistance: 5000
   referenceAltitude: 0
   halfHeight: 2000
-  startDistance: 200
+  startDistance: 250
   maxOpacity: 1
   groundHaze: 10
   trackSkybox: {fileID: 2100000, guid: cee2fbd380e510a4cb38d2b2e06fcd39, type: 2}

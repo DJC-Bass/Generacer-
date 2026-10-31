@@ -18,13 +18,19 @@ public class TrackFogSettings : ScriptableObject
     public float fogChance = 0.33f;
 
     [Header("Thickness")]
-    [Tooltip("At the Reference Altitude, looking level: the distance (units) at which the fog is all but " +
-             "total (95%) — the far course has faded into the sky by here. Lower = thicker. At the default " +
-             "7500 (with the default Start Distance), scenery 1 km off is ~25% faded, 2 km ~50%, 3 km ~67%. " +
-             "At 600 mph the car covers ~270 a second.")]
-    [Min(100f)] public float fullFogDistance = 7500f;
+    [Tooltip("The thickest a fog round can be. At the Reference Altitude, looking level, Full Fog Distance is " +
+             "how far off (units) the fog is all but total (95%) — the far course has faded into the sky by " +
+             "here. Lower = thicker. Each fog round rolls its own between this and Max Full Fog Distance, the " +
+             "same for every player in multiplayer; set the two equal for one fixed thickness. At 7500 (with " +
+             "the default Start Distance), scenery 1 km off is ~25% faded, 2 km ~50%, 3 km ~67%. At 600 mph " +
+             "the car covers ~270 a second.")]
+    [Min(100f)] public float minFullFogDistance = 3000f;
 
-    [Tooltip("The altitude Full Fog Distance is measured at. The Track Generator's Base Altitude (3000) — " +
+    [Tooltip("The thinnest a fog round can be: the far end of the Full Fog Distance roll (see Min Full Fog " +
+             "Distance).")]
+    [Min(100f)] public float maxFullFogDistance = 7500f;
+
+    [Tooltip("The altitude the Full Fog Distances are measured at. The Track Generator's Base Altitude (3000) — " +
              "the height most of the course runs around.")]
     public float referenceAltitude = 3000f;
 

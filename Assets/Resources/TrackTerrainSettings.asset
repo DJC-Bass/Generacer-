@@ -19,12 +19,12 @@ MonoBehaviour:
   hillSize: 5000
   mountainHeight: 10000
   mountainSize: 5000
-  mountainCoverage: 0.25
+  mountainCoverage: 0.15
   trackClearance: 50
   valleySlope: 1
   valleySoftness: 400
   margin: 15000
-  resolution: 1025
+  resolution: 513
   pixelError: 2
   groundColor: {r: 0.3, g: 0.22, b: 0.4, a: 1}
   slopeColor: {r: 0.22, g: 0.17, b: 0.29, a: 1}
