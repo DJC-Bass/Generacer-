@@ -982,7 +982,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8777634849189473332, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -3000
+      value: -10000
       objectReference: {fileID: 0}
     - target: {fileID: 8777634849189473332, guid: c4edd98bc4d18c644bec3a18e77debd3, type: 3}
       propertyPath: m_LocalPosition.z
@@ -1437,6 +1437,10 @@ PrefabInstance:
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: maxRollRate
       value: 20
+      objectReference: {fileID: 0}
+    - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
+      propertyPath: minAltitude
+      value: -10000
       objectReference: {fileID: 0}
     - target: {fileID: 279050347577569708, guid: 8ec8c006b9e040e448ced0edf891caa3, type: 3}
       propertyPath: baseAltitude

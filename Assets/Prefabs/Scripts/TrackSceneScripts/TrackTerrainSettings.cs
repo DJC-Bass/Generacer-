@@ -35,15 +35,26 @@ public class TrackTerrainSettings : ScriptableObject
     [Tooltip("Altitude of the plains between the hills and mountains. Keep it above the Kill Floor (-500).")]
     public float floorAltitude = -300f;
 
-    [Tooltip("How high the rolling hills rise above the plains.")]
-    [Min(0f)] public float hillHeight = 600f;
+    [Tooltip("The lowest the rolling hills can rise above the plains. Each terrain round rolls its own hill " +
+             "height between this and Max Hill Height, the same for every player in multiplayer; set the two " +
+             "equal for one fixed height.")]
+    [Min(0f)] public float minHillHeight = 600f;
+
+    [Tooltip("The highest the rolling hills can rise above the plains (see Min Hill Height).")]
+    [Min(0f)] public float maxHillHeight = 5000f;
 
     [Tooltip("Rough distance between neighbouring hills.")]
     [Min(100f)] public float hillSize = 5000f;
 
-    [Tooltip("How high the tallest mountain peaks rise above the plains. The track's base altitude is " +
-             "4000, so taller than that and the course runs through the mountains rather than over them.")]
-    [Min(0f)] public float mountainHeight = 7000f;
+    [Tooltip("The lowest the tallest mountain peaks can rise above the plains. Each terrain round rolls its " +
+             "own mountain height between this and Max Mountain Height, separately from the hills and the " +
+             "same for every player in multiplayer; set the two equal for one fixed height. The track's base " +
+             "altitude is 4000, so taller than that and the course runs through the mountains rather than " +
+             "over them.")]
+    [Min(0f)] public float minMountainHeight = 5000f;
+
+    [Tooltip("The highest the tallest mountain peaks can rise above the plains (see Min Mountain Height).")]
+    [Min(0f)] public float maxMountainHeight = 10000f;
 
     [Tooltip("Rough distance between neighbouring mountain ridges.")]
     [Min(100f)] public float mountainSize = 12000f;

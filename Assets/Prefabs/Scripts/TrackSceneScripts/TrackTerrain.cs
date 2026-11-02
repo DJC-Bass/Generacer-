@@ -21,7 +21,8 @@ using Debug = UnityEngine.Debug;
 /// in the background: it takes about a second (the heights spread over every CPU core), and done in the
 /// same frame that's part of the round's load — behind the ROADING screen in multiplayer — instead of a
 /// hitch a second into the drive. It lives in the TrackScene and goes when that unloads. Seeded from the
-/// round seed in multiplayer, so every player gets the same range around the (already identical) track.
+/// round seed in multiplayer, so every player gets the same range around the (already identical) track —
+/// its hill and mountain heights included, each rolled between its Min and Max from that same seed.
 ///
 /// Coloured with THIS ROUND's sky ground hue, so the land matches the sky's ground beyond it; steep
 /// slopes get a darker shade of it. Solid, and by default touching it fails the run like the Kill Floor
@@ -93,7 +94,8 @@ public class TrackTerrain : MonoBehaviour
         job.Run();
         if (!job.HasTrack) return;
         Create(scene, job);
-        Debug.Log($"[TrackTerrain] {job.Size.x / 1000f:F0} x {job.Size.z / 1000f:F0} km, {job.Resolution}² heights " +
+        Debug.Log($"[TrackTerrain] Hills {job.HillHeight:F0}, mountains {job.MountainHeight:F0}. " +
+                  $"{job.Size.x / 1000f:F0} x {job.Size.z / 1000f:F0} km, {job.Resolution}² heights " +
                   $"({job.Size.x / (job.Resolution - 1):F0} m apart) around {job.Triangles} track triangles, " +
                   $"built in {clock.ElapsedMilliseconds} ms ({job.WorkMs} ms of it the heights).");
     }
@@ -247,7 +249,7 @@ sealed class TerrainJob
     const float Open = 1e30f;   // no ceiling here
 
     // Settings, copied on the main thread.
-    readonly float floor, hillHeight, hillFreq, mountainHeight, mountainFreq, regionFreq, warpFreq, warp, regionThreshold;
+    readonly float floor, hillFreq, mountainFreq, regionFreq, warpFreq, warp, regionThreshold;
     readonly float clearance, slope, softness, margin, slopeTanStart, slopeTanEnd;
     readonly int requestedResolution;
     readonly float[] offsets = new float[12];
@@ -256,7 +258,8 @@ sealed class TerrainJob
     readonly List<(Vector3[] vertices, int[] triangles, Matrix4x4 toWorld)> meshes = new List<(Vector3[], int[], Matrix4x4)>();
     readonly List<Bounds> boxes = new List<Bounds>();
 
-    // Results.
+    // This round's rolls, and the results.
+    public readonly float HillHeight, MountainHeight;
     public bool HasTrack;
     public int Resolution, AlphaResolution, Triangles;
     public long WorkMs;
@@ -267,9 +270,7 @@ sealed class TerrainJob
     public TerrainJob(TrackTerrainSettings s, int seed)
     {
         floor = s.floorAltitude;
-        hillHeight = s.hillHeight;
         hillFreq = 1f / Mathf.Max(s.hillSize, 1f);
-        mountainHeight = s.mountainHeight;
         mountainFreq = 1f / Mathf.Max(s.mountainSize, 1f);
         regionFreq = mountainFreq / 3f;
         warpFreq = mountainFreq / 1.5f;
@@ -285,6 +286,8 @@ sealed class TerrainJob
 
         var r = new System.Random(seed);
         for (int i = 0; i < offsets.Length; i++) offsets[i] = (float)(r.NextDouble() * 1000.0);
+        HillHeight = Mathf.Lerp(s.minHillHeight, s.maxHillHeight, (float)r.NextDouble());
+        MountainHeight = Mathf.Lerp(s.minMountainHeight, s.maxMountainHeight, (float)r.NextDouble());
     }
 
     /// <summary>Main thread: copies out every piece of the track — its roads, loops, shoulders and rails
@@ -466,15 +469,16 @@ sealed class TerrainJob
     /// little so ridges and valleys wander instead of lining up.
     ///
     /// Each layer is stretched over its MEASURED spread (200,000 samples), so the settings mean what they
-    /// say: hills span 0 to Hill Height, the highest ridges reach Mountain Height, and Mountain Coverage is
-    /// the share of the land that's mountain range. Raw, the noise uses only a fraction of its -1..1.</summary>
+    /// say: hills span 0 to this round's Hill Height, the highest ridges reach its Mountain Height, and
+    /// Mountain Coverage is the share of the land that's mountain range. Raw, the noise uses only a fraction
+    /// of its -1..1.</summary>
     float Elevation(float x, float z)
     {
         float wx = x + warp * Noise(x * warpFreq + offsets[0], z * warpFreq + offsets[1]);
         float wz = z + warp * Noise(x * warpFreq + offsets[2], z * warpFreq + offsets[3]);
 
         // 4-octave fbm: 5-95% of it lies within ±0.27.
-        float hills = Mathf.Clamp01(Fbm(wx * hillFreq + offsets[4], wz * hillFreq + offsets[5], 4) / 0.55f + 0.5f) * hillHeight;
+        float hills = Mathf.Clamp01(Fbm(wx * hillFreq + offsets[4], wz * hillFreq + offsets[5], 4) / 0.55f + 0.5f) * HillHeight;
 
         float region = Fbm(wx * regionFreq + offsets[6], wz * regionFreq + offsets[7], 2);
         float mask = SmoothStep01((region - regionThreshold + 0.06f) / 0.12f);
@@ -482,7 +486,7 @@ sealed class TerrainJob
 
         // 6-octave ridged: 5-99% of it lies within 0.2-0.9. Squared, so the valleys between ridges stay low.
         float ridges = Mathf.Clamp01((Ridged(wx * mountainFreq + offsets[8], wz * mountainFreq + offsets[9], 6) - 0.2f) / 0.7f);
-        return floor + hills + mask * ridges * ridges * mountainHeight;
+        return floor + hills + mask * ridges * ridges * MountainHeight;
     }
 
     /// <summary>The level of the region noise (2-octave fbm) that <paramref name="coverage"/> of the land

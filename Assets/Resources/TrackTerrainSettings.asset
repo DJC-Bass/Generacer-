@@ -13,13 +13,15 @@ MonoBehaviour:
   m_Name: TrackTerrainSettings
   m_EditorClassIdentifier: 
   enableTerrain: 1
-  terrainChance: 0.75
-  floorAltitude: 0
-  hillHeight: 10000
+  terrainChance: 1
+  floorAltitude: 2500
+  minHillHeight: 2500
+  maxHillHeight: 7500
   hillSize: 5000
-  mountainHeight: 10000
+  minMountainHeight: 2500
+  maxMountainHeight: 7500
   mountainSize: 5000
-  mountainCoverage: 0.15
+  mountainCoverage: 0.5
   trackClearance: 50
   valleySlope: 1
   valleySoftness: 400
