@@ -22,9 +22,9 @@ MonoBehaviour:
   maxMountainHeight: 7500
   mountainSize: 5000
   mountainCoverage: 0.5
-  trackClearance: 50
+  trackClearance: 10
   valleySlope: 1
-  valleySoftness: 400
+  valleySoftness: 500
   margin: 15000
   resolution: 513
   pixelError: 2

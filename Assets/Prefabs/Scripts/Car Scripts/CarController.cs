@@ -42,19 +42,19 @@ public class CarController : MonoBehaviour
     public Transform meshRR;
 
     [Header("Speed")]
-    [Tooltip("Top speed in mph.")]
+    [Tooltip("Top speed in mph — the same driving forward or in reverse.")]
     public float maxSpeedMph = 300f;
-    [Tooltip("Forward acceleration at full throttle and low speed (m/s^2). Falls off " +
-             "toward zero as the car nears its top speed.")]
+    [Tooltip("Acceleration at full throttle and low speed (m/s^2), forward (RT) and in reverse " +
+             "(LT) alike. Falls off toward zero as the car nears its top speed.")]
     public float acceleration = 35f;
-    [Tooltip("Reverse acceleration when holding the Left Trigger from a near stop (m/s^2).")]
-    public float reverseAcceleration = 16f;
-    [Tooltip("How quickly the car bleeds speed ABOVE its cap back down to it (m/s^2). The " +
-             "cap is the base top speed times any turbo/loop multiplier. The car may exceed " +
-             "it while going downhill, then eases back once it levels out or the boost ends.")]
+    [Tooltip("How quickly the car bleeds speed ABOVE its cap back down to it (m/s^2), driving " +
+             "forward or in reverse. The cap is the base top speed times any turbo/loop/drift " +
+             "multiplier. The car may exceed it while going downhill, then eases back once it " +
+             "levels out or the boost ends.")]
     public float overspeedDamping = 20f;
-    [Tooltip("Nose-down amount (forward.y) past which the car counts as 'going downhill' and " +
-             "is allowed to exceed top speed without being clamped. ~0.05 ≈ 3 degrees.")]
+    [Tooltip("How far the car must point down its direction of travel (nose-down driving forward, " +
+             "tail-down in reverse) to count as 'going downhill' and be allowed to exceed top " +
+             "speed without being clamped. ~0.05 ≈ 3 degrees.")]
     public float downhillThreshold = 0.05f;
 
     [Header("Ground Detection / Raycast")]
@@ -129,10 +129,10 @@ public class CarController : MonoBehaviour
     [Tooltip("Turn rate (deg/s) at high speed while drifting — higher than the normal " +
          "high-speed rate so the player can counter-steer through a slide.")]
     public float driftTurnRateHighSpeed = 110f;
-    [Tooltip("Top-speed multiplier while drifting FORWARD, scaled by how far the stick is steered. " +
-         "At full steer the cap reaches this multiple of Max Speed (2 = 600 mph from 300); at half " +
-         "steer it's halfway (1.5x). The car accelerates up to the raised cap; the normal cap " +
-         "(and overspeed damping) returns when the drift ends. Reverse drifts keep the normal cap.")]
+    [Tooltip("Top-speed multiplier while drifting — forward (RT + X) or in reverse (LT + X) — scaled " +
+         "by how far the stick is steered. At full steer the cap reaches this multiple of Max Speed " +
+         "(2 = 600 mph from 300); at half steer it's halfway (1.5x). The car accelerates up to the " +
+         "raised cap; the normal cap (and overspeed damping) returns when the drift ends.")]
     public float driftMaxSpeedMultiplier = 2f;
 
     [Header("Downforce / Stick")]
@@ -146,8 +146,8 @@ public class CarController : MonoBehaviour
     public float groundStickForce = 8f;
 
     [Header("Hill Climb Assist")]
-    [Tooltip("Counteracts gravity along the car's forward direction when climbing. " +
-             "1.0 = no speed loss going uphill, 0.0 = full physics.")]
+    [Tooltip("Counteracts gravity along the direction the car is driving (forward, or backward in " +
+             "reverse) when climbing. 1.0 = no speed loss going uphill, 0.0 = full physics.")]
     [Range(0f, 1f)] public float hillGravityCompensation = 0.9f;
     [Tooltip("Extra acceleration multiplier when climbing, scaling with steepness.")]
     public float climbTorqueBoost = 1.5f;
@@ -199,7 +199,7 @@ public class CarController : MonoBehaviour
     public float airDrag = 0.5f;
 
     [Header("Turbo Boost")]
-    [Tooltip("Multiplier applied to top speed and acceleration during turbo.")]
+    [Tooltip("Multiplier applied to top speed and acceleration during turbo, forward or in reverse.")]
     public float turboMultiplier = 2f;
     [Tooltip("How long turbo lasts when activated (seconds).")]
     public float turboDuration = 2f;
@@ -255,7 +255,7 @@ public class CarController : MonoBehaviour
     [Tooltip("Extra pull toward the surface while on a loop (acceleration units). Keeps " +
          "the car glued through the inverted apex.")]
     public float loopStickForce = 12f;
-    [Tooltip("Multiplier applied to max speed and acceleration while on a loop.")]
+    [Tooltip("Multiplier applied to max speed and acceleration while on a loop, forward or in reverse.")]
     public double loopSpeedMultiplier = 2.0;
 
     // -------------------------------------------------------
@@ -814,32 +814,33 @@ public class CarController : MonoBehaviour
 
         // While drifting, raise the top-speed cap with the steering angle: full stick = the
         // full drift multiplier (e.g. 2x -> 600 mph), scaling linearly down to 1x at centre.
-        // FORWARD drifts only: reverse top speed is this same cap, so a reverse drift would let
-        // the car back up toward 600 mph. Switching from a fast forward drift into a reverse one
-        // therefore drops the cap, and overspeed damping helps shed that speed through the 180.
-        if (isDrifting && throttleInput > 0f)
+        // Forward AND reverse drifts: reverse top speed is this same cap, so a reverse drift
+        // (LT + X) backs up toward the raised cap too, and a 180 chained between the two keeps
+        // its speed for as long as the stick stays over.
+        if (isDrifting)
             maxMs *= 1f + (driftMaxSpeedMultiplier - 1f) * Mathf.Abs(steerInput);
 
         Vector3 fwd = transform.forward;
         float fwdSpeed = Vector3.Dot(rb.linearVelocity, fwd);
-        float speedRatio = Mathf.Clamp01(Mathf.Abs(fwdSpeed) / Mathf.Max(maxMs, 0.01f));
 
-        // --- Throttle / reverse ---
-        if (throttleInput > 0.05f)
+        // --- Throttle (RT) / reverse (LT) ---
+        // Exact mirror images: the same acceleration, the same turbo / loop / drift multipliers
+        // and top speed, the same climb assist, the same fade near the cap — reverse just pushes
+        // the other way, so the car drives identically in either direction.
+        if (Mathf.Abs(throttleInput) > 0.05f)
         {
-            float climbBoost = ClimbBoost(fwd);
-            float accel = acceleration * turbo * loopMult * climbBoost
+            Vector3 push = fwd * Mathf.Sign(throttleInput);   // the way this trigger drives the car
+
+            // Fade out near top speed in the direction being pushed. Pushing against the motion —
+            // RT while rolling backwards, LT while rolling forwards — gets the full push, so either
+            // trigger brakes the car to a stop and then drives it off the other way.
+            float speedRatio = Mathf.Clamp01(Mathf.Max(Vector3.Dot(rb.linearVelocity, push), 0f)
+                                             / Mathf.Max(maxMs, 0.01f));
+            float accel = acceleration * turbo * loopMult * ClimbBoost(push)
                         * (1f - speedRatio * speedRatio)        // fade out near top speed
-                        * throttleInput;
-            rb.AddForce(fwd * accel, ForceMode.Acceleration);
-            ApplyHillGravityCompensation(fwd);
-        }
-        else if (throttleInput < -0.05f)
-        {
-            // Left Trigger: brake to a stop, then reverse.
-            float reverseRatio = Mathf.Clamp01(Mathf.Abs(Mathf.Min(fwdSpeed, 0f)) / Mathf.Max(maxMs, 0.01f));
-            float accel = reverseAcceleration * (1f - reverseRatio) * -throttleInput;
-            rb.AddForce(-fwd * accel, ForceMode.Acceleration);
+                        * Mathf.Abs(throttleInput);
+            rb.AddForce(push * accel, ForceMode.Acceleration);
+            ApplyHillGravityCompensation(push);
         }
 
         // --- Braking (X) ---
@@ -868,43 +869,52 @@ public class CarController : MonoBehaviour
     }
 
     /// <summary>
-    /// Eases forward speed back down to allowedMaxMs (base top speed × turbo × loop) when
-    /// it's over the cap. Skipped while descending, so gravity can still carry the car
-    /// past its top speed downhill; once it levels out (or the turbo/loop boost ends) the
-    /// excess bleeds off at overspeedDamping instead of coasting forever with no drag.
+    /// Eases speed along the car's axis back down to allowedMaxMs (base top speed × turbo × loop
+    /// × drift) when it's over the cap — driving forward OR backing up. Skipped while travelling
+    /// downhill, so gravity can still carry the car past its top speed; once it levels out (or
+    /// the turbo/loop boost or drift ends) the excess bleeds off at overspeedDamping instead of
+    /// coasting forever with no drag.
+    ///
+    /// ⚠️ Reverse needs this as much as forward: the reverse trigger's push only fades out AT the
+    /// cap, it never pulls back from above it — so without this a reverse drift's raised cap
+    /// would leave the car backing up at drift speed long after the drift ended.
     /// </summary>
     void ApplyTopSpeedClamp(float allowedMaxMs)
     {
         Vector3 fwd = transform.forward;
         float fwdSpeed = Vector3.Dot(rb.linearVelocity, fwd);
+        float dir = Mathf.Sign(fwdSpeed);            // +1 driving forward, -1 backing up
 
-        if (fwdSpeed <= allowedMaxMs) return;        // under the cap — nothing to do
-        if (fwd.y < -downhillThreshold) return;      // going downhill — let gravity win
+        if (Mathf.Abs(fwdSpeed) <= allowedMaxMs) return;   // under the cap — nothing to do
+        if (dir * fwd.y < -downhillThreshold) return;      // travelling downhill — let gravity win
 
-        float eased = Mathf.MoveTowards(fwdSpeed, allowedMaxMs,
+        float eased = Mathf.MoveTowards(fwdSpeed, dir * allowedMaxMs,
                                         overspeedDamping * Time.fixedDeltaTime);
         rb.linearVelocity += fwd * (eased - fwdSpeed);
     }
 
-    /// <summary>Extra acceleration multiplier when climbing, scaling with steepness.</summary>
-    float ClimbBoost(Vector3 fwd)
+    /// <summary>Extra acceleration multiplier when climbing — driving uphill along
+    /// <paramref name="drive"/> (the car's forward, or its backward when reversing) — scaling with
+    /// steepness.</summary>
+    float ClimbBoost(Vector3 drive)
     {
-        float climbDot = fwd.y;
+        float climbDot = drive.y;
         if (climbDot <= 0f) return 1f;
         float climbAngle = Mathf.Asin(Mathf.Clamp(climbDot, -1f, 1f)) * Mathf.Rad2Deg;
         float climbFactor = Mathf.Clamp01(climbAngle / fullAssistAngle);
         return 1f + climbTorqueBoost * climbFactor;
     }
 
-    /// <summary>Cancels the backward pull of gravity along the slope so the car doesn't
-    /// bleed speed climbing steep hills.</summary>
-    void ApplyHillGravityCompensation(Vector3 fwd)
+    /// <summary>Cancels gravity's pull back down the slope so the car doesn't bleed speed
+    /// climbing steep hills — driving uphill along <paramref name="drive"/> (the car's forward, or
+    /// its backward when reversing).</summary>
+    void ApplyHillGravityCompensation(Vector3 drive)
     {
-        if (fwd.y <= 0f) return;
+        if (drive.y <= 0f) return;
         Vector3 gravityForce = Physics.gravity * rb.mass;
-        float backwardPull = -Vector3.Dot(gravityForce, fwd);
+        float backwardPull = -Vector3.Dot(gravityForce, drive);
         if (backwardPull > 0f)
-            rb.AddForce(fwd * (backwardPull * hillGravityCompensation * Mathf.Abs(throttleInput)));
+            rb.AddForce(drive * (backwardPull * hillGravityCompensation * Mathf.Abs(throttleInput)));
     }
 
     // -------------------------------------------------------

@@ -359,7 +359,8 @@ public class MultiplayerWorld : MonoBehaviour
         gameObject.AddComponent<SupportShipReplicator>();
 
         // Voice chat via Vivox: proximity (positional 3D) + LB team-direct (2D). The persistent,
-        // self-bootstrapped VoiceService logs in and joins THIS match's channels; EndMatch on teardown.
+        // self-bootstrapped VoiceService joins THIS match's channels (logging in at the first match and
+        // staying logged in after); EndMatch on teardown.
         VoiceService.BeginMatch();
 
         // Creating the manager doubles as the transition out of the menu: its Awake loads the hub.
@@ -428,7 +429,7 @@ public class MultiplayerWorld : MonoBehaviour
     {
         begun = false;
 
-        VoiceService.EndMatch();   // leave Vivox voice channels + log out
+        VoiceService.EndMatch();   // leave this match's Vivox voice channels (stays logged in)
         StopAllCoroutines();
         SceneManager.sceneLoaded -= OnSceneLoaded;
         UnregisterMessageHandlers();
