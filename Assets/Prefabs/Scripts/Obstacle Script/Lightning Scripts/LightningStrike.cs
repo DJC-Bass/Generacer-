@@ -163,6 +163,7 @@ public class LightningHitDetector : MonoBehaviour
     {
         Debug.Log("[LightningHitDetector] Player struck by lightning!");
 
+        var car = player.GetComponent<CarController>();
         var rb = player.GetComponent<Rigidbody>();
         if (rb != null)
         {
@@ -171,9 +172,11 @@ public class LightningHitDetector : MonoBehaviour
             rb.AddForce(Vector3.up * 80f, ForceMode.VelocityChange);
 
             // Briefly shorten the car's suspension ray so the pop-up actually launches it (like a jump).
-            var car = player.GetComponent<CarController>();
             if (car != null) car.ShortenSuspensionRayForPopUp();
         }
+
+        // Tell the car it was struck (the driver portrait plays its lightning reaction).
+        if (car != null) car.NotifyLightningHit();
     }
 }
 

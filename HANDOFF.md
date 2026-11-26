@@ -1,22 +1,223 @@
-## NEXT TASK (this is why a fresh agent is here)
+## CHARACTER PORTRAIT HUD (built 2026-11-25, NOT yet play-tested in the editor)
 
-**THE SUPPORT SHIP IS FEATURE-COMPLETE (2026-08-16).** Summoning, the hub pilot station, camera
-hand-off, flight and aim, destruction, replication, Star Fox 64-style semi-auto fire on **A**, and what
-every round does on hit — all built and compiling. **Do not rebuild any of it**; the detail is in the
-"SUPPORT SHIP" section further down and the message index just below.
+A driver portrait, top-left, that reacts to the car. Compiled against the full game assembly, and
+the real `CharacterPortraitHUD` was run headless in a scratch Unity project with George's real
+clips: idle and blink, the reactions and their priorities, a drift lean, team colours, sizing.
+Never seen in the user's editor.
 
-What remains is **editor wiring, not code** — see "⚠️ OUTSTANDING EDITOR WIRING". The load-bearing ones
-for the Support Ship: the `SupportShip` layer's collision matrix, `trackSkybox` and `laserPrefab`
-assignments, a collider on `SupportShipLasers`, and the ship child on the five car prefabs that lack it.
+**The box (`Assets/Prefabs/Scripts/UI/CharacterPortraitHUD.cs`)**
+- Code-built and persistent like the other HUDs. `PlayerInventory.Bootstrap` adds it to PlayerSystems.
+  Canvas `sortingOrder` 151, one above the other HUDs, so art that spills out sits on top.
+- **Shown via `GameplayHud.ShowShared`**, so it stays up while piloting a Support Ship (the user's
+  call). While piloting, the car-driven states (airborne, drift, limit break) pause, but reactions
+  still play.
+- **Layout constants** (1920×1080 reference): box 155 px square at (47, −18), 6 px outline. Credits,
+  SD and the Support Ship health bar now start at `CharacterPortraitHUD.SideIndent` (240). The VC
+  speaker list moved to y −213 (`BoxBottom + 40`). `SupportShipPilotHUD`'s scaler got
+  `matchWidthOrHeight` 0.5 like the rest, so it still lines up on non-16:9 screens.
+- **Colours:** outline in the team colour (red Team 1, blue Team 2, near-black single-player or
+  team 0); the inner square is the same colour at 45 % alpha. No mask: the character is never clipped.
 
-Nothing else is queued. Ask the user what they want next.
+**Characters (`PortraitCharacter.cs`, a ScriptableObject in `Assets/Resources/Portraits/`)**
+- **One asset per driver** (Create → Generacer → Portrait Character). `carNames` lists the Car
+  Selection names it drives (GEORGE …). `fallback` marks the one shown for cars without art. George
+  is the fallback for now, so ROGER and MELODY show George.
+- **Slots:** idle, blink (random every 1–3 s of grounded idle), airborne, limit break, drift left/right
+  transition + hold, and reactions (turbo 2 s, boulder 5 s, lightning 2 s, money 0.5 s; 0 = clip
+  length). An empty slot falls back (mostly to idle); an empty reaction is skipped.
+- **Framing:** every frame is drawn at one scale, where the Idle's first frame fills the inner square
+  (× `size`), and placed by the sprite pivot; `offset` nudges it.
+  - ⚠️ The scale is measured in sprite UNITS, not pixels. `George Blink.png` (2280 tall) exceeds its
+    2048 Max Size, so Unity shrinks it on import. Its frames arrive at 891×1024 px with 89.8 PPU,
+    while the units stay 9.92×11.4.
+- **Playback** uses a manual `PlayableGraph` (no Animator Controller): one `AnimationClipPlayable` at a
+  time, with time set by hand. Clips keyed on a SpriteRenderer (what dragging frames into the Scene
+  makes, as George's are) drive a hidden, disabled SpriteRenderer, and its sprite is copied onto the
+  UI Image. Clips keyed on a UI Image drive it directly.
+- The two auto-generated controllers in `Assets/Animations/George/` are unused (safe to delete).
 
-> ⚠️ **The multiplayer sections below are the HISTORICAL design record.** Multiplayer is **BUILT** —
-> Phases 1–6 are code-complete (lobby/sessions, shared additive world, networked cars, server-authoritative
-> scoring, host-simulated AI, UX polish) plus voice (now **Vivox**), the grappling hook, shields, drone
-> planes, the Support Ship and more. Read **"MULTIPLAYER MESSAGE INDEX"** just below for the live wire
-> protocol, then the dated bullets in the roadmap for how each piece actually ended up. Do NOT rebuild any
-> of it.
+**State priority:** reaction (boulder > lightning > turbo > money; a lower one arriving mid-reaction is
+dropped) > airborne (`IsAirborne`) > drifting hard > limit break > idle + blink.
+- **Drifting hard:** `IsDrifting` and |`SteerInput`| ≥ 0.9, released below 0.7. The direction is the
+  STICK's, so a reverse drift leans the same way.
+- **The transition** plays once, then the hold loops. There's no exit transition; it returns straight
+  to idle.
+
+**Hooks added**
+- `CarController`: `SteerInput`, `TurboActivated` (in `TryActivateTurbo`), and `LightningHit` /
+  `NotifyLightningHit()`, called by `LightningHitDetector.OnPlayerHit`. Lightning runs on every machine
+  and only hits the Player-tagged car, so the reaction fires on the victim's own machine.
+- `PlayerInventory.CreditsEarned(int)`: fires on a positive `AddCredits` only.
+- `CameraFollow.SpeedBarrierBrokenFor(car)`: the barrier state from the camera that owns the active
+  AudioListener (the same moment the FOV kick and stingers fire). It goes stale after 2 frames.
+
+**Not done / next**
+- Play-test in the editor: box placement, George's size, blink feel, team colours in a real match.
+- Art for drift, airborne, limit break and the reactions: drop the clips into George's slots. ROGER
+  and MELODY need their own assets.
+- Support Ship pilot animations (shooting, taking damage) were deferred by the user.
+- Drone projectile and piss-ball pop-ups (`DroneProjectile.cs`) don't trigger a reaction; add one if
+  the user wants.
+
+## SESSION LOG 2026-09-23 → 2026-11-25 (everything built since this file was last updated)
+
+All of it is committed, through `a4f09d7 Car weight shift implemented`. Each change was compiled against
+the full game assembly, and most were tested offline: in simulations or scratch Unity projects. The agent
+didn't play-test them in the editor; the user has been testing as they go. Older sections of this file
+still describe the pre-session behaviour where they touch the same systems; this log wins.
+
+**Compile check without the editor:** reuse Unity's own compile command, the newest
+`Library/Bee/artifacts/*.dag/Assembly-CSharp.rsp`.
+- Drop its `-out:`, `-refout:`, `-analyzer:` and `/additionalfile:` lines and its `"Assets/..."` source lines.
+- Add your own `-out:` and a fresh source list: `find Assets -name "*.cs" -not -path "*/Editor/*"`, each quoted.
+- From the project root, run Unity's
+  `Editor/Data/NetCoreRuntime/dotnet.exe Editor/Data/DotNetSdkRoslyn/csc.dll @that.rsp`.
+
+### Track generation (`TrackGenerator.cs`, `TrackMeshBuilder.cs`)
+- **Side loops:** flat circular loops turning left or right, with the exit climbing or dropping.
+  - Settings: **Side Loop Chance** (default 0, because Tutorial and Ending keep loops off), radius
+    600–800, exit offset 120–300, **Exit Forward Offset** 700.
+  - Side-loop meshes are untagged, so they get no loop speed boost.
+- **Shoulder rails:** each shoulder is a continuous raised curb.
+  - **Shoulder Rail Height** (1) sets its height.
+  - **Shoulder Rail Collision** (on) makes the raised rail the collider, so rails are barriers: car bodies
+    sit 0.37–0.55 above the road.
+  - The earlier "rail teeth" were replaced by this. TrackScene and MainMenu still carry harmless stale
+    teeth overrides.
+- **One hue per track for the road and the shoulder glow,** on per-track material copies. In multiplayer
+  it comes from the round seed.
+- **Path layout:** paths are built from sections (straight, sweeper, slalom, hairpin, lane shift) plus a
+  whole-path bow, so the old repeating coils are mostly gone.
+- **Branching tree:** the track starts as one path that splits at random (**Branch Chance** 0.2,
+  **Segments Per Route** 24, **Min/Max Paths** 4/16, **Branch Spread**).
+  - **Every route is the same length,** balanced by stretching and by adding or resizing loops. The
+    console logs each track's paths, loops and route-length spread.
+  - `GeneracersEnding.unity` overrides Max Paths to 1.
+- **Paths cross freely (a user rule, don't undo it).** There's no bridge pass, and collisions between
+  paths are allowed. The generator only prevents pinching (folded or twisted road) and keeps routes equal:
+  - loops are rolled per path;
+  - the road continues from a loop's ACTUAL exit;
+  - bends tighter than the road's width are eased open (the Tutorial road is 1000 wide).
+- **Road roll:** settings are **Roll Swing** (45°, up to 90°), **Roll Swing Variance** and **Max Roll Rate**
+  (3° per 100 units).
+  - A loop is turned over by the roll of the road leading into it.
+  - Roads start flat and level out into the portal; the Ending has Roll Swing 0.
+- **`TrackGenerator.Generated`** (static event) fires once the track is built, before the car spawns.
+  TrackTerrain listens to it.
+
+### Car handling and camera (`CarController.cs`, `CameraFollow.cs`)
+- **Ride smoothing (`SmoothSurface.cs`):** each wheel's ray hit is read as the smooth curve the flat track
+  panels stand in for. The hover pushes square to the road and adds exactly the push needed to follow its
+  bend.
+  - ⚠️ **Only meshes TrackGenerator registers get this,** and stretched (non-uniform scale) meshes are
+    refused. Reading the 50×-stretched ClipperHomeBuilding made its 5.4° ramp read as 75°.
+- **Reverse driving is an exact mirror of forward (2026-11-05):**
+  - `reverseAcceleration` is gone; one `acceleration` drives both directions.
+  - Turbo, loop and drift multipliers, the climb boost and hill assist, and the (1 − r²) fade near top
+    speed all apply in reverse.
+  - RT while rolling backwards pushes at full strength, like LT while rolling forwards.
+  - `ApplyTopSpeedClamp` bleeds overspeed in both directions; downhill is judged along the direction of
+    travel.
+  - Steering still flips in reverse, like a real car backing up. That's intentional.
+- **Reverse drift (LT + X)** does everything a forward drift does, including the **Drift Max Speed
+  Multiplier**. While drifting, the TRIGGER decides the steering direction (LT reversed, RT forward), so a
+  chained 180 swings straight away.
+- **Jumps off the ground are free;** only a midair jump spends a Jet.
+- **Body suspension (2026-11-16, `CarBodySuspension.cs`):** visual only. It moves the prefab's `CarBody`
+  child; physics, colliders, wheels and camera are untouched.
+  - **Tuning** is under "Body Suspension (visual)" on CarController.
+  - **Attached at runtime** by CarController on the local car, and by RemoteCarManager on puppets. A
+    puppet is tuned from the prefab asset's CarController and driven by its replicated velocity.
+  - **Each axis is a spring** driven by the accelerometer-style load in the car's own axes.
+  - **Lean** follows cornering g. The car's turn rates mean ≈ 4.5 g at 10 mph and ≈ 72 g at 300 mph, so
+    the per-g gains are small.
+  - ⚠️ **Landings get their own kick, equal to the impact speed.** The hover yanks the car 1.25 m down at
+    EVERY touchdown (2 m ground ray, 0.75 ride height), so feeding it raw made every landing bounce the
+    same. The vertical load is also capped at 6 g.
+  - Teleports and respawns settle the body. `CarController.IsGrounded` was added for it.
+  - **Not yet seen in-game:** whether the body sinks into the tyres at **Max Body Bounce** 0.15, and parts
+    on the car ROOT (e.g. S-Sen7 Red's Spot Light) don't move with the body.
+- **Camera:**
+  - A LavaBoulder hit in the air freezes the camera's yaw, pitch and roll for 1 s or until landing. Boulder
+    and Fan layers don't count as landing.
+  - On banked road the camera rolls fully with the car (**Roll With Road**, **Air Roll Return Time** 1 s).
+    Applies to the rear view and the hub TVs too.
+
+### Drones and AI (`DroneCar.cs`, `TrackPath.cs`, `DroneCarSpawner.cs`, `ChaseNavigation.cs`)
+- **Ground probe:** DroneCar and ChallengerCar now align to the road normal with ground rays; their
+  WheelColliders are only ray anchors. The heading is measured across ±2 units of path.
+  ⚠️ The prefab's Waypoint Spacing of 0.05 may mean ~a million path points per group (memory). Flagged,
+  not changed.
+- **Spread across paths:** groups go to the least-occupied path (`SampleLeastOccupiedPath`).
+- **Knocked-out DroneCars** despawn after **Knockout Despawn Delay** (5 s) and pay the last player who hit
+  them.
+- **Chases (ClipperEnding ChallengerCars and the hub's drone-ending swarm):**
+  - Cars steer by setting their own velocity, on a frictionless collider.
+  - `ChaseNavigation` builds a runtime NavMesh from READABLE meshes only: ClipperHomeBuilding has
+    Read/Write on, the hub models don't, so the hub swarm chases straight.
+  - Chases more than 1 km across, or between areas, drive straight.
+
+### Multiplayer
+- **The hub moved, not the track:** in multiplayer the track generates at the origin (as in
+  single-player), and the hub sits at `MultiplayerWorld.HubAreaOffset` (0, −30000, 0). That fixed shadow
+  flicker caused by the old 100 km track offset.
+  - ⚠️ Points authored as prefab ASSETS need `MultiplayerWorld.HubPosition()`: HubSceneController's
+    portal and boost-gate spawn points reference prefab assets.
+- **`GNRC_CAR` payload changed:** owners now send measured angular velocity and acceleration, so puppets
+  follow curves between updates. **Host and clients must run the same build.**
+- **Hub purple tint:** nothing rebuilds world lighting any more except the track sky's recolour. The TVs
+  and the pilot view use an ambient measured by `SkyboxHueRandomizer`'s private sky camera, which has to
+  include the sun light or it measures night.
+- **R/T tags** (`RemoteCarMarker.cs`, `screenFontSize`): "R" for rival, "T" for teammate.
+  - Constant size on screen, and hidden behind geometry.
+  - Not shown on the hub TVs.
+- **Per-area far clip:** the Main and Rear View cameras use the hub scene's far clip in the hub (5000)
+  and the TrackScene's on the track (25000), read from each scene's own cameras.
+- **Grapple:** the hook drops on any portal or area jump, and the car is freed from other players' hooks
+  too.
+- **Voice consistency (2026-11-04):** see the updated bullets in the VOICE CHAT section. In short: one Vivox
+  login for the whole run, settings re-sent after every login, self-healing joins, and a per-round status
+  line in the log.
+
+### Hub
+- **HUB Lights countdown** (`HubCountdownLights.cs`, on the HUB Lights instance in HubWorld): the lights go
+  red one by one at 3, 2 and 1 seconds, then all green at GO.
+  - In multiplayer the host sends `GNRC_ROUND_COUNT` 3 s before GO.
+  - Sounds come from AudioLibrary `startLightBeep` / `startLightGo` (assigned) and play at the bulbs.
+
+### TrackScene atmosphere
+- **Height fog** (`TrackFog.cs`, `TrackHeightFog.shader`, `Resources/TrackFogSettings`): a full-screen pass
+  on every camera that looks at the track (racers, hub TVs, pilot).
+  - **It fades distant pixels into this round's sky in their own direction,** using a cube snapshot of the
+    sky, and is thicker the lower they are.
+  - **The ground haze below the horizon is drawn here too.** In the sky shader it raised the track's
+    ambient light ~40%.
+  - **Sky directions are reconstructed from the far clip plane.** The near plane flickered 30 km out.
+  - **Particles, trails and R/T tags draw unfogged.**
+  - **Fog rounds:** **Fog Chance** (round-seed stream "fog"). Each fog round rolls its **Full Fog
+    Distance** between Min and Max (stream "fogdistance").
+- **Terrain** (`TrackTerrain.cs`, `TrackTerrainSettings.cs`, `TrackTerrain.mat`,
+  `Resources/TrackTerrainSettings`): a Unity Terrain built on `TrackGenerator.Generated`, synchronously,
+  before the car spawns (≈ 0.1–1 s depending on Resolution).
+  - **Shape:** noise hills and ridged mountains, held under a ceiling stamped from every track triangle
+    (**Track Clearance**, **Valley Slope**, **Valley Softness**), so the track never clips it.
+  - **Colour:** this round's sky ground hue.
+  - **Rolls:** **Terrain Chance** (stream "terrainround"). The shape comes from stream "terrain", and the
+    hill and mountain heights roll between Min and Max from that same seed.
+  - **Ground Contact:** EndsTheRun, Solid or None. `KillFloor` now also reacts to solid contact.
+  - ⚠️ Terrain layer textures must have NO alpha: URP reads alpha as smoothness and the slopes turn
+    mirror-glossy.
+- **How the rolls work:** blackout, fog and terrain are independent; each uses its own stream of the
+  round seed in multiplayer, or a private `System.Random` in single-player. Open the TrackScene directly
+  (no GameLoopManager) and fog and terrain are always on, so they can be tuned.
+- ⚠️ **The settings assets hold TEST values right now:** `fogChance: 1` and `terrainChance: 1`, so every
+  round. The designed odds were 0.33 and 0.75; confirm with the user before a release build.
+
+### Still open from this session
+- **Tutorial text is out of date:** `Resources/TutorialGuideConfig.asset` still says only RT + X drifts and
+  "A to Jump(Jet)". Ground jumps are free now, and LT + X drifts backward. Left for the user's wording.
+- **The drone-ending swarm chases straight,** because the hub models aren't Read/Write. Turn it on for the
+  ground and buildings if the swarm should navigate.
 
 ### SUPPORT SHIP — what was built (2026-08-16)
 
@@ -252,9 +453,10 @@ Listen server: the host is also a player. Movement is **owner-authoritative**; g
 |---|---|---|---|
 | `GNRC_HELLO` | RemoteCarManager | client → server | name, car, team — roster join |
 | `GNRC_ROSTER` | RemoteCarManager | server → all | full roster; drives puppet lifecycle |
-| `GNRC_CAR` | RemoteCarManager | owner → all (host relays) | 30 Hz pos/rot/vel + **1 effect byte (incl. bit 6 airborne) + 2 drift-screech bytes** |
+| `GNRC_CAR` | RemoteCarManager | owner → all (host relays) | 30 Hz pos/rot/vel + **measured angular velocity + acceleration** (2026-10, so puppets follow curves) + **1 effect byte (incl. bit 6 airborne) + 2 drift-screech bytes** |
 | `GNRC_READY` | MultiplayerWorld | client → server | hub loaded, ready for rounds |
 | `GNRC_ROUND_START` | MultiplayerWorld | server → all | round, seed, live, remaining — preload + freeze |
+| `GNRC_ROUND_COUNT` | MultiplayerWorld | server → all | {seconds}: GO is this far off, so every hub's HUB Lights run 3-2-1 together (2026-10-26) |
 | `GNRC_ROUND_GO` | MultiplayerWorld | server → all | portal spawns, unfreeze, timers start |
 | `GNRC_ROUND_END` | MultiplayerWorld | server → all | reason: 0 timeout, 1 all racers left |
 | `GNRC_AREA` | MultiplayerWorld | client → server | inTrack flag |
@@ -968,15 +1170,20 @@ NGO host relay) and 3-D spatialization, so the whole class of DIY problems is go
   `[RuntimeInitializeOnLoadMethod]`).** NOT match-scoped, because the AUDIO-panel mic picker needs
   Vivox's device list and Vivox can only enumerate devices AFTER `InitializeAsync`. So: Vivox inits
   EARLY at boot (UGS `InitializeAsync` + anonymous sign-in — same auth `NetworkSessionManager` uses —
-  then `VivoxService.Instance.InitializeAsync()`); LOGIN + channel joins happen only when a match begins.
+  then `VivoxService.Instance.InitializeAsync()`); the LOGIN happens when the first match begins and is
+  KEPT for the rest of the run (see "Channel lifecycle" below); channel joins happen per match.
 - **Two channels (design preserved):** PROXIMITY = a Vivox POSITIONAL channel `prox_<sessionId>` joined
   by everyone; each client reports only ITS OWN position ~10 Hz via `Set3DPosition(VoiceSource(), chan)`
   and Vivox mixes the falloff (`Channel3DProperties` audible/MAX **400** / conversational/MIN **200**,
   `LinearByDistance`). No per-puppet AudioSources anymore. TEAM = a 2-D GROUP channel
   `team_<sessionId>_<team>` joined only by that team. You stay JOINED to both (always HEAR proximity +
   teammates); **LB** (`Gamepad.leftShoulder`, menu-move tick, suppressed while menus open) only flips
-  which you TRANSMIT into via `SetChannelTransmissionModeAsync(Single, prox|team)`. Bonus: the 35 km
+  which you TRANSMIT into via `SetChannelTransmissionModeAsync(Single, prox|team)`. Bonus: the 30 km
   hub↔track gap means the positional model naturally stops cross-area proximity while team stays 2-D.
+  ⚠️ So two players on OPPOSITE teams only ever hear each other within 400 units (proximity), and LB
+  team mode persists across rounds with no on-screen indicator. "I couldn't hear the host next round" is
+  usually one of those, not a mic problem; check the per-round `[VoiceService] Round N:` log line on
+  both machines.
 - **⚠️ A SUPPORT SHIP PILOT SPEAKS FROM THE SHIP, NOT THEIR PARKED CAR (fixed 2026-08-24).**
   `UpdatePositional` reported `PlayerRegistry.LocalCar` unconditionally. A pilot's car sits on the hub
   pad while they fly ~100 km away over the track, and AudibleDistance is 400 — so this did not make
@@ -1000,8 +1207,10 @@ NGO host relay) and 3-D spatialization, so the whole class of DIY problems is go
   (self shown via `IsSelf`, others via `DisplayName` set at login). Only team-transmitters show, exactly
   as before.
 - **Settings (BOTH menus' AUDIO panels, still persisted in `GameSettings`, polled live):** MICROPHONE
-  cycler now sources `VoiceService.InputDeviceNames` (Vivox devices; "Default" = leave Vivox's default —
-  list may be empty until Vivox finishes booting), MUTE MY MIC → `MuteInputDevice`, MUTE PLAYERS →
+  cycler now sources `VoiceService.InputDeviceNames` (Vivox devices; "Default" explicitly selects
+  Vivox's own "Default System Device" entry, so switching back from a named mic works (2026-11-04) —
+  list may be empty until Vivox finishes booting; it also includes Vivox's "No Device", which silences
+  the mic if picked), MUTE MY MIC → `MuteInputDevice`, MUTE PLAYERS →
   `MuteOutputDevice`. **VOICE volume** is its OWN slider (3rd in the AUDIO panel, next to MUSIC/SFX;
   `GameSettings.VoiceVolume`, **default 0.5**) that raises/lowers ONLY **other players' incoming voices**
   (for quiet remote mics) — it maps onto Vivox **per-CHANNEL volume** (`SetChannelVolumeAsync` over every
@@ -1013,10 +1222,26 @@ NGO host relay) and 3-D spatialization, so the whole class of DIY problems is go
   **Proximity Min/Max distance** are the `ConversationalDistance`/`AudibleDistance`
   consts at the top of `VoiceService.cs` (currently **200 / 400**) — dev-tuned, applied at channel join
   (change + rejoin a match to take effect).
-- **Channel lifecycle:** `MultiplayerWorld.BeginGame` calls `VoiceService.BeginMatch()` (was
-  `AddComponent<VoiceChat>()`); `TeardownToMenu` calls `VoiceService.EndMatch()` (LeaveAllChannels +
-  Logout). Team channel join is deferred until `LocalTeam()` resolves (may lag match start), throttled
-  to retry ≤ every 2 s.
+- **Channel lifecycle (REWORKED 2026-11-04):** `MultiplayerWorld.BeginSession` calls
+  `VoiceService.BeginMatch()`; both teardowns (`ReleaseWorld`) call `VoiceService.EndMatch()`, which now
+  only LEAVES the match's channels and **stays logged in**.
+  - **Why the login is kept:** Vivox sends the mic choice and mutes to the CURRENT LOGIN
+    (`account_handle`). Logging out after every game meant:
+    - a change made in the lobby between games went to the logged-out login and failed with "Target
+      Object Does Not Exist (1001)";
+    - each new game's fresh login was never sent the saved settings.
+  - **Settings are sent only while logged in.** `EnsureLoggedInAsync` forces them all after every login,
+    flipping each mute first, because Vivox skips a mute call that repeats its last one. It re-logs in
+    only if the display name changed or Vivox dropped the login.
+  - **`KeepConnected`** (every 0.5 s while a match runs) rejoins whatever's missing: the login, the
+    proximity channel, or the team channel once `LocalTeam()` resolves. Retries back off 3 s → 30 s, so a
+    failed join or a dropped connection self-heals.
+  - **Login, join and leave steps run in one queue** (`Queue`/`RunAfter`, with a `matchId` guard), so a
+    game ending mid-join, or the next game starting before the last leave finished, can't strand a
+    player in no channel.
+  - **Each round logs** `[VoiceService] Round N: logged in, in proximity, in team; talking to …; mic …`.
+  - Playtest logs: built player `%USERPROFILE%/AppData/LocalLow/CbassPls/Generacer/Player(-prev).log`;
+    the host is often on another machine.
 - **csproj:** `VoiceService.cs` compiled in place of `VoiceChat.cs`; added `<Reference
   Unity.Services.Vivox>` (asmdef is autoReferenced, so Unity re-adds it on its own regen). The old
   `VoiceChat.cs` (+meta) was deleted — git preserves it (incl. the 16 kHz capture-rate resampling fix
@@ -1450,9 +1675,9 @@ want distinct ones: `turboCraftLoop`==`jetCraftLoop`; `projectileHitEnvironment`
 
 ## Exact next steps for a fresh agent
 
-> **0. THE ACTUAL NEXT FEATURE IS THE SUPPORT SHIP'S FIRING CONTROLS — see "NEXT TASK" at the top of
-> this file. The ship itself is BUILT (2026-08-16); only the gun was deferred.** Everything numbered
-> below is background/cleanup.
+> **0. THE ACTUAL NEXT FEATURE IS THE CHARACTER PORTRAIT HUD — see "NEXT TASK" at the top of this file
+> (updated 2026-11-25).** The Support Ship, including its guns, is built. Everything numbered below is
+> background/cleanup, and some of it predates the 2026-09-23 → 2026-11-25 session log near the top.
 
 ### ⚠️ OUTSTANDING EDITOR WIRING (accumulated this session — code is done, Unity setup is NOT)
 Each of these makes a finished feature silently do nothing until it's wired:
@@ -2895,8 +3120,10 @@ Plasma → Shield at the ramp; L3 summons an ellipsoid shield that eats drone fi
   EventSystem. `MainMenuController`/`CarSelectionController` are per-scene code-built menus.
 - **Player car**: spawned per gameplay scene by `PlayerCarSwapper` (from `SelectedCarStore`) or the
   `TrackGenerator`'s delayed spawn; components read live state off `CarController` (`SpeedMph`,
-  `IsTurboActive`, `IsLoopGravityCut`, `IsAirborne`, `AirborneTime`, `OnJumped`, `ManualYawInput` /
-  `ManualPitchInput`). Optional per-car components: `PortalExitAudio`, `JetFlames`, `SDAbilityVFX`.
+  `IsTurboActive`, `IsLoopGravityCut`, `IsAirborne`, `AirborneTime`, `IsGrounded`, `IsDrifting`,
+  `OnJumped`, `BoulderHit`, `ManualYawInput` / `ManualPitchInput`). Optional per-car components:
+  `PortalExitAudio`, `JetFlames`, `SDAbilityVFX`. `CarBodySuspension` (the body's visual bounce/lean) is
+  added at runtime, not on the prefabs; its tuning lives on CarController.
 - **Cameras**: two always-running `CameraFollow` rigs (main + Rear View) with `CameraSwitcher` toggling which
   one *renders* on R3 — both keep following every frame, so the switch is instant. `CameraFollow` owns the
   lazy-Susan per-axis rotation lag, the speed/turbo/loop/barrier FOV kicks, the barrier low-pass muffle, and

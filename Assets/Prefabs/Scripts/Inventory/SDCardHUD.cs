@@ -142,13 +142,14 @@ public class SDCardHUD : MonoBehaviour
         label.color = new Color(0.55f, 0.85f, 1f);   // light blue, distinct from the gold credits
         label.alignment = TextAlignmentOptions.TopLeft;
 
-        // Top-left, just below the credits readout (credits sits at y -24, ~70 tall).
+        // Top-left, just below the credits readout (credits sits at y -24, ~70 tall), beside the driver
+        // portrait box like the credits.
         var rt = label.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.sizeDelta = new Vector2(500f, 64f);
-        rt.anchoredPosition = new Vector2(30f, -100f);
+        rt.anchoredPosition = new Vector2(CharacterPortraitHUD.SideIndent, -100f);
 
         UiLayer.Apply(canvasGO);   // keep code-built UI off the Default layer (see UiLayer)
     }

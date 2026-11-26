@@ -188,6 +188,19 @@ public class CameraFollow : MonoBehaviour
     private bool prevTurboState = false;   // NEW   detects the activation moment
     private bool speedBarrierActive = false;   // hysteresis: on at speedBarrierMph, off below speedBarrierReleaseMph
 
+    // The speed-barrier state as seen by the camera that owns the active AudioListener (the one the
+    // player is looking through), and which car it was for. The driver portrait reads it.
+    private static bool listenerBarrierBroken;
+    private static CarController listenerBarrierCar;
+    private static int listenerBarrierFrame = -1000;
+
+    /// <summary>True while <paramref name="car"/> is past the speed barrier, as judged by the camera the
+    /// player is looking through — the same moment the FOV kick, muffle and stingers fire. False once
+    /// that camera stops reporting (e.g. it was destroyed or handed its listener over).</summary>
+    public static bool SpeedBarrierBrokenFor(CarController car) =>
+        car != null && listenerBarrierBroken && listenerBarrierCar == car
+        && Time.frameCount - listenerBarrierFrame <= 2;
+
     /// <summary>
     /// Fires the same one-shot FOV kick a Turbo activation produces. For external boosts that
     /// bypass CarController's turbo state (e.g. driving through a BoostGate), which the
@@ -583,6 +596,13 @@ public class CameraFollow : MonoBehaviour
         else if (speedBarrierActive && (!groundedEnough || speedMph < speedBarrierReleaseMph)) speedBarrierActive = false;
         if (speedBarrierActive)
             targetFOV += speedBarrierFOVBoost;
+
+        if (barrierListener != null && barrierListener.enabled)
+        {
+            listenerBarrierBroken = speedBarrierActive;
+            listenerBarrierCar = targetCar;
+            listenerBarrierFrame = Time.frameCount;
+        }
 
         // On the break/leave edge, fire the 3D stinger — but ONLY from the camera that owns the active
         // AudioListener, so the two always-running CameraFollows (main + rear) don't double-trigger it.

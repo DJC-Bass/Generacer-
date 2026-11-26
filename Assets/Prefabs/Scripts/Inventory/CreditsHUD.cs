@@ -90,13 +90,13 @@ public class CreditsHUD : MonoBehaviour
         label.color = new Color(1f, 0.9f, 0.4f);
         label.alignment = TextAlignmentOptions.TopLeft;
 
-        // Top-left anchored, with a little padding in from the corner.
+        // Top-left anchored, to the right of the driver portrait box (see CharacterPortraitHUD).
         var rt = label.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.sizeDelta = new Vector2(500f, 70f);
-        rt.anchoredPosition = new Vector2(30f, -24f);
+        rt.anchoredPosition = new Vector2(CharacterPortraitHUD.SideIndent, -24f);
 
         // Park the whole canvas on the UI layer. Code-built UI defaults to the DEFAULT layer, which is
         // how the grappling hook was able to latch onto this HUD. Applied last, so the children are

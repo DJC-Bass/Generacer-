@@ -53,7 +53,9 @@ public class VoiceService : MonoBehaviour
     const float PositionalUpdateInterval = 0.1f;   // 10 Hz Set3DPosition — plenty for smooth falloff
 
     // ---- Speaker list UI ----
-    static readonly Vector2 SpeakerListOffset = new Vector2(24f, -190f);   // below the SD HUD
+    // Below the driver portrait box (bottom edge at y -173), with room for portrait art that spills
+    // out underneath it.
+    static readonly Vector2 SpeakerListOffset = new Vector2(24f, -(CharacterPortraitHUD.BoxBottom + 40f));
     const float SpeakerLinger = 0.4f;        // seconds a team-talker's name lingers after they stop
 
     // ---- Vivox lifecycle ----

@@ -408,6 +408,21 @@ public class CarController : MonoBehaviour
     /// boulder reaches a client's car in multiplayer.</summary>
     public void NotifyBoulderHit() => BoulderHit?.Invoke();
 
+    /// <summary>Fired the moment a lightning bolt strikes the car. Lightning is simulated on every machine
+    /// (the host replicates each strike) and only hits the "Player"-tagged car, so this always fires on
+    /// the victim's own machine. The driver portrait reacts to it.</summary>
+    public event System.Action LightningHit;
+
+    /// <summary>Raises <see cref="LightningHit"/>. Called by LightningHitDetector.</summary>
+    public void NotifyLightningHit() => LightningHit?.Invoke();
+
+    /// <summary>Fired the moment a Turbo fires (a Turbo was spent and the boost started).</summary>
+    public event System.Action TurboActivated;
+
+    /// <summary>The raw steer stick this frame, -1 (full left) .. +1 (full right). The driver portrait
+    /// reads it to tell a hard drift from a gentle one.</summary>
+    public float SteerInput => steerInput;
+
     /// <summary>True if any wheel's suspension ray is currently resting on a collider whose layer is in
     /// <paramref name="layers"/>. Lets the follow cameras tell real ground (the track) apart from things
     /// the car can merely perch on, such as boulders and fans.</summary>
@@ -1038,6 +1053,7 @@ public class CarController : MonoBehaviour
         turboCooldownTimer = turboCooldown + turboDuration;
         AudioManager.PlayTurbo(transform.position);
         RemoteCarManager.ReportCarSound(RemoteCarManager.CarSound.Turbo, transform.position);
+        TurboActivated?.Invoke();
     }
 
     bool TrySpend(string itemName)

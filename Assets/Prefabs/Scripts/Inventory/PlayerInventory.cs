@@ -72,6 +72,7 @@ public class PlayerInventory : MonoBehaviour
         go.AddComponent<PlayerInventory>();   // sets Instance in Awake
         go.AddComponent<InventoryView>();
         go.AddComponent<CreditsHUD>();
+        go.AddComponent<CharacterPortraitHUD>(); // driver portrait box, top-left (after PlayerInventory: it subscribes to CreditsEarned)
         go.AddComponent<TurboJetHUD>();
         go.AddComponent<LraAbortController>();   // L+R+A hold-to-abort + its progress bar
         go.AddComponent<SDCardHUD>();            // equipped-SD readout + D-pad switching
@@ -137,10 +138,15 @@ public class PlayerInventory : MonoBehaviour
         OnChanged?.Invoke();
     }
 
+    /// <summary>Fires when credits are EARNED (a positive <see cref="AddCredits"/>), with the amount.
+    /// Spending, and the reset after a failed run, don't count. The driver portrait reacts to it.</summary>
+    public event Action<int> CreditsEarned;
+
     public void AddCredits(int amount)
     {
         Credits += amount;
         OnChanged?.Invoke();
+        if (amount > 0) CreditsEarned?.Invoke(amount);
     }
 
     /// <summary>

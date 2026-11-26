@@ -33,10 +33,11 @@ public class SupportShipPilotHUD : MonoBehaviour
     public static readonly Color LowColor = new Color(1f, 0.35f, 0.2f, 0.95f);
     public static readonly Color TrackColor = new Color(0f, 0f, 0f, 0.45f);
 
-    // Top-left, tucked under the credits readout. Those coordinates are not arbitrary: CreditsHUD sits
-    // at (30, -24) and SDCardHUD at (30, -100), so this takes the same 30px indent and the slot directly
-    // beneath the currency - the very slot the SD readout vacates while its owner is piloting.
-    const float LeftIndent = 30f;
+    // Top-left, tucked under the credits readout. Those coordinates are not arbitrary: CreditsHUD and
+    // SDCardHUD share the indent beside the driver portrait box (CharacterPortraitHUD.SideIndent), at
+    // y -24 and -100, so this takes the same indent and the slot directly beneath the currency - the
+    // very slot the SD readout vacates while its owner is piloting.
+    const float LeftIndent = CharacterPortraitHUD.SideIndent;
     const float TopOffset = 102f;
     const float BarWidth = 300f;
     const float BarHeight = 24f;
@@ -137,6 +138,9 @@ public class SupportShipPilotHUD : MonoBehaviour
         var scaler = canvasGO.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920f, 1080f);
+        // Same width/height match as the other top-left HUDs, so on a non-16:9 screen the bar still lines
+        // up with the credits above it and clears the portrait box beside it.
+        scaler.matchWidthOrHeight = 0.5f;
 
         // Top-left, directly under the credits.
         var track = NewRect("Track", canvasGO.transform, BarWidth, BarHeight);
