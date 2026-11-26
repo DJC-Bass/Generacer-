@@ -15,10 +15,10 @@ MonoBehaviour:
   carNames:
   - GEORGE
   fallback: 1
-  size: 1
-  offset: {x: 0, y: 0}
-  idle: {fileID: 7400000, guid: c9f120c327459a846992303afe621281, type: 2}
-  blink: {fileID: 7400000, guid: b45778b42ffbc1b4c8c17af85097be8c, type: 2}
+  size: 2
+  offset: {x: 5, y: 0}
+  idle: {fileID: 7400000, guid: 3b60212e530e3e74e9939446053e7adc, type: 2}
+  blink: {fileID: 7400000, guid: 065b0e01edcd4ef4597dd93275fd69a4, type: 2}
   blinkIntervalMin: 1
   blinkIntervalMax: 3
   airborne: {fileID: 0}

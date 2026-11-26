@@ -74,6 +74,8 @@ public class CharacterPortraitHUD : MonoBehaviour
     private Animator animator;
     private Sprite lastProxySprite;
     private Sprite sizedSprite;           // the sprite the character rect was last sized for
+    private float sizedSize = -1f;        // ...and the character's Size / Offset it was sized with
+    private Vector2 sizedOffset;
     private float boxFrameHeight;         // height (sprite units) of the frame that fills the box; 0 = not measured yet
     private Color appliedColor = new Color(-1f, 0f, 0f, 0f);
 
@@ -488,27 +490,33 @@ public class CharacterPortraitHUD : MonoBehaviour
         if (characterImage.enabled != show) characterImage.enabled = show;
     }
 
-    /// <summary>Draws every frame at one scale per character, placed by the sprite's own pivot, so frames
-    /// of any size line up and anything bigger than the idle frame spills out of the box.
+    /// <summary>Draws every frame at one scale per character, standing on the box's floor: each frame's
+    /// bottom-centre sits on the bottom-centre of the inner square. A bigger Size (or a taller or wider
+    /// frame) therefore grows up and out to the sides — where the art is allowed to spill — and never
+    /// down through the bottom border. Sprite pivots play no part, so untrimmed frames with headroom
+    /// line up exactly.
     ///
     /// Measured in sprite UNITS (pixels ÷ Pixels Per Unit), not pixels: a sheet bigger than its import
     /// Max Size is shrunk on import, which shrinks its sprites' pixel rects AND their pixels-per-unit by
-    /// the same factor — George's 1140 px frames arrive as 1024 px — while the units stay put.</summary>
+    /// the same factor — George's 1140 px frames arrive as 1024 px — while the units stay put.
+    ///
+    /// Re-applied whenever Size or Offset changes too, so they can be tuned live in Play mode.</summary>
     void SizeCharacter()
     {
         Sprite s = characterImage.sprite;
-        if (s == null || s == sizedSprite) return;
+        if (s == null) return;
+        if (s == sizedSprite && character.size == sizedSize && character.offset == sizedOffset) return;
         sizedSprite = s;
+        sizedSize = character.size;
+        sizedOffset = character.offset;
 
-        Vector2 px = s.rect.size;
-        Vector2 units = px / Mathf.Max(0.0001f, s.pixelsPerUnit);
+        Vector2 units = s.rect.size / Mathf.Max(0.0001f, s.pixelsPerUnit);
         if (boxFrameHeight <= 0f) boxFrameHeight = Mathf.Max(0.0001f, units.y);   // the idle's first frame
 
         float inner = BoxSize - 2f * BorderWidth;
         float scale = inner * character.size / boxFrameHeight;   // reference px per sprite unit
         characterRT.sizeDelta = units * scale;
-        characterRT.pivot = new Vector2(s.pivot.x / Mathf.Max(1f, px.x), s.pivot.y / Mathf.Max(1f, px.y));
-        characterRT.anchoredPosition = character.offset;
+        characterRT.anchoredPosition = new Vector2(0f, BorderWidth) + character.offset;
     }
 
     // =====================================================================
@@ -556,9 +564,13 @@ public class CharacterPortraitHUD : MonoBehaviour
         edges[2] = Edge(box, "Left", new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(BorderWidth, 0f));
         edges[3] = Edge(box, "Right", new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(BorderWidth, 0f));
 
-        // The character, last so it draws over the outline. No mask: it is allowed to spill out.
+        // The character, last so it draws over the outline. No mask: it is allowed to spill out over the
+        // top and sides. It STANDS on the inner square's floor — bottom-centre to bottom-centre — so it
+        // grows upwards and outwards, never down through the bottom border (see SizeCharacter).
         characterRT = NewRect("Character", box);
-        characterRT.anchorMin = characterRT.anchorMax = new Vector2(0.5f, 0.5f);
+        characterRT.anchorMin = characterRT.anchorMax = new Vector2(0.5f, 0f);
+        characterRT.pivot = new Vector2(0.5f, 0f);
+        characterRT.anchoredPosition = new Vector2(0f, BorderWidth);
         characterImage = characterRT.gameObject.AddComponent<Image>();
         characterImage.raycastTarget = false;
         characterImage.enabled = false;

@@ -26,7 +26,12 @@ Never seen in the user's editor.
   transition + hold, and reactions (turbo 2 s, boulder 5 s, lightning 2 s, money 0.5 s; 0 = clip
   length). An empty slot falls back (mostly to idle); an empty reaction is skipped.
 - **Framing:** every frame is drawn at one scale, where the Idle's first frame fills the inner square
-  (× `size`), and placed by the sprite pivot; `offset` nudges it.
+  (× `size`). Each frame STANDS on the inner square's floor: its bottom-centre sits on the floor's
+  bottom-centre, so a bigger `size` grows up and out but never down. `offset` nudges it. Sprite pivots
+  are ignored.
+  - The user's sheets are untrimmed, with headroom: the art may spill over the top and sides, never
+    the bottom.
+  - Size and Offset apply live in Play mode.
   - ⚠️ The scale is measured in sprite UNITS, not pixels. `George Blink.png` (2280 tall) exceeds its
     2048 Max Size, so Unity shrinks it on import. Its frames arrive at 891×1024 px with 89.8 PPU,
     while the units stay 9.92×11.4.

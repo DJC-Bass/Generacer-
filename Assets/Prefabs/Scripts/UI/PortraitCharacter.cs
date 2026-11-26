@@ -46,12 +46,14 @@ public class PortraitCharacter : ScriptableObject
     public bool fallback;
 
     [Header("Framing")]
-    [Tooltip("1 = the Idle's first frame is exactly as tall as the box's inner square. Every other frame is " +
-             "drawn at that same scale and placed by its sprite pivot, so frames of different sizes line up " +
-             "and anything bigger than the idle frame spills out over the box (it is never clipped).")]
+    [Tooltip("1 = the Idle's first frame is exactly as tall as the box's inner square. Every frame stands on " +
+             "the box's floor (its bottom-centre on the inner square's bottom-centre) at that same scale, so " +
+             "raising this grows the character up and out to the sides, never down through the bottom. " +
+             "Anything bigger than the box spills out over it (it is never clipped). Live in Play mode.")]
     public float size = 1f;
 
-    [Tooltip("Nudges the character from the box's centre, in HUD reference pixels (1920×1080). +x right, +y up.")]
+    [Tooltip("Nudges the character from where it stands (the bottom-centre of the box's inner square), in " +
+             "HUD reference pixels (1920×1080). +x right, +y up. Live in Play mode.")]
     public Vector2 offset = Vector2.zero;
 
     [Header("Grounded idle")]
