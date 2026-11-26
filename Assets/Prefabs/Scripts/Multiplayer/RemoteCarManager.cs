@@ -464,6 +464,10 @@ public class RemoteCarManager : MonoBehaviour
             if (engineTemplate != null) go.AddComponent<RemoteCarAudio>().Configure(engineTemplate);
 
             go.AddComponent<RemoteCarEffects>().Configure(prefab, capturedFlames, capturedSds);
+
+            // The body's bounce and lean, driven off the replicated velocity and tuned like the owner's
+            // car — from the prefab ASSET's CarController, since the puppet's own was stripped.
+            CarBodySuspension.Attach(go, prefab.GetComponentInChildren<CarController>(true));
         }
         // Teammate/rival marker (labelled per-viewer by RefreshMarkers).
         go.AddComponent<RemoteCarMarker>();

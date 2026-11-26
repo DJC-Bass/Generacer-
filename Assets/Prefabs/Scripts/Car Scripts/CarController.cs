@@ -82,6 +82,43 @@ public class CarController : MonoBehaviour
              "without ever detaching horizontally from the car.")]
     public float maxWheelTravel = 0.4f;
 
+    [Header("Body Suspension (visual)")]
+    [Tooltip("The body that bounces and leans on the wheels (see CarBodySuspension). Purely visual — the " +
+             "physics car, its colliders and the wheels don't move. Empty = the child named CarBody.")]
+    public Transform carBody;
+    [Tooltip("How fast the body bounces up and down (bounces per second). Higher = a stiffer, quicker " +
+             "bounce; lower = a softer, heavier one.")]
+    public float bodyBounceFrequency = 1.8f;
+    [Tooltip("How quickly a bounce dies away (0-1). Lower = more bounces after a landing; 1 = it settles " +
+             "without bouncing back up.")]
+    [Range(0.05f, 1f)] public float bodyBounceDamping = 0.3f;
+    [Tooltip("How far the body dips (metres) landing at 10 m/s (22 mph) into the road. The dip scales with " +
+             "the landing speed — twice as fast, twice as deep (up to Max Body Bounce) — and a drop four " +
+             "times as high lands twice as fast. The same spring makes the body sink in dips and loops and " +
+             "lift over crests.")]
+    public float landingBounce = 0.05f;
+    [Tooltip("The furthest the body moves up or down from rest (metres). It eases into this like a bump " +
+             "stop rather than hitting it.")]
+    public float maxBodyBounce = 0.15f;
+    [Tooltip("How far the body leans OUT of a turn (degrees) per g of cornering force. Cornering force " +
+             "grows with speed and with how hard the car turns, so a slow turn barely leans and a hard " +
+             "turn at speed leans the most.")]
+    public float bodyLeanPerG = 0.12f;
+    [Tooltip("The furthest the body leans (degrees). It eases into this rather than hitting it.")]
+    public float maxBodyLean = 7f;
+    [Tooltip("How far the nose lifts under acceleration and dips under braking (degrees) per g.")]
+    public float bodyPitchPerG = 0.2f;
+    [Tooltip("The furthest the nose lifts or dips (degrees). It eases into this rather than hitting it.")]
+    public float maxBodyPitch = 4f;
+    [Tooltip("How fast the body rocks into a lean or pitch and back (rocks per second).")]
+    public float bodyLeanFrequency = 1.5f;
+    [Tooltip("How quickly the rocking dies away (0-1). Lower = it sways past upright a few times coming " +
+             "out of a turn; 1 = it settles straight back.")]
+    [Range(0.05f, 1f)] public float bodyLeanDamping = 0.45f;
+    [Tooltip("Height above the bottom of the body (metres) that it leans and pitches around. 0 = it pivots " +
+             "at its underside, so the roof swings out the most.")]
+    public float bodyPivotHeight = 0f;
+
     [Header("Steering")]
     [Tooltip("Turn rate (degrees/second) at low speed.")]
     public float turnRateLowSpeed = 130f;
@@ -358,6 +395,9 @@ public class CarController : MonoBehaviour
     /// up while fully airborne. Lets external effects (e.g. the speed-barrier kick) apply their own
     /// grounded grace window.</summary>
     public float AirborneTime => airborneTimer;
+    /// <summary>True while any wheel's ray is on the ground this physics step — no grace window, unlike
+    /// <see cref="IsAirborne"/>. The body suspension reads it: off the ground the wheels carry nothing.</summary>
+    public bool IsGrounded => grounded;
 
     /// <summary>Fired the moment a boulder strikes the car — a collision with anything on the Boulder
     /// layer, or (multiplayer client) the host's relayed boulder shove. The follow cameras use it to ride
@@ -443,6 +483,7 @@ public class CarController : MonoBehaviour
 
         SetUpDriftAudio();
         SetUpTurboTrails();
+        CarBodySuspension.Attach(gameObject, this);   // the body's visual bounce and lean
 
         boulderLayer = LayerMask.NameToLayer("Boulder");
     }
